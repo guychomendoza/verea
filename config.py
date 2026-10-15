@@ -69,13 +69,20 @@ ELEVATION_API_URL = "https://api.open-elevation.com/api/v1/lookup"
 # ─── Diffraction / Obstruction ───────────────────────────────
 DEFAULT_DIFFRACTION_METHOD = "dominant_knife_edge"
 
-# ─── Environment Profiles (Clutter Loss per ITU-R P.833) ────
+# ─── Environment Profiles (Clutter Loss per ITU-R P.833 + agricultural) ──
 ENVIRONMENT_PROFILES = {
-    "Rural / Open":    {"clutter_loss_db": 0.0,  "description": "Open fields, no obstructions"},
-    "Orchard / Trees": {"clutter_loss_db": 12.0, "description": "Orchards, vineyards, scattered trees"},
-    "Suburban":        {"clutter_loss_db": 15.0, "description": "Low-density residential areas"},
-    "Urban":           {"clutter_loss_db": 18.0, "description": "Dense urban, buildings"},
+    "Rural / Open":           {"clutter_loss_db": 0.0,  "description": "Open fields, no obstructions"},
+    "Cultivo bajo":           {"clutter_loss_db": 5.0,  "description": "Low crops: alfalfa, vegetables, stubble (<1m)"},
+    "Orchard / Trees":        {"clutter_loss_db": 12.0, "description": "Orchards, vineyards, scattered trees"},
+    "Huerta densa":           {"clutter_loss_db": 15.0, "description": "Dense orchard: avocado, mango, citrus canopy"},
+    "Cultivo alto / Milpa":   {"clutter_loss_db": 20.0, "description": "Tall crops: corn/milpa >2m, sugarcane, sorghum"},
+    "Suburban":               {"clutter_loss_db": 15.0, "description": "Low-density residential areas"},
+    "Urban":                  {"clutter_loss_db": 18.0, "description": "Dense urban, buildings"},
 }
+
+# ─── Fading Margin ───────────────────────────────────────────
+# Extra margin to account for temporal fading (rain, humidity, foliage sway)
+DEFAULT_FADING_MARGIN_DB = 8.0    # conservative default for agricultural
 
 # ─── Link Budget Thresholds ──────────────────────────────────
 REQUIRED_LINK_MARGIN_DB = 10.0        # default, overridden by UI slider

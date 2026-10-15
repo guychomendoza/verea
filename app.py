@@ -45,6 +45,7 @@ from config import (
     REQUIRED_LINK_MARGIN_DB,
     DEFAULT_DIFFRACTION_METHOD,
     ENVIRONMENT_PROFILES,
+    DEFAULT_FADING_MARGIN_DB,
 )
 from core.devices import Gateway, EndNode, WeatherStation, Antenna
 from core.terrain import TerrainProfile, ElevationAPI
@@ -86,6 +87,7 @@ defaults = {
     "selected_gateway": None,
     "terrain_cache": {},
     "elevation_api": None,
+    "last_processed_click": None,   # Fix #1: track last click to avoid phantoms
 }
 for key, val in defaults.items():
     if key not in st.session_state:
@@ -129,20 +131,25 @@ with st.sidebar:
 
     # ── Placement mode ──
     st.markdown("### Click-to-add mode")
+    mode_options = ["gateway", "sensor", "weather", "move"]
+    mode_labels = {
+        "gateway": "🏗️ Gateway",
+        "sensor": "📱 Sensor Node",
+        "weather": "🌤️ Weather Station (S2120)",
+        "move": "✋ Move selected device",
+    }
     mode = st.radio(
         "Device type",
-        options=["gateway", "sensor", "weather"],
-        format_func=lambda x: {
-            "gateway": "🏗️ Gateway",
-            "sensor": "📱 Sensor Node",
-            "weather": "🌤️ Weather Station (S2120)",
-        }[x],
-        index=["gateway", "sensor", "weather"].index(st.session_state.placement_mode)
-        if st.session_state.placement_mode in ["gateway", "sensor", "weather"]
+        options=mode_options,
+        format_func=lambda x: mode_labels[x],
+        index=mode_options.index(st.session_state.placement_mode)
+        if st.session_state.placement_mode in mode_options
         else 0,
         key="mode_radio",
     )
     st.session_state.placement_mode = mode
+    if mode == "move":
+        st.caption("Select a device in the right panel, then click the map to move it.")
 
     st.divider()
 
@@ -171,6 +178,9 @@ with st.sidebar:
                                  TERRAIN_SAMPLE_POINTS, 10)
     margin_threshold = st.slider("Min margin threshold (dB)", 0.0, 20.0, 3.0, 0.5,
                                  help="Links below this margin are marked NOT VIABLE")
+    fading_margin = st.slider("Fading margin (dB)", 0.0, 15.0, DEFAULT_FADING_MARGIN_DB, 0.5,
+                              help="Extra loss for rain, humidity, foliage sway. "
+                                   "8 dB is conservative for agriculture.")
 
     st.divider()
 
@@ -191,7 +201,7 @@ with st.sidebar:
 # ══════════════════════════════════════════════════════════════
 # Analysis helper
 # ══════════════════════════════════════════════════════════════
-def run_analysis(gw_info: dict, node_info: dict) -> dict:
+def run_analysis(gw_info: dict, node_info: dict, node_environment: str = None) -> dict:
     """Run full terrain + link budget analysis for a GW-Node pair."""
     cache_key = (
         f"{gw_info['lat']:.6f},{gw_info['lon']:.6f}_"
@@ -264,11 +274,14 @@ def run_analysis(gw_info: dict, node_info: dict) -> dict:
     gw_dev.altitude_m = float(terrain.elevations[0])    # GW ground at pos 0
     node_dev.altitude_m = float(terrain.elevations[-1])  # Node ground at pos -1
 
+    # Per-node environment (Fix #3) or global fallback
+    env = node_environment if node_environment else environment
     result = calculate_link_budget(
         gw_dev, node_dev, terrain,
         diffraction_method=diffraction_method,
-        environment=environment,
+        environment=env,
         margin_threshold=margin_threshold,
+        fading_margin_db=fading_margin,
     )
 
     # LOS analysis for chart (same direction: GW pos0, Node pos-1)
@@ -324,6 +337,7 @@ with col_map:
         "gateway": "🏗️ Click map to place Gateway",
         "sensor": "📱 Click map to place Sensor Node",
         "weather": "🌤️ Click map to place Weather Station",
+        "move": "✋ Click map to move selected device",
     }
     st.caption(mode_text.get(st.session_state.placement_mode, ""))
 
@@ -422,12 +436,49 @@ with col_map:
         key="main_map",
     )
 
-    # ── Handle map click ──
+    # ── Handle map click (Fix #1: ghost click prevention) ──
     if map_data and map_data.get("last_clicked"):
         click = map_data["last_clicked"]
+        click_id = (round(click["lat"], 8), round(click["lng"], 8))
+        if click_id == st.session_state.last_processed_click:
+            click = None  # Already processed this click — skip
+        else:
+            st.session_state.last_processed_click = click_id
+
+    if map_data and map_data.get("last_clicked") and click is not None:
         clat, clon = click["lat"], click["lng"]
 
-        if st.session_state.placement_mode == "gateway":
+        if st.session_state.placement_mode == "move":
+            # Fix #4: Move selected device to new position
+            moved = False
+            # Try to move selected node
+            sel = st.session_state.selected_node
+            if sel:
+                nd = next((n for n in st.session_state.nodes if n["name"] == sel), None)
+                if nd:
+                    nd["lat"] = clat
+                    nd["lon"] = clon
+                    # Invalidate cached results for this node
+                    st.session_state.link_results.pop(sel, None)
+                    st.session_state.terrain_cache = {}
+                    moved = True
+            # If no node selected, try selected gateway
+            if not moved:
+                sel_gw = st.session_state.selected_gateway
+                if sel_gw:
+                    gw = next((g for g in st.session_state.gateways if g["name"] == sel_gw), None)
+                    if gw:
+                        gw["lat"] = clat
+                        gw["lon"] = clon
+                        st.session_state.link_results = {}
+                        st.session_state.terrain_cache = {}
+                        moved = True
+            if moved:
+                st.rerun()
+            else:
+                st.warning("Select a device first (click its name in the right panel)")
+
+        elif st.session_state.placement_mode == "gateway":
             idx = len(st.session_state.gateways) + 1
             new_gw = {
                 "name": f"GW-{idx}",
@@ -460,6 +511,7 @@ with col_map:
                     "tx_power": 19 if is_weather else DEFAULT_TX_POWER_DBM,
                     "height": 3.0 if is_weather else 1.5,
                     "gain": 2.0 if is_weather else DEFAULT_NODE_ANTENNA_GAIN_DBI,
+                    "environment": environment,  # Fix #3: per-node environment
                 }
                 st.session_state.nodes.append(new_node)
                 st.session_state.selected_node = new_node["name"]
@@ -471,7 +523,7 @@ with col_map:
                     for gw in st.session_state.gateways:
                         if gw.get("online", True):
                             try:
-                                analysis = run_analysis(gw, new_node)
+                                analysis = run_analysis(gw, new_node, node_environment=new_node.get("environment"))
                                 if best_analysis is None or analysis["result"].link_margin_db > best_result.link_margin_db:
                                     best_result = analysis["result"]
                                     best_analysis = analysis
@@ -561,6 +613,7 @@ with col_panel:
             with gc3:
                 if st.button("📍", key=f"gw_sel_{i}"):
                     st.session_state.selected_gateway = gw["name"]
+                    st.session_state.selected_node = None  # deselect node
                     st.session_state["map_center"] = [gw["lat"], gw["lon"]]
                     st.rerun()
             with gc4:
@@ -587,6 +640,7 @@ with col_panel:
                 label = f"{nd['name']}{margin_str}"
                 if st.button(label, key=f"nd_sel_{i}"):
                     st.session_state.selected_node = nd["name"]
+                    st.session_state.selected_gateway = None  # deselect gateway
                     st.rerun()
             with nc2:
                 type_icon = "🌤️" if nd.get("type") == "weather" else "📱"
@@ -638,6 +692,18 @@ with col_panel:
                                       index=sel_nd.get("sf", 7) - 7,
                                       key="prop_sf")
 
+            # Fix #3: per-node environment selector
+            env_options = list(ENVIRONMENT_PROFILES.keys())
+            current_env = sel_nd.get("environment", environment)
+            env_idx = env_options.index(current_env) if current_env in env_options else 0
+            new_env = st.selectbox(
+                "Environment / Clutter",
+                options=env_options,
+                index=env_idx,
+                key="prop_env",
+                help=ENVIRONMENT_PROFILES[env_options[env_idx]]["description"],
+            )
+
             # Update node if changed
             changed = (
                 new_lat != sel_nd["lat"] or new_lon != sel_nd["lon"]
@@ -645,14 +711,35 @@ with col_panel:
                 or new_tx != sel_nd.get("tx_power")
                 or new_gain != sel_nd.get("gain")
                 or new_sf != sel_nd.get("sf")
+                or new_env != sel_nd.get("environment", environment)
             )
             if changed:
-                sel_nd["lat"] = new_lat
-                sel_nd["lon"] = new_lon
-                sel_nd["height"] = new_height
-                sel_nd["tx_power"] = new_tx
-                sel_nd["gain"] = new_gain
-                sel_nd["sf"] = new_sf
+                if st.button("📝 Apply changes", key="apply_node_changes", type="primary"):
+                    sel_nd["lat"] = new_lat
+                    sel_nd["lon"] = new_lon
+                    sel_nd["height"] = new_height
+                    sel_nd["tx_power"] = new_tx
+                    sel_nd["gain"] = new_gain
+                    sel_nd["sf"] = new_sf
+                    sel_nd["environment"] = new_env
+                    # Invalidate and recalculate
+                    st.session_state.link_results.pop(sel_nd["name"], None)
+                    st.session_state.terrain_cache = {}
+                    # Re-route to best gateway
+                    best_result = None
+                    best_analysis = None
+                    for gw in st.session_state.gateways:
+                        if gw.get("online", True):
+                            try:
+                                analysis = run_analysis(gw, sel_nd, node_environment=new_env)
+                                if best_analysis is None or analysis["result"].link_margin_db > (best_result.link_margin_db if best_result else -999):
+                                    best_result = analysis["result"]
+                                    best_analysis = analysis
+                            except Exception:
+                                continue
+                    if best_analysis:
+                        st.session_state.link_results[sel_nd["name"]] = best_analysis
+                    st.rerun()
 
             # Per-device elevation caption
             if sel_nd["name"] in st.session_state.link_results:
@@ -702,6 +789,10 @@ with col_panel:
                 mc7.metric("Fresnel clear.", f"{r.fresnel_min_clearance_pct:.0f}%")
                 mc8.metric("Clutter loss", f"+{r.clutter_loss_db:.1f} dB")
 
+                mc9, mc10 = st.columns(2)
+                mc9.metric("Fading margin", f"+{r.fading_margin_db:.1f} dB")
+                mc10.metric("Total loss", f"{r.total_path_loss_db:.1f} dB")
+
                 if r.los_obstructed:
                     st.warning(
                         f"⚠️ LOS obstructed — diffraction penalty of "
@@ -724,7 +815,7 @@ with col_panel:
                         )
                         if best_gw:
                             try:
-                                a = run_analysis(best_gw, nd_copy)
+                                a = run_analysis(best_gw, nd_copy, node_environment=sel_nd.get("environment"))
                                 rr = a["result"]
                                 sf_rows.append({
                                     "SF": sf_val,
@@ -782,7 +873,7 @@ if recalc and st.session_state.gateways and st.session_state.nodes:
         for gw in st.session_state.gateways:
             if gw.get("online", True):
                 try:
-                    analysis = run_analysis(gw, nd)
+                    analysis = run_analysis(gw, nd, node_environment=nd.get("environment"))
                     if best_analysis is None or analysis["result"].link_margin_db > (best_result.link_margin_db if best_result else -999):
                         best_result = analysis["result"]
                         best_analysis = analysis

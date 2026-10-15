@@ -32,6 +32,7 @@ from config import (
     REQUIRED_LINK_MARGIN_DB,
     MIN_FRESNEL_CLEARANCE_PCT,
     DEFAULT_DIFFRACTION_METHOD,
+    DEFAULT_FADING_MARGIN_DB,
 )
 
 
@@ -61,6 +62,7 @@ class LinkBudgetResult:
     spreading_factor: int
 
     # Margins
+    fading_margin_db: float
     link_margin_db: float
     snr_db: float
     snr_required_db: float
@@ -114,6 +116,7 @@ class LinkBudgetResult:
             f"  Sensitivity:    {self.sensitivity_dbm:+.1f} dBm (SF{self.spreading_factor})",
             f"",
             f"── Margins ──",
+            f"  Fading Margin:  {self.fading_margin_db:.1f} dB (subtracted from link margin)",
             f"  Link Margin:    {self.link_margin_db:+.1f} dB",
             f"  SNR:            {self.snr_db:+.1f} dB (req: {self.snr_required_db:+.1f} dB)",
             f"",
@@ -138,6 +141,7 @@ def calculate_link_budget(
     diffraction_method: str = DEFAULT_DIFFRACTION_METHOD,
     environment: str = "Rural / Open",
     margin_threshold: float = 3.0,
+    fading_margin_db: float = DEFAULT_FADING_MARGIN_DB,
 ) -> LinkBudgetResult:
     """
     Full link budget calculation for a Gateway↔EndNode pair.
@@ -186,7 +190,7 @@ def calculate_link_budget(
         method=diffraction_method,
     )
 
-    total_path_loss = fspl_loss + diffraction_loss_val + env_clutter
+    total_path_loss = fspl_loss + diffraction_loss_val + env_clutter + fading_margin_db
 
     # ── RX Side ──
     rx_gain = gateway.antenna.gain_dbi
@@ -247,6 +251,7 @@ def calculate_link_budget(
         rx_power_dbm=rx_power,
         sensitivity_dbm=sensitivity,
         spreading_factor=sf,
+        fading_margin_db=fading_margin_db,
         link_margin_db=link_margin,
         snr_db=snr,
         snr_required_db=snr_required,
@@ -266,6 +271,7 @@ def route_to_best_gateway(
     diffraction_method: str = DEFAULT_DIFFRACTION_METHOD,
     environment: str = "Rural / Open",
     margin_threshold: float = 3.0,
+    fading_margin_db: float = DEFAULT_FADING_MARGIN_DB,
     n_terrain_points: int = 100,
     elevation_api: Optional[ElevationAPI] = None,
 ) -> Optional[LinkBudgetResult]:
@@ -308,6 +314,7 @@ def route_to_best_gateway(
                 diffraction_method=diffraction_method,
                 environment=environment,
                 margin_threshold=margin_threshold,
+                fading_margin_db=fading_margin_db,
             )
             results.append(result)
         except Exception:

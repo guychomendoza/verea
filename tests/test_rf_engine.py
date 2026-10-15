@@ -1,9 +1,9 @@
 """
 Verea RF Engine Test Suite
 ================================
-22 tests covering FSPL, Fresnel zones, diffraction, clutter,
-device models, link budget, multi-gateway routing, failover,
-and geographic utilities.
+Tests covering FSPL, Fresnel zones, diffraction, clutter (including
+agricultural profiles), fading margin, device models, link budget,
+multi-gateway routing, failover, and geographic utilities.
 
 Run:  python -m pytest tests/test_rf_engine.py -v
 """
@@ -113,8 +113,17 @@ class TestClutter:
     def test_rural_no_clutter(self):
         assert clutter_loss("Rural / Open") == 0.0
 
+    def test_cultivo_bajo(self):
+        assert clutter_loss("Cultivo bajo") == 5.0
+
     def test_orchard_clutter(self):
         assert clutter_loss("Orchard / Trees") == 12.0
+
+    def test_huerta_densa(self):
+        assert clutter_loss("Huerta densa") == 15.0
+
+    def test_cultivo_alto_milpa(self):
+        assert clutter_loss("Cultivo alto / Milpa") == 20.0
 
     def test_suburban_clutter(self):
         assert clutter_loss("Suburban") == 15.0
@@ -178,7 +187,7 @@ class TestLinkBudget:
         gw = Gateway(altitude_m=1500.0)
         node = EndNode(altitude_m=1500.0)
         terrain = self._make_flat_terrain(1000)
-        result = calculate_link_budget(gw, node, terrain)
+        result = calculate_link_budget(gw, node, terrain, fading_margin_db=0.0)
         assert result.link_viable, f"1km link should be viable, margin={result.link_margin_db:.1f}"
         assert result.link_margin_db > 20
 
@@ -192,7 +201,7 @@ class TestLinkBudget:
         terrain = TerrainProfile.from_manual_elevations(
             21.0, -102.0, 21.009, -102.0, elevations,
         )
-        result = calculate_link_budget(gw, node, terrain)
+        result = calculate_link_budget(gw, node, terrain, fading_margin_db=0.0)
         # Should still have positive margin and be viable
         # (diffraction penalty applied, but at short distance margin is huge)
         assert result.link_margin_db > 0
@@ -203,7 +212,7 @@ class TestLinkBudget:
         node = EndNode(altitude_m=1500.0)
         terrain = self._make_flat_terrain(1000)
         # With very high threshold, even a good link fails
-        result = calculate_link_budget(gw, node, terrain, margin_threshold=200.0)
+        result = calculate_link_budget(gw, node, terrain, margin_threshold=200.0, fading_margin_db=0.0)
         assert not result.link_viable
 
     def test_clutter_in_total_path_loss(self):
@@ -212,19 +221,44 @@ class TestLinkBudget:
         node = EndNode(altitude_m=1500.0)
         terrain = self._make_flat_terrain(1000)
 
-        result_rural = calculate_link_budget(gw, node, terrain, environment="Rural / Open")
-        result_urban = calculate_link_budget(gw, node, terrain, environment="Urban")
+        result_rural = calculate_link_budget(gw, node, terrain, environment="Rural / Open", fading_margin_db=0.0)
+        result_urban = calculate_link_budget(gw, node, terrain, environment="Urban", fading_margin_db=0.0)
 
         assert result_urban.total_path_loss_db > result_rural.total_path_loss_db
         delta = result_urban.total_path_loss_db - result_rural.total_path_loss_db
         assert abs(delta - 18.0) < 1.0, f"Urban adds {delta:.1f} dB (expected ~18)"
+
+    def test_fading_margin_increases_path_loss(self):
+        """Fading margin should increase total path loss."""
+        gw = Gateway(altitude_m=1500.0)
+        node = EndNode(altitude_m=1500.0)
+        terrain = self._make_flat_terrain(1000)
+
+        r_no_fading = calculate_link_budget(gw, node, terrain, fading_margin_db=0.0)
+        r_with_fading = calculate_link_budget(gw, node, terrain, fading_margin_db=8.0)
+
+        delta = r_with_fading.total_path_loss_db - r_no_fading.total_path_loss_db
+        assert abs(delta - 8.0) < 0.1, f"Fading adds {delta:.1f} dB (expected 8.0)"
+        assert r_with_fading.fading_margin_db == 8.0
+
+    def test_milpa_clutter(self):
+        """Cultivo alto / Milpa should add 20 dB clutter."""
+        gw = Gateway(altitude_m=1500.0)
+        node = EndNode(altitude_m=1500.0)
+        terrain = self._make_flat_terrain(1000)
+
+        r_rural = calculate_link_budget(gw, node, terrain, environment="Rural / Open", fading_margin_db=0.0)
+        r_milpa = calculate_link_budget(gw, node, terrain, environment="Cultivo alto / Milpa", fading_margin_db=0.0)
+
+        delta = r_milpa.total_path_loss_db - r_rural.total_path_loss_db
+        assert abs(delta - 20.0) < 1.0, f"Milpa adds {delta:.1f} dB (expected ~20)"
 
     def test_gateway_name_in_result(self):
         """Result should carry the gateway name."""
         gw = Gateway(name="MyGW", altitude_m=1500.0)
         node = EndNode(altitude_m=1500.0)
         terrain = self._make_flat_terrain()
-        result = calculate_link_budget(gw, node, terrain)
+        result = calculate_link_budget(gw, node, terrain, fading_margin_db=0.0)
         assert result.gateway_name == "MyGW"
 
 
