@@ -146,14 +146,18 @@ const layout = {{
 
 const chart = document.getElementById("chart");
 Plotly.newPlot(chart, traces, layout, {{responsive: true, displaylogo: false,
-  modeBarButtonsToRemove: ["select2d", "lasso2d"]}});
+  modeBarButtonsToRemove: ["zoom2d", "select2d", "lasso2d"],
+  toImageButtonOptions: {{filename: D.title.replace(/[^\w.-]+/g, "_")}}}});
 
 // ── Link to the main Folium map ──
 function mainMap() {{
+  // Streamlit: the map lives in the streamlit-folium iframe (window.map).
+  // Exported report: in a sibling iframe that sets window.map on load.
   try {{
     for (const f of window.parent.document.querySelectorAll("iframe")) {{
+      if (f.contentWindow === window) continue;
       const w = f.contentWindow;
-      if ((f.src || "").includes("streamlit_folium") && w && w.map && w.L) return w;
+      if (w && w.map && w.L && w.map.latLngToContainerPoint) return w;
     }}
   }} catch (e) {{}}
   return null;

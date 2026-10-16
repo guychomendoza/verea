@@ -400,3 +400,44 @@ class TestITM:
         assert r_itm.propagation_model == "itm"
         assert r_simple.propagation_model == "simple"
         assert r_itm.total_path_loss_db > r_simple.total_path_loss_db + 15
+
+
+# ═══════════════════════════════════════════════════════════════
+# Coverage / max range
+# ═══════════════════════════════════════════════════════════════
+class TestCoverage:
+
+    def test_destination_and_bearing_roundtrip(self):
+        from core.coverage import destination_point, initial_bearing
+        lat, lon = destination_point(19.7, -103.46, 45.0, 10_000)
+        assert abs(haversine(19.7, -103.46, lat, lon) - 10_000) < 1.0
+        assert abs(initial_bearing(19.7, -103.46, lat, lon) - 45.0) < 0.1
+
+    def _flat_radial(self, elevations, distance_m=30_000, **kw):
+        from core.coverage import compute_radial
+        n = len(elevations)
+        lat2 = 21.0 + distance_m / 111_320
+        terrain = TerrainProfile(
+            lat1=21.0, lon1=-102.0, lat2=lat2, lon2=-102.0,
+            elevations=np.asarray(elevations, dtype=float),
+            distances=np.linspace(0, distance_m, n),
+            coordinates=interpolate_coordinates(21.0, -102.0, lat2, -102.0, n),
+            n_points=n,
+        )
+        gw = Gateway(lat=21.0, lon=-102.0)
+        node = EndNode(spreading_factor=10)
+        return compute_radial(gw, node, 0.0, distance_m, terrain=terrain, **kw)
+
+    def test_flat_radial_has_finite_range(self):
+        r = self._flat_radial(np.full(100, 1500.0))
+        assert r.viable[1:5].all(), "close to the gateway must have signal"
+        assert 0 < r.continuous_range_m < 30_000
+        assert r.max_range_m >= r.continuous_range_m
+
+    def test_ridge_cuts_continuous_range(self):
+        flat = np.full(100, 1500.0)
+        ridge = flat.copy()
+        ridge[20:26] += 300
+        r_flat = self._flat_radial(flat)
+        r_ridge = self._flat_radial(ridge)
+        assert r_ridge.continuous_range_m < r_flat.continuous_range_m

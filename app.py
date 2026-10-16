@@ -27,6 +27,7 @@ import pandas as pd
 import folium
 from streamlit_folium import st_folium
 import streamlit.components.v1 as components
+from datetime import datetime
 
 from config import (
     DEFAULT_FREQUENCY_HZ,
@@ -55,6 +56,8 @@ from core.link_budget import calculate_link_budget, route_to_best_gateway
 from core.propagation import fspl, max_fresnel_radius
 from ui.profile_chart import get_elevation_summary
 from ui.profile_interactive import build_profile_html
+from ui.report import build_report_html
+from core.coverage import compute_radial, compute_coverage, initial_bearing, viable_segments
 from utils.geo import haversine
 
 # ══════════════════════════════════════════════════════════════
@@ -93,6 +96,9 @@ defaults = {
     "last_processed_click": None,   # Fix #1: track last click to avoid phantoms
     "last_processed_object": None,  # same for marker clicks (device selection)
     "name_counters": {},            # monotonic per prefix, so deleted names are never reused
+    "coverage": None,               # last computed gateway coverage map
+    "radial_cache": {},             # max-range radials per GW/node/settings
+    "report_html": None,
 }
 for key, val in defaults.items():
     if key not in st.session_state:
@@ -204,6 +210,28 @@ with st.sidebar:
 
     st.divider()
 
+    # ── Coverage ──
+    st.markdown("### Coverage")
+    cov_sf = st.selectbox(
+        "Sensor SF", [7, 8, 9, 10], index=3,
+        help="Spreading factor of the sensor used for the coverage map. US915 uplinks "
+             "on 125 kHz channels allow SF7–SF10; SF10 reaches the farthest.",
+    )
+    cov_radius_km = st.slider("Max radius (km)", 2, 40, 15, 1)
+    cov_radials = st.select_slider("Directions", options=[12, 24, 36], value=24,
+                                   help="More directions = finer map, slower to compute (~1 s each)")
+    cv1, cv2 = st.columns(2)
+    with cv1:
+        compute_cov = st.button("📡 Compute", disabled=not st.session_state.gateways,
+                                help="Where a 1.5 m sensor with the sidebar environment "
+                                     "reaches each online gateway")
+    with cv2:
+        if st.button("Hide", disabled=st.session_state.coverage is None):
+            st.session_state.coverage = None
+            st.rerun()
+
+    st.divider()
+
     # ── Actions ──
     col_a, col_b = st.columns(2)
     with col_a:
@@ -217,6 +245,22 @@ with st.sidebar:
                 del st.session_state["map_center"]
             st.rerun()
 
+    if st.button("📄 Generate report", use_container_width=True,
+                 disabled=not (st.session_state.gateways or st.session_state.nodes)):
+        st.session_state["make_report"] = True
+    if st.session_state.report_html:
+        st.download_button(
+            "⬇️ Download report (HTML)",
+            data=st.session_state.report_html["html"],
+            file_name=st.session_state.report_html["name"],
+            mime="text/html",
+            use_container_width=True,
+        )
+
+# Global RF settings — any change triggers a full recalculation
+rf_settings = (freq_mhz, propagation_model, diffraction_method, n_terrain_points,
+               margin_threshold, fading_margin)
+
 
 # ══════════════════════════════════════════════════════════════
 # Analysis helper
@@ -228,14 +272,8 @@ def next_device_index(prefix: str) -> int:
     return counters[prefix]
 
 
-def run_analysis(gw_info: dict, node_info: dict, node_environment: str = None) -> dict:
-    """Run full terrain + link budget analysis for a GW-Node pair."""
-    cache_key = (
-        f"{gw_info['lat']:.6f},{gw_info['lon']:.6f}_"
-        f"{node_info['lat']:.6f},{node_info['lon']:.6f}_"
-        f"{n_terrain_points}"
-    )
-
+def gateway_device(gw_info: dict) -> Gateway:
+    """Gateway object from its session-state dict."""
     gw_dev = Gateway(
         name=gw_info.get("name", "Gateway"),
         lat=gw_info["lat"], lon=gw_info["lon"],
@@ -248,8 +286,11 @@ def run_analysis(gw_info: dict, node_info: dict, node_environment: str = None) -
         frequency_hz=freq_hz,
         online=gw_info.get("online", True),
     )
+    return gw_dev
 
-    # Build node device
+
+def node_device(node_info: dict) -> EndNode:
+    """EndNode / WeatherStation object from its session-state dict."""
     if node_info.get("type") == "weather":
         node_dev = WeatherStation(
             name=node_info["name"],
@@ -276,6 +317,69 @@ def run_analysis(gw_info: dict, node_info: dict, node_environment: str = None) -
             ),
             frequency_hz=freq_hz,
         )
+    return node_dev
+
+
+def budget_kwargs(env: str) -> dict:
+    """Link budget settings from the sidebar."""
+    return dict(
+        diffraction_method=diffraction_method,
+        environment=env,
+        margin_threshold=margin_threshold,
+        fading_margin_db=fading_margin,
+        propagation_model=propagation_model,
+    )
+
+
+def device_signature(d: dict) -> tuple:
+    keys = ("lat", "lon", "height", "gain", "tx_power", "sf", "environment", "online", "type")
+    return tuple(d.get(k) for k in keys)
+
+
+def range_along_link(nd: dict):
+    """
+    Radial from the node's best gateway through the node, extended past it,
+    to show how far the signal reaches in that direction. Cached.
+    """
+    link = st.session_state.link_results.get(nd["name"])
+    if not link:
+        return None
+    gw = next((g for g in st.session_state.gateways if g["name"] == link["result"].gateway_name), None)
+    if not gw:
+        return None
+    d = link["result"].distance_m
+    max_d = min(max(2.5 * d, d + 5000, 10000), 40000)
+    env = nd.get("environment", environment)
+    key = (device_signature(gw), device_signature(nd), rf_settings, env, round(max_d))
+    cache = st.session_state.radial_cache
+    if key not in cache:
+        bearing = initial_bearing(gw["lat"], gw["lon"], nd["lat"], nd["lon"])
+        try:
+            cache[key] = compute_radial(
+                gateway_device(gw), node_device(nd), bearing, max_d,
+                n_points=n_terrain_points, api=st.session_state.elevation_api,
+                **budget_kwargs(env),
+            )
+        except Exception:
+            return None
+    return cache[key]
+
+
+def coverage_signature(params: dict) -> tuple:
+    gws = tuple(device_signature(g) for g in st.session_state.gateways if g.get("online", True))
+    return (gws, rf_settings, environment, tuple(sorted(params.items())))
+
+
+def run_analysis(gw_info: dict, node_info: dict, node_environment: str = None) -> dict:
+    """Run full terrain + link budget analysis for a GW-Node pair."""
+    cache_key = (
+        f"{gw_info['lat']:.6f},{gw_info['lon']:.6f}_"
+        f"{node_info['lat']:.6f},{node_info['lon']:.6f}_"
+        f"{n_terrain_points}"
+    )
+
+    gw_dev = gateway_device(gw_info)
+    node_dev = node_device(node_info)
 
     # Fetch terrain (with cache)
     api = st.session_state.elevation_api
@@ -303,14 +407,7 @@ def run_analysis(gw_info: dict, node_info: dict, node_environment: str = None) -
 
     # Per-node environment (Fix #3) or global fallback
     env = node_environment if node_environment else environment
-    result = calculate_link_budget(
-        gw_dev, node_dev, terrain,
-        diffraction_method=diffraction_method,
-        environment=env,
-        margin_threshold=margin_threshold,
-        fading_margin_db=fading_margin,
-        propagation_model=propagation_model,
-    )
+    result = calculate_link_budget(gw_dev, node_dev, terrain, **budget_kwargs(env))
 
     # LOS analysis for chart (same direction: GW pos0, Node pos-1)
     los_data = terrain.compute_los_clearance(
@@ -329,47 +426,33 @@ def run_analysis(gw_info: dict, node_info: dict, node_environment: str = None) -
     }
 
 
-# ══════════════════════════════════════════════════════════════
-# Main Layout
-# ══════════════════════════════════════════════════════════════
-st.markdown("# 📡 Verea — LoRaWAN Packet Tracer")
+if compute_cov:
+    params = {"sf": cov_sf, "radius_km": cov_radius_km, "radials": cov_radials}
+    template = node_device({"name": "coverage", "lat": 0.0, "lon": 0.0, "sf": cov_sf})
+    online = [g for g in st.session_state.gateways if g.get("online", True)]
+    bar = st.progress(0.0, text="Computing coverage…")
+    radials = {}
+    for gi, gw in enumerate(online):
+        radials[gw["name"]] = compute_coverage(
+            gateway_device(gw), template, cov_radius_km * 1000,
+            n_radials=cov_radials, n_points=n_terrain_points,
+            api=st.session_state.elevation_api,
+            progress=lambda f, gi=gi: bar.progress((gi + f) / len(online),
+                                                   text=f"Computing coverage of {gw['name']}…"),
+            **budget_kwargs(environment),
+        )
+    bar.empty()
+    st.session_state.coverage = {"params": params, "sig": coverage_signature(params), "radials": radials}
 
-# ── Summary metrics bar ──
-if st.session_state.gateways or st.session_state.nodes:
-    mc1, mc2, mc3, mc4 = st.columns(4)
-    n_gw = len(st.session_state.gateways)
-    n_gw_online = sum(1 for g in st.session_state.gateways if g.get("online", True))
-    n_nodes = len(st.session_state.nodes)
-    n_viable = sum(
-        1 for n in st.session_state.nodes
-        if n["name"] in st.session_state.link_results
-        and st.session_state.link_results[n["name"]]["result"].link_viable
-    )
-    mc1.metric("Gateways", f"{n_gw_online}/{n_gw} online")
-    mc2.metric("Nodes", n_nodes)
-    mc3.metric("Viable links", f"{n_viable}/{n_nodes}" if n_nodes else "—")
 
-    # Show elevation source
-    source = "—"
-    if st.session_state.elevation_api:
-        source = st.session_state.elevation_api.source_name
-    mc4.metric("Elevation source", source[:30])
+def draw_radial(m, radial, weight=3, opacity=0.6):
+    for ok, pts in viable_segments(radial):
+        folium.PolyLine(pts, color="#06d6a0" if ok else "#ef476f",
+                        weight=weight, opacity=opacity).add_to(m)
 
-col_map, col_panel = st.columns([3, 2])
 
-# ──────────────────────────────────────────────────────────────
-# Left column: Map + Terrain Chart
-# ──────────────────────────────────────────────────────────────
-with col_map:
-    mode_text = {
-        "gateway": "🏗️ Click map to place Gateway",
-        "sensor": "📱 Click map to place Sensor Node",
-        "weather": "🌤️ Click map to place Weather Station",
-        "move": "✋ Click a device to select it, then click the destination",
-    }
-    st.caption(mode_text.get(st.session_state.placement_mode, ""))
-
-    # Map center
+def build_map(sel_radial=None, height=None, fit_all=False) -> folium.Map:
+    """Folium map with devices, links, coverage and the selected node's range."""
     if "map_center" in st.session_state:
         center = st.session_state["map_center"]
     elif st.session_state.gateways:
@@ -384,7 +467,32 @@ with col_map:
         zoom_start=MAP_DEFAULT_ZOOM,
         tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         attr="Esri",
+        **({"height": height} if height else {}),
     )
+
+    # ── Coverage map (drawn first, under the devices) ──
+    cov = st.session_state.coverage
+    if cov and cov["sig"] == coverage_signature(cov["params"]):
+        for gw_name, radials in cov["radials"].items():
+            for radial in radials:
+                draw_radial(m, radial, weight=2, opacity=0.55)
+            reach = [r.coordinates[int(np.searchsorted(r.distances_m, r.continuous_range_m))]
+                     for r in radials if r.continuous_range_m > 0]
+            if len(reach) >= 3:
+                folium.Polygon(reach, color="#06d6a0", weight=1, dash_array="6",
+                               fill=True, fill_opacity=0.08,
+                               tooltip=f"{gw_name}: continuous coverage (SF{cov['params']['sf']})").add_to(m)
+
+    # ── Selected node: range along its direction ──
+    if sel_radial is not None:
+        draw_radial(m, sel_radial, weight=4, opacity=0.7)
+        if sel_radial.max_range_m > 0:
+            k = int(np.searchsorted(sel_radial.distances_m, sel_radial.max_range_m))
+            folium.CircleMarker(
+                sel_radial.coordinates[k], radius=6, color="#ffffff", weight=2,
+                fill=True, fill_color="#06d6a0", fill_opacity=1,
+                tooltip=f"Farthest point with signal: {sel_radial.max_range_m / 1000:.2f} km",
+            ).add_to(m)
 
     # ── Draw Gateways ──
     for gw in st.session_state.gateways:
@@ -456,6 +564,68 @@ with col_map:
             popup=folium.Popup("".join(popup_lines), max_width=220),
             icon=folium.Icon(color=icon_color, icon=icon_name, prefix="fa"),
         ).add_to(m)
+
+
+    if fit_all:
+        pts = [[d["lat"], d["lon"]] for d in st.session_state.gateways + st.session_state.nodes]
+        if cov and cov["sig"] == coverage_signature(cov["params"]):
+            pts += [list(r.coordinates[-1]) for rads in cov["radials"].values() for r in rads]
+        if len(pts) >= 2:
+            m.fit_bounds(pts, padding=(30, 30))
+    return m
+
+
+# ══════════════════════════════════════════════════════════════
+# Main Layout
+# ══════════════════════════════════════════════════════════════
+st.markdown("# 📡 Verea — LoRaWAN Packet Tracer")
+
+# ── Summary metrics bar ──
+if st.session_state.gateways or st.session_state.nodes:
+    mc1, mc2, mc3, mc4 = st.columns(4)
+    n_gw = len(st.session_state.gateways)
+    n_gw_online = sum(1 for g in st.session_state.gateways if g.get("online", True))
+    n_nodes = len(st.session_state.nodes)
+    n_viable = sum(
+        1 for n in st.session_state.nodes
+        if n["name"] in st.session_state.link_results
+        and st.session_state.link_results[n["name"]]["result"].link_viable
+    )
+    mc1.metric("Gateways", f"{n_gw_online}/{n_gw} online")
+    mc2.metric("Nodes", n_nodes)
+    mc3.metric("Viable links", f"{n_viable}/{n_nodes}" if n_nodes else "—")
+
+    # Show elevation source
+    source = "—"
+    if st.session_state.elevation_api:
+        source = st.session_state.elevation_api.source_name
+    mc4.metric("Elevation source", source[:30])
+
+col_map, col_panel = st.columns([3, 2])
+
+# ──────────────────────────────────────────────────────────────
+# Left column: Map + Terrain Chart
+# ──────────────────────────────────────────────────────────────
+with col_map:
+    mode_text = {
+        "gateway": "🏗️ Click map to place Gateway",
+        "sensor": "📱 Click map to place Sensor Node",
+        "weather": "🌤️ Click map to place Weather Station",
+        "move": "✋ Click a device to select it, then click the destination",
+    }
+    st.caption(mode_text.get(st.session_state.placement_mode, ""))
+    cov = st.session_state.coverage
+    if cov and cov["sig"] != coverage_signature(cov["params"]):
+        st.caption("📡 Coverage is outdated (devices or settings changed) — press Compute again.")
+    elif cov:
+        p = cov["params"]
+        st.caption(f"📡 Coverage: SF{p['sf']}, sensor at 1.5 m, up to {p['radius_km']} km — "
+                   "green = signal, red = no signal, dashed area = continuous coverage.")
+
+    sel_nd_for_map = next((n for n in st.session_state.nodes
+                           if n["name"] == st.session_state.selected_node), None)
+    sel_radial = range_along_link(sel_nd_for_map) if sel_nd_for_map else None
+    m = build_map(sel_radial)
 
     # ── Render map and capture clicks ──
     map_data = st_folium(
@@ -856,6 +1026,22 @@ with col_panel:
                 mc9.metric("Fading margin", f"+{r.fading_margin_db:.1f} dB")
                 mc10.metric("Total loss", f"{r.total_path_loss_db:.1f} dB")
 
+                rad = range_along_link(sel_nd)
+                if rad is not None:
+                    st.markdown("**📏 Range in this direction**")
+                    rc1, rc2 = st.columns(2)
+                    more = "≥ " if rad.reaches_end else ""
+                    rc1.metric("Continuous coverage",
+                               f"{'≥ ' if rad.first_dead_spot_m is None else ''}{rad.continuous_range_m / 1000:.2f} km",
+                               help="Distance from the gateway, along the line through this node, "
+                                    "before the first point without signal.")
+                    rc2.metric("Farthest signal", f"{more}{rad.max_range_m / 1000:.2f} km",
+                               help="Last point on this line that still has signal "
+                                    "(e.g. a hilltop past a dead zone).")
+                    st.caption("Shown on the map as the green/red line from the gateway "
+                               f"(checked up to {rad.distances_m[-1] / 1000:.1f} km, "
+                               f"SF{sel_nd.get('sf', 7)}).")
+
                 if not terrain.elevation_source.startswith(("Open-Meteo", "OpenTopoData")):
                     st.error(
                         f"⚠️ No real elevation data for this link ({terrain.elevation_source}). "
@@ -932,8 +1118,6 @@ with col_panel:
 # Recalculate all links
 # ══════════════════════════════════════════════════════════════
 # Auto-recalculate when global RF settings change or a device was moved
-rf_settings = (freq_mhz, propagation_model, diffraction_method, n_terrain_points,
-               margin_threshold, fading_margin)
 settings_changed = st.session_state.get("last_rf_settings") not in (None, rf_settings)
 st.session_state["last_rf_settings"] = rf_settings
 force_recalc = st.session_state.pop("force_recalc", False)
@@ -960,4 +1144,109 @@ if (recalc or settings_changed or force_recalc) and st.session_state.gateways an
             st.session_state.link_results[nd["name"]] = best_analysis
         progress.progress((i + 1) / total, text=f"Analyzed {nd['name']} ({i + 1}/{total})")
     progress.empty()
+    st.rerun()
+
+# ══════════════════════════════════════════════════════════════
+# Report (built on request, offered as a download in the sidebar)
+# ══════════════════════════════════════════════════════════════
+if st.session_state.pop("make_report", False):
+    with st.spinner("Building report…"):
+        m_rep = build_map(fit_all=True)
+        map_doc = m_rep.get_root().render().replace(
+            "</body>",
+            f"<script>window.addEventListener('load', () => {{ window.map = {m_rep.get_name()}; }});</script></body>",
+        )
+        model_name = {"itm": "Longley-Rice (ITM)", "simple": "Simple (FSPL + diffraction)"}[propagation_model]
+        settings_rows = [
+            ("Propagation model", model_name),
+            ("Frequency", f"{freq_mhz} MHz"),
+            ("Diffraction model (simple)", diffraction_method),
+            ("Terrain samples per link", n_terrain_points),
+            ("Min margin threshold", f"{margin_threshold:.1f} dB"),
+            ("Fading margin", f"{fading_margin:.1f} dB"),
+            ("Default environment", environment),
+            ("Elevation data", st.session_state.elevation_api.source_name
+             if st.session_state.elevation_api else "—"),
+        ]
+        cov = st.session_state.coverage
+        if cov and cov["sig"] == coverage_signature(cov["params"]):
+            p = cov["params"]
+            settings_rows.append(("Coverage map", f"SF{p['sf']}, sensor 1.5 m, {p['radius_km']} km, "
+                                                  f"{p['radials']} directions"))
+
+        gateway_rows = [
+            (g["name"], "Online" if g.get("online", True) else "Offline",
+             f"{g['lat']:.6f}", f"{g['lon']:.6f}",
+             g.get("height", DEFAULT_GW_ANTENNA_HEIGHT_M),
+             g.get("gain", DEFAULT_GW_ANTENNA_GAIN_DBI),
+             g.get("tx_power", DEFAULT_GW_TX_POWER_DBM))
+            for g in st.session_state.gateways
+        ]
+
+        node_rows, link_sections = [], []
+        for nd in st.session_state.nodes:
+            link = st.session_state.link_results.get(nd["name"])
+            r = link["result"] if link else None
+            env = nd.get("environment", environment)
+            node_rows.append((
+                nd["name"], "Weather station" if nd.get("type") == "weather" else "Sensor",
+                f"{nd['lat']:.6f}", f"{nd['lon']:.6f}", nd.get("height"), nd.get("tx_power"),
+                nd.get("gain"), f"SF{nd.get('sf', 7)}", env,
+                r.gateway_name if r else "—",
+                f"{r.distance_km:.2f}" if r else "—",
+                f"{r.rx_power_dbm:.1f}" if r else "—",
+                f"{r.link_margin_db:+.1f}" if r else "—",
+                ("Viable" if r.link_viable else "Not viable") if r else "Not calculated",
+            ))
+            if not r:
+                continue
+            rad = range_along_link(nd)
+            link_sections.append({
+                "name": f"{r.gateway_name} → {nd['name']}",
+                "status": "VIABLE" if r.link_viable else "NOT VIABLE",
+                "viable": r.link_viable,
+                "budget_rows": [
+                    ("Distance", f"{r.distance_km:.2f} km"),
+                    ("EIRP (node)", f"{r.eirp_dbm:+.1f} dBm"),
+                    ("Free-space loss", f"{r.fspl_db:.1f} dB"),
+                    ("Terrain loss", f"+{r.terrain_loss_db:.1f} dB ({'ITM' if r.propagation_model == 'itm' else 'knife-edge'})"),
+                    ("Clutter loss", f"+{r.clutter_loss_db:.1f} dB ({env})"),
+                    ("Total path loss", f"{r.total_path_loss_db:.1f} dB"),
+                    ("RX power at gateway", f"{r.rx_power_dbm:.1f} dBm"),
+                    (f"Sensitivity (SF{r.spreading_factor})", f"{r.sensitivity_dbm:.1f} dBm"),
+                    ("Fading margin", f"−{r.fading_margin_db:.1f} dB"),
+                    ("Link margin", f"{r.link_margin_db:+.1f} dB"),
+                    ("SNR", f"{r.snr_db:+.1f} dB (needs {r.snr_required_db:+.1f})"),
+                    ("Fresnel clearance", f"{r.fresnel_min_clearance_pct:.0f}%"),
+                    ("Line of sight", "Obstructed" if r.los_obstructed else "Clear"),
+                ],
+                "profile_html": build_profile_html(
+                    terrain=link["terrain"],
+                    h_tx_asl=link["gw_dev"].antenna_height_asl,
+                    h_rx_asl=link["node_dev"].antenna_height_asl,
+                    los_analysis=link["los_data"],
+                    title=f"{r.gateway_name} → {nd['name']} | {r.distance_km:.2f} km | "
+                          f"SF{r.spreading_factor} | {freq_mhz} MHz",
+                ),
+                "range_text": (
+                    f"Range in this direction: continuous coverage up to "
+                    f"{'≥ ' if rad.first_dead_spot_m is None else ''}{rad.continuous_range_m / 1000:.2f} km, "
+                    f"farthest signal at {'≥ ' if rad.reaches_end else ''}{rad.max_range_m / 1000:.2f} km "
+                    f"(checked up to {rad.distances_m[-1] / 1000:.1f} km)."
+                ) if rad is not None else "",
+            })
+
+        stamp = datetime.now()
+        st.session_state.report_html = {
+            "html": build_report_html(
+                title="Verea — LoRaWAN network report",
+                generated_at=stamp.strftime("%Y-%m-%d %H:%M"),
+                map_html=map_doc,
+                settings=settings_rows,
+                gateway_rows=gateway_rows,
+                node_rows=node_rows,
+                links=link_sections,
+            ),
+            "name": f"verea_report_{stamp:%Y%m%d_%H%M}.html",
+        }
     st.rerun()
