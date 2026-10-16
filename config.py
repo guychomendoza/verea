@@ -69,6 +69,11 @@ ELEVATION_API_URL = "https://api.open-elevation.com/api/v1/lookup"
 # ─── Diffraction / Obstruction ───────────────────────────────
 DEFAULT_DIFFRACTION_METHOD = "dominant_knife_edge"
 
+# ─── Propagation model ───────────────────────────────────────
+# "itm" = Longley-Rice (falls back to "simple" below 1 km)
+# "simple" = FSPL + knife-edge diffraction
+DEFAULT_PROPAGATION_MODEL = "itm"
+
 # ─── Environment Profiles (Clutter Loss per ITU-R P.833 + agricultural) ──
 ENVIRONMENT_PROFILES = {
     "Rural / Open":           {"clutter_loss_db": 0.0,  "description": "Open fields, no obstructions"},

@@ -45,6 +45,7 @@ from config import (
     MIN_FRESNEL_CLEARANCE_PCT,
     REQUIRED_LINK_MARGIN_DB,
     DEFAULT_DIFFRACTION_METHOD,
+    DEFAULT_PROPAGATION_MODEL,
     ENVIRONMENT_PROFILES,
     DEFAULT_FADING_MARGIN_DB,
 )
@@ -91,6 +92,7 @@ defaults = {
     "elevation_api": None,
     "last_processed_click": None,   # Fix #1: track last click to avoid phantoms
     "last_processed_object": None,  # same for marker clicks (device selection)
+    "name_counters": {},            # monotonic per prefix, so deleted names are never reused
 }
 for key, val in defaults.items():
     if key not in st.session_state:
@@ -175,8 +177,20 @@ with st.sidebar:
     st.markdown("### RF parameters")
     freq_mhz = st.selectbox("Frequency (MHz)", [915, 868, 923, 433], index=0)
     freq_hz = freq_mhz * 1e6
+    model_labels = {
+        "itm": "Longley-Rice (ITM)",
+        "simple": "Simple (FSPL + diffraction)",
+    }
+    propagation_model = st.selectbox(
+        "Propagation model",
+        options=list(model_labels),
+        format_func=model_labels.get,
+        index=list(model_labels).index(DEFAULT_PROPAGATION_MODEL),
+        help="ITM models ground reflection and diffraction over multiple ridges "
+             "on the real terrain. Paths under 1 km always use the simple model.",
+    )
     diffraction_method = st.selectbox(
-        "Diffraction model",
+        "Diffraction model (simple)",
         ["dominant_knife_edge", "deygout", "empirical_fresnel"],
         index=0,
     )
@@ -207,6 +221,13 @@ with st.sidebar:
 # ══════════════════════════════════════════════════════════════
 # Analysis helper
 # ══════════════════════════════════════════════════════════════
+def next_device_index(prefix: str) -> int:
+    """Next unused number for a device name prefix (GW, Node, WX)."""
+    counters = st.session_state.name_counters
+    counters[prefix] = counters.get(prefix, 0) + 1
+    return counters[prefix]
+
+
 def run_analysis(gw_info: dict, node_info: dict, node_environment: str = None) -> dict:
     """Run full terrain + link budget analysis for a GW-Node pair."""
     cache_key = (
@@ -288,6 +309,7 @@ def run_analysis(gw_info: dict, node_info: dict, node_environment: str = None) -
         environment=env,
         margin_threshold=margin_threshold,
         fading_margin_db=fading_margin,
+        propagation_model=propagation_model,
     )
 
     # LOS analysis for chart (same direction: GW pos0, Node pos-1)
@@ -508,7 +530,7 @@ with col_map:
                 st.warning("Select a device first (click its name in the right panel)")
 
         elif st.session_state.placement_mode == "gateway":
-            idx = len(st.session_state.gateways) + 1
+            idx = next_device_index("GW")
             new_gw = {
                 "name": f"GW-{idx}",
                 "lat": clat, "lon": clon,
@@ -530,8 +552,8 @@ with col_map:
             if not st.session_state.gateways:
                 st.warning("Place a Gateway first!")
             else:
-                idx = len(st.session_state.nodes) + 1
                 is_weather = st.session_state.placement_mode == "weather"
+                idx = next_device_index("WX" if is_weather else "Node")
                 new_node = {
                     "name": f"{'WX' if is_weather else 'Node'}-{idx}",
                     "lat": clat, "lon": clon,
@@ -820,7 +842,11 @@ with col_panel:
 
                 mc5, mc6 = st.columns(2)
                 mc5.metric("FSPL", f"{r.fspl_db:.1f} dB")
-                mc6.metric("Diffraction", f"+{r.diffraction_loss_db:.1f} dB")
+                mc6.metric("Terrain loss", f"+{r.terrain_loss_db:.1f} dB",
+                           help="Loss over free space caused by the terrain: ground "
+                                "reflection and diffraction over ridges. Model: "
+                                + ("Longley-Rice (ITM)" if r.propagation_model == "itm"
+                                   else "FSPL + knife-edge"))
 
                 mc7, mc8 = st.columns(2)
                 mc7.metric("Fresnel clear.", f"{r.fresnel_min_clearance_pct:.0f}%")
@@ -830,10 +856,16 @@ with col_panel:
                 mc9.metric("Fading margin", f"+{r.fading_margin_db:.1f} dB")
                 mc10.metric("Total loss", f"{r.total_path_loss_db:.1f} dB")
 
+                if not terrain.elevation_source.startswith(("Open-Meteo", "OpenTopoData")):
+                    st.error(
+                        f"⚠️ No real elevation data for this link ({terrain.elevation_source}). "
+                        "Hills and ridges are NOT being considered — press Recalculate to retry."
+                    )
+
                 if r.los_obstructed:
                     st.warning(
-                        f"⚠️ LOS obstructed — diffraction penalty of "
-                        f"{r.diffraction_loss_db:.1f} dB already applied to margin."
+                        f"⚠️ LOS obstructed — terrain loss of "
+                        f"{r.terrain_loss_db:.1f} dB already applied to margin."
                     )
 
                 if r.viability_reasons:
@@ -900,7 +932,8 @@ with col_panel:
 # Recalculate all links
 # ══════════════════════════════════════════════════════════════
 # Auto-recalculate when global RF settings change or a device was moved
-rf_settings = (freq_mhz, diffraction_method, n_terrain_points, margin_threshold, fading_margin)
+rf_settings = (freq_mhz, propagation_model, diffraction_method, n_terrain_points,
+               margin_threshold, fading_margin)
 settings_changed = st.session_state.get("last_rf_settings") not in (None, rf_settings)
 st.session_state["last_rf_settings"] = rf_settings
 force_recalc = st.session_state.pop("force_recalc", False)

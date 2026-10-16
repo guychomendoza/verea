@@ -24,7 +24,7 @@ import numpy as np
 
 from core.devices import Gateway, EndNode
 from core.terrain import TerrainProfile, ElevationAPI
-from core.propagation import fspl, fresnel_obstruction_loss, clutter_loss
+from core.propagation import fspl, fresnel_obstruction_loss, clutter_loss, itm_path_loss
 from config import (
     NOISE_FLOOR_DBM,
     SX1276_SENSITIVITY,
@@ -33,6 +33,7 @@ from config import (
     MIN_FRESNEL_CLEARANCE_PCT,
     DEFAULT_DIFFRACTION_METHOD,
     DEFAULT_FADING_MARGIN_DB,
+    DEFAULT_PROPAGATION_MODEL,
 )
 
 
@@ -80,6 +81,10 @@ class LinkBudgetResult:
     # Gateway info (for multi-GW routing)
     gateway_name: str = ""
 
+    # Loss over free space from terrain/ground (ITM) or knife-edge (simple)
+    terrain_loss_db: float = 0.0
+    propagation_model: str = "simple"
+
     @property
     def distance_km(self) -> float:
         return self.distance_m / 1000
@@ -105,7 +110,7 @@ class LinkBudgetResult:
             f"  Distance:       {self.distance_km:.2f} km",
             f"  Frequency:      {self.frequency_hz/1e6:.1f} MHz",
             f"  FSPL:           {self.fspl_db:.1f} dB",
-            f"  Diffraction:    {self.diffraction_loss_db:+.1f} dB  ({self.diffraction_method})",
+            f"  Terrain loss:   {self.terrain_loss_db:+.1f} dB  ({self.propagation_model})",
             f"  Clutter:        {self.clutter_loss_db:+.1f} dB",
             f"  Total Path Loss:{self.total_path_loss_db:.1f} dB",
             f"",
@@ -142,6 +147,7 @@ def calculate_link_budget(
     environment: str = "Rural / Open",
     margin_threshold: float = 3.0,
     fading_margin_db: float = DEFAULT_FADING_MARGIN_DB,
+    propagation_model: str = DEFAULT_PROPAGATION_MODEL,
 ) -> LinkBudgetResult:
     """
     Full link budget calculation for a Gateway↔EndNode pair.
@@ -192,7 +198,22 @@ def calculate_link_budget(
 
     # Fading margin is a reserve, not a physical loss: it is subtracted from
     # the margins below so predicted RSSI/SNR stay comparable to field readings.
-    total_path_loss = fspl_loss + diffraction_loss_val + env_clutter
+    # ── Terrain loss over free space ──
+    # ITM (default) models ground reflection and multi-obstacle diffraction over
+    # the real profile; the simple model only adds the knife-edge penalty.
+    terrain_loss = diffraction_loss_val
+    model_used = "simple"
+    if propagation_model == "itm":
+        itm_loss = itm_path_loss(
+            terrain.elevations, distance,
+            gateway.antenna.height_m, node.antenna.height_m, freq,
+        )
+        if itm_loss is not None:
+            # Conservative: never better than free space
+            terrain_loss = max(itm_loss - fspl_loss, 0.0)
+            model_used = "itm"
+
+    total_path_loss = fspl_loss + terrain_loss + env_clutter
 
     # ── RX Side ──
     rx_gain = gateway.antenna.gain_dbi
@@ -229,13 +250,13 @@ def calculate_link_budget(
     # LOS obstruction is informational only
     if los_obstructed:
         reasons.append(
-            f"LOS obstructed (diffraction penalty of {diffraction_loss_val:.1f} dB already applied)"
+            f"LOS obstructed (terrain loss of {terrain_loss:.1f} dB already applied, {model_used})"
         )
 
     if fresnel_clearance < MIN_FRESNEL_CLEARANCE_PCT:
         reasons.append(
             f"Fresnel clearance {fresnel_clearance:.0f}% < {MIN_FRESNEL_CLEARANCE_PCT:.0f}% "
-            f"(+{diffraction_loss_val:.1f} dB diffraction penalty applied)"
+            f"(+{terrain_loss:.1f} dB terrain loss applied, {model_used})"
         )
 
     return LinkBudgetResult(
@@ -265,6 +286,8 @@ def calculate_link_budget(
         link_viable=viable,
         viability_reasons=reasons,
         gateway_name=gateway.name,
+        terrain_loss_db=terrain_loss,
+        propagation_model=model_used,
     )
 
 
@@ -275,6 +298,7 @@ def route_to_best_gateway(
     environment: str = "Rural / Open",
     margin_threshold: float = 3.0,
     fading_margin_db: float = DEFAULT_FADING_MARGIN_DB,
+    propagation_model: str = DEFAULT_PROPAGATION_MODEL,
     n_terrain_points: int = 100,
     elevation_api: Optional[ElevationAPI] = None,
 ) -> Optional[LinkBudgetResult]:
@@ -318,6 +342,7 @@ def route_to_best_gateway(
                 environment=environment,
                 margin_threshold=margin_threshold,
                 fading_margin_db=fading_margin_db,
+                propagation_model=propagation_model,
             )
             results.append(result)
         except Exception:

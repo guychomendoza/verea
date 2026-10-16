@@ -80,13 +80,15 @@ def build_profile_html(
         "gw": [float(d_km[0]), float(elev[0]), float(h_tx_asl)],
         "nd": [float(d_km[-1]), float(elev[-1]), float(h_rx_asl)],
         "title": title,
+        # Identifies this GW→Node path so pins survive Streamlit reruns
+        "key": f"{terrain.coordinates[0]}|{terrain.coordinates[-1]}|{n}",
     }
 
     return f"""
 <div id="wrap" style="font-family: system-ui, sans-serif; color:#adb5bd;">
   <div id="chart" style="width:100%; height:{height_px - 34}px;"></div>
   <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; padding:4px 6px;">
-    <span id="hint">Hover the chart to locate the point on the map · click to pin it</span>
+    <span id="hint">Hover to locate the point on the map · click to pin it (click again to remove)</span>
     <button id="clear" style="background:#1a1a2e; color:#adb5bd; border:1px solid #495057;
             border-radius:4px; padding:2px 8px; cursor:pointer;">Clear pins</button>
   </div>
@@ -102,10 +104,10 @@ const traces = [
   {{x: D.x, y: D.elev, name: "Terrain", mode: "lines", fill: "tonexty",
     fillcolor: "rgba(45,106,79,0.5)", line: {{color: "#40916c", width: 1.5}},
     customdata: custom,
-    hovertemplate: "<b>%{{x:.3f}} km</b><br>Ground: %{{y:.1f}} m ASL" +
-                   "<br>Slope: %{{customdata[3]:+.1f}}%" +
-                   "<br>Fresnel clearance: %{{customdata[2]:.1f}} m" +
-                   "<br>%{{customdata[0]:.6f}}, %{{customdata[1]:.6f}}<extra></extra>"}},
+    hovertemplate: "<b>%{{x:.2f}} km</b> · %{{y:.0f}} m<br>" +
+                   "slope %{{customdata[3]:+.1f}}% · Fresnel %{{customdata[2]:.0f}} m<br>" +
+                   "<span style='font-size:10px'>%{{customdata[0]:.5f}}, %{{customdata[1]:.5f}}</span>" +
+                   "<extra></extra>"}},
   {{x: D.x, y: D.eff, name: "Eff. terrain (k=4/3)", mode: "lines",
     line: {{color: "#95d5b2", width: 1, dash: "dash"}}, hoverinfo: "skip"}},
   {{x: D.x, y: D.fr_lo, mode: "lines", line: {{color: "rgba(255,209,102,0.5)", width: 0.5}},
@@ -121,7 +123,12 @@ const traces = [
     line: {{color: "#118ab2", width: 3}}, marker: {{symbol: "square", size: [0, 10]}}, hoverinfo: "skip"}},
   {{x: [D.nd[0], D.nd[0]], y: [D.nd[1], D.nd[2]], name: "Node", mode: "lines+markers",
     line: {{color: "#06d6a0", width: 3}}, marker: {{symbol: "square", size: [0, 10]}}, hoverinfo: "skip"}},
+  {{x: [], y: [], text: [], name: "Pins", mode: "markers+text", showlegend: false,
+    textposition: "top center", textfont: {{size: 10, color: "#ffffff"}},
+    marker: {{color: "#ef476f", size: 9, line: {{color: "#ffffff", width: 1.5}}}}, hoverinfo: "skip"}},
 ];
+const PIN_TRACE = traces.length - 1;
+const TERRAIN_TRACE = 1;
 
 const layout = {{
   title: {{text: D.title, font: {{color: "#e9ecef", size: 14}}}},
@@ -129,6 +136,7 @@ const layout = {{
   font: {{color: "#adb5bd"}},
   margin: {{l: 60, r: 20, t: 40, b: 80}},
   hovermode: "x",
+  hoverlabel: {{font: {{size: 11, color: "#e9ecef"}}, bgcolor: "#1a1d24", bordercolor: "#495057"}},
   xaxis: {{title: "Distance (km)", range: [D.x[0], D.x[D.x.length - 1]], gridcolor: "#262b33",
           showspikes: true, spikemode: "across", spikecolor: "#ffd166", spikethickness: 1, spikedash: "solid"}},
   yaxis: {{title: "Elevation (m ASL)", range: D.y_range, gridcolor: "#262b33"}},
@@ -152,7 +160,51 @@ function mainMap() {{
 }}
 
 let cursor = null;
-const pins = [];
+
+// Pins are stored as profile indices in the parent window, keyed by path,
+// so chart and map stay in sync across Streamlit reruns.
+const store = (() => {{
+  try {{ return (window.parent.__vereaPins = window.parent.__vereaPins || {{}}); }}
+  catch (e) {{ return {{}}; }}
+}})();
+const pins = (store[D.key] = store[D.key] || []);
+
+function pinLabel(i) {{
+  return `${{D.x[i].toFixed(2)}} km · ${{D.elev[i].toFixed(0)}} m · slope ${{D.slope[i] >= 0 ? "+" : ""}}${{D.slope[i].toFixed(1)}}%`;
+}}
+
+function pinIcon(w, n) {{
+  return w.L.divIcon({{
+    className: "",
+    iconSize: [18, 18], iconAnchor: [9, 9],
+    html: `<div style="width:18px;height:18px;border-radius:50%;background:#ef476f;
+           border:2px solid #fff;color:#fff;font:600 10px/14px system-ui,sans-serif;
+           text-align:center;box-sizing:border-box;box-shadow:0 1px 3px rgba(0,0,0,.5)">${{n}}</div>`,
+  }});
+}}
+
+function syncPins() {{
+  // Chart
+  Plotly.restyle(chart, {{
+    x: [pins.map(i => D.x[i])],
+    y: [pins.map(i => D.elev[i])],
+    text: [pins.map((_, k) => String(k + 1))],
+  }}, [PIN_TRACE]);
+
+  // Map
+  const w = mainMap();
+  if (!w) return;
+  if (w.map.__vereaPins) w.map.__vereaPins.remove();
+  const layer = w.L.layerGroup().addTo(w.map);
+  w.map.__vereaPins = layer;
+  pins.forEach((i, k) => {{
+    w.L.marker(D.coords[i], {{icon: pinIcon(w, k + 1)}})
+      .bindTooltip(`<span style="font-size:11px">${{k + 1}} · ${{pinLabel(i)}}</span>`, {{direction: "top", offset: [0, -8]}})
+      .on("mouseover", () => Plotly.Fx.hover(chart, [{{curveNumber: TERRAIN_TRACE, pointNumber: i}}]))
+      .on("mouseout", () => Plotly.Fx.unhover(chart))
+      .addTo(layer);
+  }});
+}}
 
 function pointIndex(ev) {{
   const p = ev.points.find(p => p.data.name === "Terrain") || ev.points[0];
@@ -171,6 +223,8 @@ chart.on("plotly_hover", ev => {{
   }} else {{
     cursor.setLatLng(ll);
   }}
+  // Map was re-rendered by Streamlit: restore pins
+  if (pins.length && w.map.__vereaPins === undefined) syncPins();
 }});
 
 chart.on("plotly_unhover", () => {{
@@ -179,20 +233,23 @@ chart.on("plotly_unhover", () => {{
 
 chart.on("plotly_click", ev => {{
   const i = pointIndex(ev);
+  if (i === null) return;
+  // Clicking near an existing pin removes it; otherwise add a new one
+  const tol = Math.max(1, Math.round(D.x.length / 100));
+  const k = pins.findIndex(p => Math.abs(p - i) <= tol);
+  if (k >= 0) pins.splice(k, 1); else pins.push(i);
+  syncPins();
   const w = mainMap();
-  if (i === null || !w) return;
-  const ll = D.coords[i];
-  const label = `${{D.x[i].toFixed(3)}} km · ${{D.elev[i].toFixed(0)}} m · slope ${{D.slope[i].toFixed(1)}}%`;
-  const pin = w.L.circleMarker(ll, {{radius: 6, color: "#ffffff", weight: 2,
-    fillColor: "#ef476f", fillOpacity: 1}}).bindTooltip(label, {{permanent: true, direction: "top"}}).addTo(w.map);
-  pins.push(pin);
-  if (!w.map.getBounds().contains(ll)) w.map.panTo(ll);
+  if (k < 0 && w && !w.map.getBounds().contains(D.coords[i])) w.map.panTo(D.coords[i]);
 }});
 
 document.getElementById("clear").onclick = () => {{
-  pins.forEach(p => p.remove());
   pins.length = 0;
+  syncPins();
 }};
+
+syncPins();
+setTimeout(syncPins, 1500);   // map iframe may finish loading after the chart
 
 setTimeout(() => {{
   if (!mainMap()) document.getElementById("hint").textContent =

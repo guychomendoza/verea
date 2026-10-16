@@ -350,3 +350,53 @@ class TestRF:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ═══════════════════════════════════════════════════════════════
+# Longley-Rice (ITM)
+# ═══════════════════════════════════════════════════════════════
+class TestITM:
+    """ITM must be more pessimistic than free space on long, low-antenna paths."""
+
+    def _terrain(self, distance_m, elevations):
+        from utils.geo import interpolate_coordinates
+        n = len(elevations)
+        lat2 = 21.0 + distance_m / 111_320
+        return TerrainProfile(
+            lat1=21.0, lon1=-102.0, lat2=lat2, lon2=-102.0,
+            elevations=np.asarray(elevations, dtype=float),
+            distances=np.linspace(0, distance_m, n),
+            coordinates=interpolate_coordinates(21.0, -102.0, lat2, -102.0, n),
+            n_points=n,
+        )
+
+    def test_itm_short_path_falls_back(self):
+        from core.propagation import itm_path_loss
+        assert itm_path_loss(np.full(50, 1500.0), 800, 10, 1.5, 915e6) is None
+
+    def test_itm_long_flat_path_exceeds_fspl(self):
+        """20 km over flat ground with a 1.5 m node: ground reflection adds >15 dB."""
+        from core.propagation import itm_path_loss
+        loss = itm_path_loss(np.full(100, 1500.0), 20_000, 10, 1.5, 915e6)
+        assert loss is not None
+        assert loss > fspl(20_000, 915e6) + 15
+
+    def test_itm_mountain_worse_than_flat(self):
+        from core.propagation import itm_path_loss
+        flat = np.full(100, 1500.0)
+        ridge = flat.copy()
+        ridge[40:60] += 400 * np.sin(np.linspace(0, np.pi, 20))
+        l_flat = itm_path_loss(flat, 15_000, 10, 1.5, 915e6)
+        l_ridge = itm_path_loss(ridge, 15_000, 10, 1.5, 915e6)
+        assert l_ridge > l_flat + 10
+
+    def test_link_budget_uses_itm_by_default(self):
+        gw = Gateway(altitude_m=1500.0)
+        node = EndNode(altitude_m=1500.0)
+        terrain = self._terrain(18_000, np.full(100, 1500.0))
+        r_itm = calculate_link_budget(gw, node, terrain, fading_margin_db=0.0)
+        r_simple = calculate_link_budget(gw, node, terrain, fading_margin_db=0.0,
+                                         propagation_model="simple")
+        assert r_itm.propagation_model == "itm"
+        assert r_simple.propagation_model == "simple"
+        assert r_itm.total_path_loss_db > r_simple.total_path_loss_db + 15
