@@ -49,6 +49,8 @@ from config import (
     DEFAULT_PROPAGATION_MODEL,
     ENVIRONMENT_PROFILES,
     DEFAULT_FADING_MARGIN_DB,
+    US915_UPLINK_SF,
+    clamp_sf,
 )
 from core.devices import Gateway, EndNode, WeatherStation, Antenna
 from core.terrain import TerrainProfile, ElevationAPI
@@ -213,7 +215,7 @@ with st.sidebar:
     # ── Coverage ──
     st.markdown("### Coverage")
     cov_sf = st.selectbox(
-        "Sensor SF", [7, 8, 9, 10], index=3,
+        "Sensor SF", list(US915_UPLINK_SF), index=len(US915_UPLINK_SF) - 1,
         help="Spreading factor of the sensor used for the coverage map. US915 uplinks "
              "on 125 kHz channels allow SF7–SF10; SF10 reaches the farthest.",
     )
@@ -296,7 +298,7 @@ def node_device(node_info: dict) -> EndNode:
             name=node_info["name"],
             lat=node_info["lat"], lon=node_info["lon"],
             tx_power_dbm=node_info.get("tx_power", 19),
-            spreading_factor=node_info.get("sf", 10),
+            spreading_factor=clamp_sf(node_info.get("sf", 10)),
             antenna=Antenna(
                 gain_dbi=node_info.get("gain", 2.0),
                 height_m=node_info.get("height", 3.0),
@@ -309,7 +311,7 @@ def node_device(node_info: dict) -> EndNode:
             name=node_info["name"],
             lat=node_info["lat"], lon=node_info["lon"],
             tx_power_dbm=node_info.get("tx_power", DEFAULT_TX_POWER_DBM),
-            spreading_factor=node_info.get("sf", 7),
+            spreading_factor=clamp_sf(node_info.get("sf", 7)),
             antenna=Antenna(
                 gain_dbi=node_info.get("gain", DEFAULT_NODE_ANTENNA_GAIN_DBI),
                 height_m=node_info.get("height", 1.5),
@@ -917,8 +919,10 @@ with col_panel:
                                            key=f"prop_gain_{prop_sig}")
             with p6:
                 new_sf = st.selectbox("Spreading factor",
-                                      options=list(range(7, 13)),
-                                      index=sel_nd.get("sf", 7) - 7,
+                                      options=list(US915_UPLINK_SF),
+                                      index=US915_UPLINK_SF.index(clamp_sf(sel_nd.get("sf", 7))),
+                                      help="US915 uplinks allow SF7–SF10 (125 kHz). "
+                                           "Higher SF = more range, slower and longer airtime.",
                                       key=f"prop_sf_{prop_sig}")
 
             # Fix #3: per-node environment selector
@@ -1040,7 +1044,7 @@ with col_panel:
                                     "(e.g. a hilltop past a dead zone).")
                     st.caption("Shown on the map as the green/red line from the gateway "
                                f"(checked up to {rad.distances_m[-1] / 1000:.1f} km, "
-                               f"SF{sel_nd.get('sf', 7)}).")
+                               f"SF{clamp_sf(sel_nd.get('sf', 7))}).")
 
                 if not terrain.elevation_source.startswith(("Open-Meteo", "OpenTopoData")):
                     st.error(
@@ -1061,7 +1065,7 @@ with col_panel:
                 # ── SF comparison table ──
                 with st.expander("📊 SF comparison"):
                     sf_rows = []
-                    for sf_val in range(7, 13):
+                    for sf_val in US915_UPLINK_SF:
                         nd_copy = {**sel_nd, "sf": sf_val}
                         # Use first online gateway for comparison
                         best_gw = next(
@@ -1191,7 +1195,7 @@ if st.session_state.pop("make_report", False):
             node_rows.append((
                 nd["name"], "Weather station" if nd.get("type") == "weather" else "Sensor",
                 f"{nd['lat']:.6f}", f"{nd['lon']:.6f}", nd.get("height"), nd.get("tx_power"),
-                nd.get("gain"), f"SF{nd.get('sf', 7)}", env,
+                nd.get("gain"), f"SF{clamp_sf(nd.get('sf', 7))}", env,
                 r.gateway_name if r else "—",
                 f"{r.distance_km:.2f}" if r else "—",
                 f"{r.rx_power_dbm:.1f}" if r else "—",

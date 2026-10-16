@@ -30,6 +30,21 @@ SX1276_SENSITIVITY = {
     12: -137.0,
 }
 
+# ─── US915 uplink spreading factors ─────────────────────────
+# US915 uplinks on 125 kHz channels are DR0–DR3 = SF10–SF7 (dwell time
+# limits SF11/SF12 out). SF11/12 stay in the tables above for reference only.
+US915_UPLINK_SF = (7, 8, 9, 10)
+
+
+def clamp_sf(sf) -> int:
+    """Nearest allowed US915 uplink SF (older saved nodes may carry SF11/12)."""
+    try:
+        sf = int(sf)
+    except (TypeError, ValueError):
+        return US915_UPLINK_SF[0]
+    return min(max(sf, US915_UPLINK_SF[0]), US915_UPLINK_SF[-1])
+
+
 # ─── SX1276 Data Rates (BW=125kHz, CR=4/5) ──────────────────
 SX1276_DATARATE_BPS = {
     7:  5470,

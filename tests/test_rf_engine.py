@@ -441,3 +441,25 @@ class TestCoverage:
         r_flat = self._flat_radial(flat)
         r_ridge = self._flat_radial(ridge)
         assert r_ridge.continuous_range_m < r_flat.continuous_range_m
+
+
+class TestUS915SpreadingFactor:
+    def test_allowed_sfs(self):
+        from config import US915_UPLINK_SF
+        assert US915_UPLINK_SF == (7, 8, 9, 10)
+
+    def test_set_sf_rejects_11_and_12(self):
+        node = EndNode()
+        node.set_spreading_factor(10)
+        assert node.spreading_factor == 10
+        for sf in (6, 11, 12):
+            with pytest.raises(ValueError):
+                node.set_spreading_factor(sf)
+
+    def test_clamp_sf(self):
+        from config import clamp_sf
+        assert clamp_sf(12) == 10
+        assert clamp_sf(11) == 10
+        assert clamp_sf(5) == 7
+        assert clamp_sf(9) == 9
+        assert clamp_sf(None) == 7

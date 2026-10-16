@@ -23,6 +23,7 @@ from config import (
     DEFAULT_CABLE_LOSS_DB,
     SX1276_SENSITIVITY,
     SX1276_DATARATE_BPS,
+    US915_UPLINK_SF,
 )
 
 
@@ -126,8 +127,8 @@ class EndNode:
 
     def set_spreading_factor(self, sf: int) -> None:
         """Update spreading factor with validation."""
-        if sf not in range(7, 13):
-            raise ValueError(f"SF must be 7-12, got {sf}")
+        if sf not in US915_UPLINK_SF:
+            raise ValueError(f"US915 uplink SF must be 7-10, got {sf}")
         self.spreading_factor = sf
 
 
