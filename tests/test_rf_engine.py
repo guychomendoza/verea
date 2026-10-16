@@ -228,8 +228,8 @@ class TestLinkBudget:
         delta = result_urban.total_path_loss_db - result_rural.total_path_loss_db
         assert abs(delta - 18.0) < 1.0, f"Urban adds {delta:.1f} dB (expected ~18)"
 
-    def test_fading_margin_increases_path_loss(self):
-        """Fading margin should increase total path loss."""
+    def test_fading_margin_reduces_margin_only(self):
+        """Fading margin reduces link margin but not predicted RSSI/SNR."""
         gw = Gateway(altitude_m=1500.0)
         node = EndNode(altitude_m=1500.0)
         terrain = self._make_flat_terrain(1000)
@@ -237,8 +237,11 @@ class TestLinkBudget:
         r_no_fading = calculate_link_budget(gw, node, terrain, fading_margin_db=0.0)
         r_with_fading = calculate_link_budget(gw, node, terrain, fading_margin_db=8.0)
 
-        delta = r_with_fading.total_path_loss_db - r_no_fading.total_path_loss_db
-        assert abs(delta - 8.0) < 0.1, f"Fading adds {delta:.1f} dB (expected 8.0)"
+        assert r_with_fading.total_path_loss_db == r_no_fading.total_path_loss_db
+        assert r_with_fading.rx_power_dbm == r_no_fading.rx_power_dbm
+        assert r_with_fading.snr_db == r_no_fading.snr_db
+        delta = r_no_fading.link_margin_db - r_with_fading.link_margin_db
+        assert abs(delta - 8.0) < 0.1, f"Fading reduces margin by {delta:.1f} dB (expected 8.0)"
         assert r_with_fading.fading_margin_db == 8.0
 
     def test_milpa_clutter(self):

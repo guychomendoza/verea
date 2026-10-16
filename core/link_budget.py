@@ -190,7 +190,9 @@ def calculate_link_budget(
         method=diffraction_method,
     )
 
-    total_path_loss = fspl_loss + diffraction_loss_val + env_clutter + fading_margin_db
+    # Fading margin is a reserve, not a physical loss: it is subtracted from
+    # the margins below so predicted RSSI/SNR stay comparable to field readings.
+    total_path_loss = fspl_loss + diffraction_loss_val + env_clutter
 
     # ── RX Side ──
     rx_gain = gateway.antenna.gain_dbi
@@ -202,7 +204,7 @@ def calculate_link_budget(
     snr_required = SNR_REQUIREMENTS.get(sf, -7.5)
 
     # ── Margins ──
-    link_margin = rx_power - sensitivity
+    link_margin = rx_power - sensitivity - fading_margin_db
     snr = rx_power - NOISE_FLOOR_DBM
 
     # ── Viability Determination ──
@@ -217,10 +219,11 @@ def calculate_link_budget(
             f"Insufficient margin: {link_margin:.1f} dB < {margin_threshold:.1f} dB threshold"
         )
 
-    if snr < snr_required:
+    if snr - fading_margin_db < snr_required:
         viable = False
         reasons.append(
-            f"SNR too low: {snr:.1f} dB < {snr_required:.1f} dB for SF{sf}"
+            f"SNR too low: {snr:.1f} dB - {fading_margin_db:.1f} dB fading "
+            f"< {snr_required:.1f} dB for SF{sf}"
         )
 
     # LOS obstruction is informational only

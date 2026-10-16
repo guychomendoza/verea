@@ -159,6 +159,8 @@ with st.sidebar:
         "Clutter profile",
         options=list(ENVIRONMENT_PROFILES.keys()),
         index=0,
+        help="Default for NEW nodes. Each existing node keeps its own environment "
+             "(edit it in the right panel).",
     )
     env_info = ENVIRONMENT_PROFILES[environment]
     st.caption(f"{env_info['description']} (+{env_info['clutter_loss_db']:.0f} dB)")
@@ -474,6 +476,7 @@ with col_map:
                         st.session_state.terrain_cache = {}
                         moved = True
             if moved:
+                st.session_state["force_recalc"] = True
                 st.rerun()
             else:
                 st.warning("Select a device first (click its name in the right panel)")
@@ -862,8 +865,15 @@ with col_panel:
 # ══════════════════════════════════════════════════════════════
 # Recalculate all links
 # ══════════════════════════════════════════════════════════════
-if recalc and st.session_state.gateways and st.session_state.nodes:
-    st.session_state.terrain_cache = {}
+# Auto-recalculate when global RF settings change or a device was moved
+rf_settings = (freq_mhz, diffraction_method, n_terrain_points, margin_threshold, fading_margin)
+settings_changed = st.session_state.get("last_rf_settings") not in (None, rf_settings)
+st.session_state["last_rf_settings"] = rf_settings
+force_recalc = st.session_state.pop("force_recalc", False)
+
+if (recalc or settings_changed or force_recalc) and st.session_state.gateways and st.session_state.nodes:
+    if recalc:
+        st.session_state.terrain_cache = {}
     st.session_state.link_results = {}
     progress = st.progress(0, text="Recalculating links...")
     total = len(st.session_state.nodes)
