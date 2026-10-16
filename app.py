@@ -26,6 +26,7 @@ import numpy as np
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
+import streamlit.components.v1 as components
 
 from config import (
     DEFAULT_FREQUENCY_HZ,
@@ -51,7 +52,8 @@ from core.devices import Gateway, EndNode, WeatherStation, Antenna
 from core.terrain import TerrainProfile, ElevationAPI
 from core.link_budget import calculate_link_budget, route_to_best_gateway
 from core.propagation import fspl, max_fresnel_radius
-from ui.profile_chart import plot_terrain_profile, get_elevation_summary
+from ui.profile_chart import get_elevation_summary
+from ui.profile_interactive import build_profile_html
 from utils.geo import haversine
 
 # ══════════════════════════════════════════════════════════════
@@ -88,6 +90,7 @@ defaults = {
     "terrain_cache": {},
     "elevation_api": None,
     "last_processed_click": None,   # Fix #1: track last click to avoid phantoms
+    "last_processed_object": None,  # same for marker clicks (device selection)
 }
 for key, val in defaults.items():
     if key not in st.session_state:
@@ -149,7 +152,8 @@ with st.sidebar:
     )
     st.session_state.placement_mode = mode
     if mode == "move":
-        st.caption("Select a device in the right panel, then click the map to move it.")
+        st.caption("Click a device on the map (or in the right panel) to select it, "
+                   "then click the destination on the map.")
 
     st.divider()
 
@@ -339,7 +343,7 @@ with col_map:
         "gateway": "🏗️ Click map to place Gateway",
         "sensor": "📱 Click map to place Sensor Node",
         "weather": "🌤️ Click map to place Weather Station",
-        "move": "✋ Click map to move selected device",
+        "move": "✋ Click a device to select it, then click the destination",
     }
     st.caption(mode_text.get(st.session_state.placement_mode, ""))
 
@@ -434,9 +438,31 @@ with col_map:
     # ── Render map and capture clicks ──
     map_data = st_folium(
         m, width=None, height=520,
-        returned_objects=["last_clicked"],
+        returned_objects=["last_clicked", "last_object_clicked"],
         key="main_map",
     )
+
+    # ── Handle marker click: select the device under it ──
+    obj = map_data.get("last_object_clicked") if map_data else None
+    if obj:
+        obj_id = (round(obj["lat"], 8), round(obj["lng"], 8))
+        if obj_id != st.session_state.last_processed_object:
+            st.session_state.last_processed_object = obj_id
+            devices = [("node", n) for n in st.session_state.nodes] + \
+                      [("gateway", g) for g in st.session_state.gateways]
+            hit = min(
+                devices,
+                key=lambda d: (d[1]["lat"] - obj["lat"]) ** 2 + (d[1]["lon"] - obj["lng"]) ** 2,
+                default=None,
+            )
+            if hit and abs(hit[1]["lat"] - obj["lat"]) < 1e-6 and abs(hit[1]["lon"] - obj["lng"]) < 1e-6:
+                if hit[0] == "node":
+                    st.session_state.selected_node = hit[1]["name"]
+                    st.session_state.selected_gateway = None
+                else:
+                    st.session_state.selected_gateway = hit[1]["name"]
+                    st.session_state.selected_node = None
+                st.rerun()
 
     # ── Handle map click (Fix #1: ghost click prevention) ──
     if map_data and map_data.get("last_clicked"):
@@ -547,19 +573,19 @@ with col_map:
         gw_dev = analysis["gw_dev"]
         node_dev = analysis["node_dev"]
 
-        fig = plot_terrain_profile(
-            terrain=terrain,
-            h_tx_asl=gw_dev.antenna_height_asl,
-            h_rx_asl=node_dev.antenna_height_asl,
-            freq_hz=freq_hz,
-            los_analysis=los_data,
-            title=(
-                f"{r.gateway_name} → {selected_node_name} | "
-                f"{r.distance_km:.2f} km | SF{r.spreading_factor} | {freq_mhz} MHz"
+        components.html(
+            build_profile_html(
+                terrain=terrain,
+                h_tx_asl=gw_dev.antenna_height_asl,
+                h_rx_asl=node_dev.antenna_height_asl,
+                los_analysis=los_data,
+                title=(
+                    f"{r.gateway_name} → {selected_node_name} | "
+                    f"{r.distance_km:.2f} km | SF{r.spreading_factor} | {freq_mhz} MHz"
+                ),
             ),
-            figsize=(10, 4),
+            height=430,
         )
-        st.pyplot(fig)
 
         # ── Elevation summary below chart ──
         elev = get_elevation_summary(
@@ -666,34 +692,42 @@ with col_panel:
         if sel_nd:
             st.markdown(f"### ⚙️ {sel_nd['name']} properties")
 
+            # Widget keys depend on the node's stored values: switching nodes, moving
+            # or applying changes renders fresh widgets instead of reusing stale state.
+            prop_sig = abs(hash((
+                sel_nd["name"], sel_nd["lat"], sel_nd["lon"], sel_nd.get("height"),
+                sel_nd.get("tx_power"), sel_nd.get("gain"), sel_nd.get("sf"),
+                sel_nd.get("environment"),
+            )))
+
             p1, p2 = st.columns(2)
             with p1:
                 new_lat = st.number_input("Latitude", value=sel_nd["lat"],
-                                          format="%.6f", key="prop_lat")
+                                          format="%.6f", key=f"prop_lat_{prop_sig}")
             with p2:
                 new_lon = st.number_input("Longitude", value=sel_nd["lon"],
-                                          format="%.6f", key="prop_lon")
+                                          format="%.6f", key=f"prop_lon_{prop_sig}")
 
             p3, p4 = st.columns(2)
             with p3:
                 new_height = st.number_input("Height AGL (m)", value=sel_nd.get("height", 1.5),
                                              min_value=0.5, max_value=30.0, step=0.5,
-                                             key="prop_height")
+                                             key=f"prop_height_{prop_sig}")
             with p4:
                 new_tx = st.number_input("TX power (dBm)", value=sel_nd.get("tx_power", 14),
-                                         min_value=2, max_value=20, key="prop_tx")
+                                         min_value=2, max_value=20, key=f"prop_tx_{prop_sig}")
 
             p5, p6 = st.columns(2)
             with p5:
                 new_gain = st.number_input("Antenna gain (dBi)",
                                            value=sel_nd.get("gain", DEFAULT_NODE_ANTENNA_GAIN_DBI),
                                            min_value=0.0, max_value=10.0, step=0.5,
-                                           key="prop_gain")
+                                           key=f"prop_gain_{prop_sig}")
             with p6:
                 new_sf = st.selectbox("Spreading factor",
                                       options=list(range(7, 13)),
                                       index=sel_nd.get("sf", 7) - 7,
-                                      key="prop_sf")
+                                      key=f"prop_sf_{prop_sig}")
 
             # Fix #3: per-node environment selector
             env_options = list(ENVIRONMENT_PROFILES.keys())
@@ -703,7 +737,7 @@ with col_panel:
                 "Environment / Clutter",
                 options=env_options,
                 index=env_idx,
-                key="prop_env",
+                key=f"prop_env_{prop_sig}",
                 help=ENVIRONMENT_PROFILES[env_options[env_idx]]["description"],
             )
 
