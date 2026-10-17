@@ -41,6 +41,11 @@ GLOSSARY = [
      "airtime. US915 uplinks allow SF7–SF10."),
     ("Fresnel clearance", "How much of the zone around the line of sight is free of terrain. "
      "Below 60% the signal starts losing power; negative means the line of sight is blocked."),
+    ("Device models", "Gateway and node values come from the manufacturers' datasheets. "
+     "Where a value is not published (mostly antenna gains) a typical figure is used; "
+     "these are refined with real RSSI readings from the network."),
+    ("Cellular nodes", "4G sensors (NB-IoT / LTE-M) send data over the cell network, not "
+     "through a LoRaWAN gateway, so they have no LoRa link budget."),
     ("Continuous coverage / farthest signal", "Along the gateway→node direction: distance "
      "before the first point without signal, and the last point that still has signal."),
 ]
@@ -54,6 +59,7 @@ def build_report_html(
     gateway_rows: list,
     node_rows: list,
     links: list,
+    description: str = "",
 ) -> str:
     """
     links: list of dicts with keys name, status, viable, budget_rows, profile_html, range_text.
@@ -90,6 +96,7 @@ def build_report_html(
   h2 {{ margin:32px 0 10px; font-size:18px; border-bottom:1px solid var(--line); padding-bottom:6px; }}
   h3 {{ margin:0 0 10px; font-size:16px; }}
   .meta {{ color:var(--muted); margin:0 0 16px; }}
+  .desc {{ margin:4px 0 8px; white-space:pre-line; }}
   iframe {{ width:100%; border:1px solid var(--line); border-radius:6px; }}
   .tbl {{ overflow-x:auto; }}
   table {{ border-collapse:collapse; width:100%; font-size:13px; }}
@@ -107,6 +114,7 @@ def build_report_html(
 </head>
 <body>
   <h1>{_esc(title)}</h1>
+  {f'<p class="desc">{_esc(description)}</p>' if description else ""}
   <p class="meta">Generated {_esc(generated_at)} with Verea — LoRaWAN Packet Tracer</p>
 
   <h2>Map</h2>
@@ -117,10 +125,11 @@ def build_report_html(
   {_table(["Setting", "Value"], settings)}
 
   <h2>Gateways</h2>
-  {_table(["Name", "Status", "Latitude", "Longitude", "Height AGL (m)", "Gain (dBi)", "TX (dBm)"], gateway_rows)}
+  {_table(["Name", "Model", "Status", "Latitude", "Longitude", "Height AGL (m)", "Gain (dBi)",
+           "Cable loss (dB)", "TX (dBm)"], gateway_rows)}
 
   <h2>Nodes</h2>
-  {_table(["Name", "Type", "Latitude", "Longitude", "Height AGL (m)", "TX (dBm)", "Gain (dBi)",
+  {_table(["Name", "Model", "Latitude", "Longitude", "Height AGL (m)", "TX (dBm)", "Gain (dBi)",
            "SF", "Environment", "Gateway", "Distance (km)", "RX (dBm)", "Margin (dB)", "Status"], node_rows)}
 
   <h2>Links</h2>

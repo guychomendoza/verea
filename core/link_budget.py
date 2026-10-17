@@ -221,7 +221,8 @@ def calculate_link_budget(
     rx_power = eirp - total_path_loss + rx_gain - rx_cable_loss
 
     sf = node.spreading_factor
-    sensitivity = SX1276_SENSITIVITY.get(sf, -123.0)
+    sens_table = gateway.sensitivity or SX1276_SENSITIVITY
+    sensitivity = sens_table.get(sf, SX1276_SENSITIVITY.get(sf, -123.0))
     snr_required = SNR_REQUIREMENTS.get(sf, -7.5)
 
     # ── Margins ──

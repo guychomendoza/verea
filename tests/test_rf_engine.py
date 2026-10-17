@@ -145,7 +145,7 @@ class TestDevices:
         gw = Gateway()
         assert gw.tx_power_dbm == 27.0
         assert gw.antenna.gain_dbi == 6.0
-        assert gw.antenna.height_m == 10.0
+        assert gw.antenna.height_m == 2.5
         assert gw.online is True
 
     def test_gateway_offline(self):
@@ -437,7 +437,7 @@ class TestCoverage:
     def test_ridge_cuts_continuous_range(self):
         flat = np.full(100, 1500.0)
         ridge = flat.copy()
-        ridge[20:26] += 300
+        ridge[8:12] += 300
         r_flat = self._flat_radial(flat)
         r_ridge = self._flat_radial(ridge)
         assert r_ridge.continuous_range_m < r_flat.continuous_range_m
@@ -463,3 +463,66 @@ class TestUS915SpreadingFactor:
         assert clamp_sf(5) == 7
         assert clamp_sf(9) == 9
         assert clamp_sf(None) == 7
+
+
+class TestProfiles:
+    def test_profiles_complete(self):
+        from core.profiles import GATEWAY_PROFILES, NODE_PROFILES
+        for p in GATEWAY_PROFILES.values():
+            assert {"label", "tx_power", "gain", "cable_loss", "height", "sensitivity",
+                    "source", "estimated"} <= p.keys()
+            assert set(p["estimated"]) <= p.keys()
+        for p in NODE_PROFILES.values():
+            assert {"label", "type", "link", "tx_power", "gain", "cable_loss", "height", "sf",
+                    "source", "estimated"} <= p.keys()
+            assert p["link"] in ("lora", "cellular")
+
+    def test_cellular_and_legacy_nodes(self):
+        from core.profiles import is_cellular, new_node, node_profile
+        assert is_cellular(new_node("4G-1", 0, 0, "dragino_se0x_cs", "Rural / Open"))
+        assert not is_cellular(new_node("Node-1", 0, 0, "dragino_lse01", "Rural / Open"))
+        # nodes saved before profiles existed
+        assert node_profile({"type": "weather"})["label"].startswith("SenseCAP S2120")
+        assert not is_cellular({"type": "sensor"})
+
+    def test_gateway_sensitivity_used(self):
+        from config import SX1302_SENSITIVITY
+        terrain = TerrainProfile.from_manual_elevations(21.0, -102.0, 21.02, -102.0,
+                                                        np.full(50, 1500.0))
+        node = EndNode(spreading_factor=10)
+        plain = calculate_link_budget(Gateway(), node, terrain)
+        sx1302 = calculate_link_budget(Gateway(sensitivity=SX1302_SENSITIVITY), node, terrain)
+        assert plain.sensitivity_dbm == -132.0
+        assert sx1302.sensitivity_dbm == -134.0
+        assert sx1302.link_margin_db == pytest.approx(plain.link_margin_db + 2.0)
+
+
+class TestProject:
+    def test_round_trip(self):
+        import json
+        from core.profiles import new_gateway, new_node
+        from core.project import project_to_dict, project_from_dict
+        gws = [new_gateway("GW-1", 19.7, -103.5, "sensecap_m2")]
+        nodes = [new_node("Node-1", 19.71, -103.5, "dragino_se0x_lb", "Cultivo bajo"),
+                 new_node("4G-1", 19.72, -103.5, "dragino_se0x_cs", "Rural / Open")]
+        doc = project_to_dict("Rancho", "Prueba", gws, nodes, {"GW": 1, "Node": 1, "4G": 1},
+                              {"freq_mhz": 915, "fading_margin": 8.0})
+        back = project_from_dict(json.loads(json.dumps(doc)))
+        assert back["name"] == "Rancho" and back["description"] == "Prueba"
+        assert back["gateways"] == gws
+        assert back["nodes"] == nodes
+        assert back["settings"]["freq_mhz"] == 915
+
+    def test_rejects_bad_files(self):
+        from core.project import project_from_dict
+        with pytest.raises(ValueError):
+            project_from_dict({"foo": 1})
+        with pytest.raises(ValueError):
+            project_from_dict({"gateways": [], "nodes": [{"lat": 1, "lon": 2}]})
+
+    def test_legacy_node_gets_profile_and_sf_clamped(self):
+        from core.project import project_from_dict
+        p = project_from_dict({"gateways": [], "nodes": [
+            {"name": "WX-1", "lat": 1, "lon": 2, "type": "weather", "sf": 12}]})
+        assert p["nodes"][0]["model"] == "sensecap_s2120"
+        assert p["nodes"][0]["sf"] == 10

@@ -19,6 +19,8 @@ Run with:  streamlit run app.py
 
 import sys
 import os
+import copy
+import json
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import streamlit as st
@@ -60,6 +62,11 @@ from ui.profile_chart import get_elevation_summary
 from ui.profile_interactive import build_profile_html
 from ui.report import build_report_html
 from core.coverage import compute_radial, compute_coverage, initial_bearing, viable_segments
+from core.profiles import (
+    GATEWAY_PROFILES, NODE_PROFILES, DEFAULT_GATEWAY_PROFILE, DEFAULT_NODE_PROFILE,
+    gateway_profile, node_profile, is_cellular, new_gateway, new_node, estimated_note,
+)
+from core.project import project_to_dict, project_from_dict
 from utils.geo import haversine
 
 # ══════════════════════════════════════════════════════════════
@@ -101,10 +108,29 @@ defaults = {
     "coverage": None,               # last computed gateway coverage map
     "radial_cache": {},             # max-range radials per GW/node/settings
     "report_html": None,
+    "project": {"name": "", "description": ""},
+    "project_settings": {},         # RF settings restored from an opened project
+    "project_rev": 0,               # bumps on open/clear so settings widgets re-read defaults
+    "loaded_project_file": None,    # id of the last uploaded project (avoid re-applying)
 }
 for key, val in defaults.items():
     if key not in st.session_state:
-        st.session_state[key] = val
+        st.session_state[key] = copy.deepcopy(val)
+
+
+def checked_node_names() -> list:
+    """Nodes ticked in the right panel (multi-selection)."""
+    return [n["name"] for n in st.session_state.nodes if st.session_state.get(f"chk_{n['name']}")]
+
+
+def clear_checks():
+    for k in [k for k in st.session_state if str(k).startswith("chk_")]:
+        del st.session_state[k]
+
+
+def project_slug() -> str:
+    name = st.session_state.project["name"].strip() or "verea_project"
+    return "".join(c if c.isalnum() or c in "-_" else "_" for c in name)[:60]
 
 # Shared elevation API instance
 if st.session_state.elevation_api is None:
@@ -117,6 +143,43 @@ if st.session_state.elevation_api is None:
 with st.sidebar:
     st.markdown("## 📡 Verea")
     st.caption("LoRaWAN Packet Tracer — Agricultural IoT")
+    st.divider()
+
+    # ── Project ──
+    st.markdown("### 🗂️ Project")
+    rev = st.session_state.project_rev
+    proj = st.session_state.project
+    proj["name"] = st.text_input("Project name", value=proj["name"],
+                                 placeholder="e.g. Rancho El Mezquite", key=f"proj_name_{rev}")
+    proj["description"] = st.text_area("Description", value=proj["description"], height=68,
+                                       key=f"proj_desc_{rev}")
+    project_save_slot = st.container()   # filled at the end of the sidebar (needs all settings)
+    uploaded = st.file_uploader("📂 Open project", type=["json"], key="project_upload")
+    if uploaded is not None and uploaded.file_id != st.session_state.loaded_project_file:
+        st.session_state.loaded_project_file = uploaded.file_id
+        try:
+            loaded = project_from_dict(json.loads(uploaded.getvalue()))
+        except (ValueError, KeyError, TypeError) as e:
+            st.error(f"Could not open project: {e}")
+        else:
+            st.session_state.project = {"name": loaded["name"], "description": loaded["description"]}
+            st.session_state.project_settings = loaded["settings"]
+            st.session_state.gateways = loaded["gateways"]
+            st.session_state.nodes = loaded["nodes"]
+            st.session_state.name_counters = loaded["name_counters"]
+            for k in ("link_results", "terrain_cache", "radial_cache"):
+                st.session_state[k] = {}
+            st.session_state.coverage = None
+            st.session_state.report_html = None
+            st.session_state.selected_node = None
+            st.session_state.selected_gateway = None
+            st.session_state.pop("map_center", None)
+            clear_checks()
+            st.session_state.project_rev += 1
+            st.session_state["force_recalc"] = True
+            st.session_state["fit_all_once"] = True
+            st.rerun()
+
     st.divider()
 
     # ── Location search (Nominatim) ──
@@ -144,11 +207,10 @@ with st.sidebar:
 
     # ── Placement mode ──
     st.markdown("### Click-to-add mode")
-    mode_options = ["gateway", "sensor", "weather", "move"]
+    mode_options = ["gateway", "node", "move"]
     mode_labels = {
         "gateway": "🏗️ Gateway",
-        "sensor": "📱 Sensor Node",
-        "weather": "🌤️ Weather Station (S2120)",
+        "node": "📱 Node (sensor / weather station)",
         "move": "✋ Move selected device",
     }
     mode = st.radio(
@@ -161,6 +223,20 @@ with st.sidebar:
         key="mode_radio",
     )
     st.session_state.placement_mode = mode
+    if mode == "gateway":
+        place_gw_profile = st.selectbox(
+            "Gateway model", list(GATEWAY_PROFILES),
+            index=list(GATEWAY_PROFILES).index(DEFAULT_GATEWAY_PROFILE),
+            format_func=lambda k: GATEWAY_PROFILES[k]["label"], key="place_gw_profile",
+        )
+        st.caption(estimated_note(GATEWAY_PROFILES[place_gw_profile]))
+    elif mode == "node":
+        place_node_profile = st.selectbox(
+            "Node model", list(NODE_PROFILES),
+            index=list(NODE_PROFILES).index(DEFAULT_NODE_PROFILE),
+            format_func=lambda k: NODE_PROFILES[k]["label"], key="place_node_profile",
+        )
+        st.caption(estimated_note(NODE_PROFILES[place_node_profile]))
     if mode == "move":
         st.caption("Click a device on the map (or in the right panel) to select it, "
                    "then click the destination on the map.")
@@ -169,10 +245,13 @@ with st.sidebar:
 
     # ── Environment ──
     st.markdown("### Environment")
+    ps = st.session_state.project_settings
+    env_keys = list(ENVIRONMENT_PROFILES.keys())
     environment = st.selectbox(
         "Clutter profile",
-        options=list(ENVIRONMENT_PROFILES.keys()),
-        index=0,
+        options=env_keys,
+        index=env_keys.index(ps["environment"]) if ps.get("environment") in env_keys else 0,
+        key=f"set_env_{rev}",
         help="Default for NEW nodes. Each existing node keeps its own environment "
              "(edit it in the right panel).",
     )
@@ -183,7 +262,10 @@ with st.sidebar:
 
     # ── RF parameters ──
     st.markdown("### RF parameters")
-    freq_mhz = st.selectbox("Frequency (MHz)", [915, 868, 923, 433], index=0)
+    freq_options = [915, 868, 923, 433]
+    freq_mhz = st.selectbox("Frequency (MHz)", freq_options,
+                            index=freq_options.index(ps["freq_mhz"]) if ps.get("freq_mhz") in freq_options else 0,
+                            key=f"set_freq_{rev}")
     freq_hz = freq_mhz * 1e6
     model_labels = {
         "itm": "Longley-Rice (ITM)",
@@ -193,22 +275,33 @@ with st.sidebar:
         "Propagation model",
         options=list(model_labels),
         format_func=model_labels.get,
-        index=list(model_labels).index(DEFAULT_PROPAGATION_MODEL),
+        index=list(model_labels).index(ps.get("propagation_model", DEFAULT_PROPAGATION_MODEL)
+                                       if ps.get("propagation_model") in model_labels
+                                       else DEFAULT_PROPAGATION_MODEL),
+        key=f"set_model_{rev}",
         help="ITM models ground reflection and diffraction over multiple ridges "
              "on the real terrain. Paths under 1 km always use the simple model.",
     )
+    diff_options = ["dominant_knife_edge", "deygout", "empirical_fresnel"]
     diffraction_method = st.selectbox(
         "Diffraction model (simple)",
-        ["dominant_knife_edge", "deygout", "empirical_fresnel"],
-        index=0,
+        diff_options,
+        index=diff_options.index(ps["diffraction_method"])
+        if ps.get("diffraction_method") in diff_options else 0,
+        key=f"set_diff_{rev}",
     )
     n_terrain_points = st.slider("Terrain samples", 30, 200,
-                                 TERRAIN_SAMPLE_POINTS, 10)
-    margin_threshold = st.slider("Min margin threshold (dB)", 0.0, 20.0, 3.0, 0.5,
-                                 help="Links below this margin are marked NOT VIABLE")
-    fading_margin = st.slider("Fading margin (dB)", 0.0, 15.0, DEFAULT_FADING_MARGIN_DB, 0.5,
+                                 int(ps.get("n_terrain_points", TERRAIN_SAMPLE_POINTS)), 10,
+                                 key=f"set_samples_{rev}")
+    margin_threshold = st.slider("Min margin threshold (dB)", 0.0, 20.0,
+                                 float(ps.get("margin_threshold", 3.0)), 0.5,
+                                 help="Links below this margin are marked NOT VIABLE",
+                                 key=f"set_margin_{rev}")
+    fading_margin = st.slider("Fading margin (dB)", 0.0, 15.0,
+                              float(ps.get("fading_margin", DEFAULT_FADING_MARGIN_DB)), 0.5,
                               help="Extra loss for rain, humidity, foliage sway. "
-                                   "8 dB is conservative for agriculture.")
+                                   "8 dB is conservative for agriculture.",
+                              key=f"set_fading_{rev}")
 
     st.divider()
 
@@ -240,13 +333,23 @@ with st.sidebar:
         recalc = st.button("🔄 Recalculate", type="primary")
     with col_b:
         if st.button("🗑️ Clear all"):
+            next_rev = st.session_state.project_rev + 1
             for key in defaults:
-                st.session_state[key] = defaults[key] if not isinstance(defaults[key], list) else []
+                st.session_state[key] = copy.deepcopy(defaults[key])
+            st.session_state.project_rev = next_rev
+            clear_checks()
+            st.session_state.loaded_project_file = st.session_state.get("project_upload") and \
+                st.session_state["project_upload"].file_id
             st.session_state.elevation_api = ElevationAPI()
             if "map_center" in st.session_state:
                 del st.session_state["map_center"]
             st.rerun()
 
+    n_checked = len(checked_node_names())
+    report_only_checked = st.checkbox(
+        f"Report: only checked nodes ({n_checked})", value=False, disabled=n_checked == 0,
+        help="Check nodes in the right panel to choose which ones go in the report.",
+    )
     if st.button("📄 Generate report", use_container_width=True,
                  disabled=not (st.session_state.gateways or st.session_state.nodes)):
         st.session_state["make_report"] = True
@@ -263,6 +366,26 @@ with st.sidebar:
 rf_settings = (freq_mhz, propagation_model, diffraction_method, n_terrain_points,
                margin_threshold, fading_margin)
 
+with project_save_slot:
+    project_doc = project_to_dict(
+        st.session_state.project["name"], st.session_state.project["description"],
+        st.session_state.gateways, st.session_state.nodes, st.session_state.name_counters,
+        settings={
+            "freq_mhz": freq_mhz, "propagation_model": propagation_model,
+            "diffraction_method": diffraction_method, "n_terrain_points": n_terrain_points,
+            "margin_threshold": margin_threshold, "fading_margin": fading_margin,
+            "environment": environment,
+        },
+    )
+    st.download_button(
+        "💾 Save project",
+        data=json.dumps(project_doc, indent=2, ensure_ascii=False),
+        file_name=f"{project_slug()}.verea.json",
+        mime="application/json",
+        use_container_width=True,
+        disabled=not (st.session_state.gateways or st.session_state.nodes),
+    )
+
 
 # ══════════════════════════════════════════════════════════════
 # Analysis helper
@@ -276,50 +399,56 @@ def next_device_index(prefix: str) -> int:
 
 def gateway_device(gw_info: dict) -> Gateway:
     """Gateway object from its session-state dict."""
+    prof = gateway_profile(gw_info)
     gw_dev = Gateway(
         name=gw_info.get("name", "Gateway"),
         lat=gw_info["lat"], lon=gw_info["lon"],
-        tx_power_dbm=gw_info.get("tx_power", DEFAULT_GW_TX_POWER_DBM),
+        tx_power_dbm=gw_info.get("tx_power", prof["tx_power"]),
         antenna=Antenna(
-            gain_dbi=gw_info.get("gain", DEFAULT_GW_ANTENNA_GAIN_DBI),
-            height_m=gw_info.get("height", DEFAULT_GW_ANTENNA_HEIGHT_M),
-            cable_loss_db=gw_info.get("cable_loss", DEFAULT_CABLE_LOSS_DB),
+            gain_dbi=gw_info.get("gain", prof["gain"]),
+            height_m=gw_info.get("height", prof["height"]),
+            cable_loss_db=gw_info.get("cable_loss", prof["cable_loss"]),
         ),
         frequency_hz=freq_hz,
         online=gw_info.get("online", True),
+        sensitivity=prof["sensitivity"],
     )
     return gw_dev
 
 
 def node_device(node_info: dict) -> EndNode:
     """EndNode / WeatherStation object from its session-state dict."""
-    if node_info.get("type") == "weather":
-        node_dev = WeatherStation(
-            name=node_info["name"],
-            lat=node_info["lat"], lon=node_info["lon"],
-            tx_power_dbm=node_info.get("tx_power", 19),
-            spreading_factor=clamp_sf(node_info.get("sf", 10)),
-            antenna=Antenna(
-                gain_dbi=node_info.get("gain", 2.0),
-                height_m=node_info.get("height", 3.0),
-                cable_loss_db=0.0,
-            ),
-            frequency_hz=freq_hz,
-        )
-    else:
-        node_dev = EndNode(
-            name=node_info["name"],
-            lat=node_info["lat"], lon=node_info["lon"],
-            tx_power_dbm=node_info.get("tx_power", DEFAULT_TX_POWER_DBM),
-            spreading_factor=clamp_sf(node_info.get("sf", 7)),
-            antenna=Antenna(
-                gain_dbi=node_info.get("gain", DEFAULT_NODE_ANTENNA_GAIN_DBI),
-                height_m=node_info.get("height", 1.5),
-                cable_loss_db=0.5,
-            ),
-            frequency_hz=freq_hz,
-        )
+    prof = node_profile(node_info)
+    cls = WeatherStation if prof["type"] == "weather" else EndNode
+    node_dev = cls(
+        name=node_info["name"],
+        lat=node_info["lat"], lon=node_info["lon"],
+        tx_power_dbm=node_info.get("tx_power", prof["tx_power"]),
+        spreading_factor=clamp_sf(node_info.get("sf", prof["sf"])),
+        antenna=Antenna(
+            gain_dbi=node_info.get("gain", prof["gain"]),
+            height_m=node_info.get("height", prof["height"]),
+            cable_loss_db=node_info.get("cable_loss", prof["cable_loss"]),
+        ),
+        frequency_hz=freq_hz,
+    )
     return node_dev
+
+
+def best_link(nd: dict):
+    """Analysis against the online gateway with the best margin (None for cellular nodes)."""
+    if is_cellular(nd):
+        return None
+    best = None
+    for gw in st.session_state.gateways:
+        if gw.get("online", True):
+            try:
+                analysis = run_analysis(gw, nd, node_environment=nd.get("environment"))
+            except Exception:
+                continue
+            if best is None or analysis["result"].link_margin_db > best["result"].link_margin_db:
+                best = analysis
+    return best
 
 
 def budget_kwargs(env: str) -> dict:
@@ -334,7 +463,8 @@ def budget_kwargs(env: str) -> dict:
 
 
 def device_signature(d: dict) -> tuple:
-    keys = ("lat", "lon", "height", "gain", "tx_power", "sf", "environment", "online", "type")
+    keys = ("lat", "lon", "height", "gain", "tx_power", "sf", "environment", "online", "type",
+            "model", "cable_loss")
     return tuple(d.get(k) for k in keys)
 
 
@@ -430,7 +560,8 @@ def run_analysis(gw_info: dict, node_info: dict, node_environment: str = None) -
 
 if compute_cov:
     params = {"sf": cov_sf, "radius_km": cov_radius_km, "radials": cov_radials}
-    template = node_device({"name": "coverage", "lat": 0.0, "lon": 0.0, "sf": cov_sf})
+    template = node_device({**new_node("coverage", 0.0, 0.0, DEFAULT_NODE_PROFILE, environment),
+                            "sf": cov_sf})
     online = [g for g in st.session_state.gateways if g.get("online", True)]
     bar = st.progress(0.0, text="Computing coverage…")
     radials = {}
@@ -453,8 +584,15 @@ def draw_radial(m, radial, weight=3, opacity=0.6):
                         weight=weight, opacity=opacity).add_to(m)
 
 
-def build_map(sel_radial=None, height=None, fit_all=False) -> folium.Map:
-    """Folium map with devices, links, coverage and the selected node's range."""
+def build_map(sel_radial=None, height=None, fit_all=False, only_nodes=None,
+              highlight=True) -> folium.Map:
+    """
+    Folium map with devices, links, coverage and the selected node's range.
+    only_nodes: names of the nodes to draw (None = all). highlight: draw the
+    selection / checked halos (off for the report).
+    """
+    nodes = [n for n in st.session_state.nodes if only_nodes is None or n["name"] in only_nodes]
+    checked = set(checked_node_names()) if highlight else set()
     if "map_center" in st.session_state:
         center = st.session_state["map_center"]
     elif st.session_state.gateways:
@@ -496,12 +634,28 @@ def build_map(sel_radial=None, height=None, fit_all=False) -> folium.Map:
                 tooltip=f"Farthest point with signal: {sel_radial.max_range_m / 1000:.2f} km",
             ).add_to(m)
 
+    # ── Selection halos (under the markers) ──
+    def halo(lat, lon, color, radius=22):
+        folium.CircleMarker([lat, lon], radius=radius, color=color, weight=4,
+                            fill=True, fill_color=color, fill_opacity=0.15).add_to(m)
+
+    if highlight:
+        for nd in nodes:
+            if nd["name"] == st.session_state.selected_node:
+                halo(nd["lat"], nd["lon"], "#ffffff", 24)
+            elif nd["name"] in checked:
+                halo(nd["lat"], nd["lon"], "#ffd166", 20)
+        for gw in st.session_state.gateways:
+            if gw["name"] == st.session_state.selected_gateway:
+                halo(gw["lat"], gw["lon"], "#ffffff", 24)
+
     # ── Draw Gateways ──
     for gw in st.session_state.gateways:
         color = "green" if gw.get("online", True) else "gray"
         icon_name = "tower-broadcast" if gw.get("online", True) else "power-off"
         popup_html = (
             f"<b>{gw['name']}</b><br>"
+            f"{gateway_profile(gw)['label']}<br>"
             f"({'🟢 ONLINE' if gw.get('online', True) else '🔴 OFFLINE'})<br>"
             f"({gw['lat']:.5f}, {gw['lon']:.5f})<br>"
             f"Height: {gw.get('height', DEFAULT_GW_ANTENNA_HEIGHT_M)} m AGL"
@@ -513,9 +667,10 @@ def build_map(sel_radial=None, height=None, fit_all=False) -> folium.Map:
         ).add_to(m)
 
     # ── Draw Nodes + Link lines ──
-    for nd in st.session_state.nodes:
+    for nd in nodes:
         node_id = nd["name"]
         link = st.session_state.link_results.get(node_id)
+        cellular = is_cellular(nd)
 
         if link:
             r = link["result"]
@@ -531,8 +686,8 @@ def build_map(sel_radial=None, height=None, fit_all=False) -> folium.Map:
             viable = None
             margin = None
 
-        # Draw lines to all online gateways (best link is solid)
-        for gw in st.session_state.gateways:
+        # Draw lines to all online gateways (best link is solid); cellular nodes have none
+        for gw in ([] if cellular else st.session_state.gateways):
             if gw.get("online", True):
                 is_best = link and link["result"].gateway_name == gw["name"]
                 folium.PolyLine(
@@ -544,14 +699,20 @@ def build_map(sel_radial=None, height=None, fit_all=False) -> folium.Map:
                 ).add_to(m)
 
         # Node marker
-        if nd.get("type") == "weather":
+        if cellular:
+            icon_name = "signal"
+            icon_color = "purple"
+        elif nd.get("type") == "weather":
             icon_name = "cloud-sun"
             icon_color = "orange" if viable is None else ("green" if viable else "red")
         else:
             icon_name = "microchip"
             icon_color = "blue" if viable is None else ("green" if viable else "red")
 
-        popup_lines = [f"<b>{node_id}</b><br>({nd['lat']:.5f}, {nd['lon']:.5f})"]
+        popup_lines = [f"<b>{node_id}</b><br>{node_profile(nd)['label']}<br>"
+                       f"({nd['lat']:.5f}, {nd['lon']:.5f})"]
+        if cellular:
+            popup_lines.append("<br>📶 Cellular (no LoRa link)")
         if link:
             r = link["result"]
             popup_lines.extend([
@@ -569,7 +730,7 @@ def build_map(sel_radial=None, height=None, fit_all=False) -> folium.Map:
 
 
     if fit_all:
-        pts = [[d["lat"], d["lon"]] for d in st.session_state.gateways + st.session_state.nodes]
+        pts = [[d["lat"], d["lon"]] for d in st.session_state.gateways + nodes]
         if cov and cov["sig"] == coverage_signature(cov["params"]):
             pts += [list(r.coordinates[-1]) for rads in cov["radials"].values() for r in rads]
         if len(pts) >= 2:
@@ -588,6 +749,7 @@ if st.session_state.gateways or st.session_state.nodes:
     n_gw = len(st.session_state.gateways)
     n_gw_online = sum(1 for g in st.session_state.gateways if g.get("online", True))
     n_nodes = len(st.session_state.nodes)
+    n_lora = sum(1 for n in st.session_state.nodes if not is_cellular(n))
     n_viable = sum(
         1 for n in st.session_state.nodes
         if n["name"] in st.session_state.link_results
@@ -595,7 +757,8 @@ if st.session_state.gateways or st.session_state.nodes:
     )
     mc1.metric("Gateways", f"{n_gw_online}/{n_gw} online")
     mc2.metric("Nodes", n_nodes)
-    mc3.metric("Viable links", f"{n_viable}/{n_nodes}" if n_nodes else "—")
+    mc3.metric("Viable links", f"{n_viable}/{n_lora}" if n_lora else "—",
+               help="LoRa nodes only; 4G nodes do not link to a gateway.")
 
     # Show elevation source
     source = "—"
@@ -610,9 +773,8 @@ col_map, col_panel = st.columns([3, 2])
 # ──────────────────────────────────────────────────────────────
 with col_map:
     mode_text = {
-        "gateway": "🏗️ Click map to place Gateway",
-        "sensor": "📱 Click map to place Sensor Node",
-        "weather": "🌤️ Click map to place Weather Station",
+        "gateway": "🏗️ Click map to place a Gateway",
+        "node": "📱 Click map to place a Node",
         "move": "✋ Click a device to select it, then click the destination",
     }
     st.caption(mode_text.get(st.session_state.placement_mode, ""))
@@ -621,13 +783,19 @@ with col_map:
         st.caption("📡 Coverage is outdated (devices or settings changed) — press Compute again.")
     elif cov:
         p = cov["params"]
-        st.caption(f"📡 Coverage: SF{p['sf']}, sensor at 1.5 m, up to {p['radius_km']} km — "
+        st.caption(f"📡 Coverage: SF{p['sf']}, {NODE_PROFILES[DEFAULT_NODE_PROFILE]['label']} at 1.5 m, up to {p['radius_km']} km — "
                    "green = signal, red = no signal, dashed area = continuous coverage.")
 
     sel_nd_for_map = next((n for n in st.session_state.nodes
                            if n["name"] == st.session_state.selected_node), None)
     sel_radial = range_along_link(sel_nd_for_map) if sel_nd_for_map else None
-    m = build_map(sel_radial)
+    m = build_map(sel_radial, fit_all=st.session_state.pop("fit_all_once", False))
+    locate = [n for n in st.session_state.nodes
+              if n["name"] in st.session_state.pop("locate_nodes", [])]
+    if len(locate) == 1:
+        m.location = [locate[0]["lat"], locate[0]["lon"]]
+    elif locate:
+        m.fit_bounds([[n["lat"], n["lon"]] for n in locate], padding=(40, 40))
 
     # ── Render map and capture clicks ──
     map_data = st_folium(
@@ -702,58 +870,31 @@ with col_map:
                 st.warning("Select a device first (click its name in the right panel)")
 
         elif st.session_state.placement_mode == "gateway":
-            idx = next_device_index("GW")
-            new_gw = {
-                "name": f"GW-{idx}",
-                "lat": clat, "lon": clon,
-                "height": DEFAULT_GW_ANTENNA_HEIGHT_M,
-                "tx_power": DEFAULT_GW_TX_POWER_DBM,
-                "gain": DEFAULT_GW_ANTENNA_GAIN_DBI,
-                "cable_loss": DEFAULT_CABLE_LOSS_DB,
-                "online": True,
-            }
+            new_gw = new_gateway(f"GW-{next_device_index('GW')}", clat, clon, place_gw_profile)
             st.session_state.gateways.append(new_gw)
             st.session_state.selected_gateway = new_gw["name"]
-            st.session_state.placement_mode = "sensor"
-            # Auto-analyze existing nodes against new gateway
+            st.session_state.selected_node = None
+            # Re-route every node: the new gateway may be their best one
             st.session_state.link_results = {}
-            st.session_state.terrain_cache = {}
+            st.session_state["force_recalc"] = True
             st.rerun()
 
-        elif st.session_state.placement_mode in ("sensor", "weather"):
-            if not st.session_state.gateways:
+        elif st.session_state.placement_mode == "node":
+            prof = NODE_PROFILES[place_node_profile]
+            if not st.session_state.gateways and prof["link"] == "lora":
                 st.warning("Place a Gateway first!")
             else:
-                is_weather = st.session_state.placement_mode == "weather"
-                idx = next_device_index("WX" if is_weather else "Node")
-                new_node = {
-                    "name": f"{'WX' if is_weather else 'Node'}-{idx}",
-                    "lat": clat, "lon": clon,
-                    "type": "weather" if is_weather else "sensor",
-                    "sf": 10 if is_weather else 7,
-                    "tx_power": 19 if is_weather else DEFAULT_TX_POWER_DBM,
-                    "height": 3.0 if is_weather else 1.5,
-                    "gain": 2.0 if is_weather else DEFAULT_NODE_ANTENNA_GAIN_DBI,
-                    "environment": environment,  # Fix #3: per-node environment
-                }
-                st.session_state.nodes.append(new_node)
-                st.session_state.selected_node = new_node["name"]
+                prefix = {"weather": "WX", "cellular": "4G"}.get(prof["type"], "Node")
+                nd_new = new_node(f"{prefix}-{next_device_index(prefix)}", clat, clon,
+                                  place_node_profile, environment)
+                st.session_state.nodes.append(nd_new)
+                st.session_state.selected_node = nd_new["name"]
+                st.session_state.selected_gateway = None
 
-                # Auto-route to best gateway
-                with st.spinner(f"Analyzing {new_node['name']}..."):
-                    best_result = None
-                    best_analysis = None
-                    for gw in st.session_state.gateways:
-                        if gw.get("online", True):
-                            try:
-                                analysis = run_analysis(gw, new_node, node_environment=new_node.get("environment"))
-                                if best_analysis is None or analysis["result"].link_margin_db > best_result.link_margin_db:
-                                    best_result = analysis["result"]
-                                    best_analysis = analysis
-                            except Exception:
-                                continue
-                    if best_analysis:
-                        st.session_state.link_results[new_node["name"]] = best_analysis
+                with st.spinner(f"Analyzing {nd_new['name']}..."):
+                    best = best_link(nd_new)
+                    if best:
+                        st.session_state.link_results[nd_new["name"]] = best
 
                 st.rerun()
 
@@ -831,42 +972,105 @@ with col_panel:
                 if online != gw.get("online", True):
                     gw["online"] = online
                     st.session_state.link_results = {}
-                    st.session_state.terrain_cache = {}
+                    st.session_state["force_recalc"] = True
                     st.rerun()
             with gc3:
-                if st.button("📍", key=f"gw_sel_{i}"):
+                if st.button("📍", key=f"gw_sel_{i}",
+                             type="primary" if gw["name"] == st.session_state.selected_gateway
+                             else "secondary"):
                     st.session_state.selected_gateway = gw["name"]
                     st.session_state.selected_node = None  # deselect node
                     st.session_state["map_center"] = [gw["lat"], gw["lon"]]
                     st.rerun()
             with gc4:
                 if st.button("🗑️", key=f"gw_del_{i}"):
-                    st.session_state.gateways.pop(i)
+                    removed = st.session_state.gateways.pop(i)
+                    if st.session_state.selected_gateway == removed["name"]:
+                        st.session_state.selected_gateway = None
                     st.session_state.link_results = {}
-                    st.session_state.terrain_cache = {}
+                    st.session_state["force_recalc"] = True
+                    st.rerun()
+
+        # ── Selected gateway properties ──
+        sel_gw = next((g for g in st.session_state.gateways
+                       if g["name"] == st.session_state.selected_gateway), None)
+        if sel_gw and not st.session_state.selected_node:
+            st.markdown(f"#### ⚙️ {sel_gw['name']} properties")
+            gw_sig = abs(hash((sel_gw["name"],) + device_signature(sel_gw)))
+            gw_keys = list(GATEWAY_PROFILES)
+            cur_model = sel_gw.get("model") if sel_gw.get("model") in GATEWAY_PROFILES else "custom"
+            g_model = st.selectbox("Model", gw_keys, index=gw_keys.index(cur_model),
+                                   format_func=lambda k: GATEWAY_PROFILES[k]["label"],
+                                   key=f"gwp_model_{gw_sig}")
+            gp = GATEWAY_PROFILES[g_model]
+            st.caption(estimated_note(gp))
+            # Picking another model loads its values; same model keeps this gateway's values
+            src = sel_gw if g_model == cur_model else gp
+            fkey = f"{gw_sig}_{g_model}"
+            g1, g2 = st.columns(2)
+            with g1:
+                g_lat = st.number_input("Latitude", value=sel_gw["lat"], format="%.6f",
+                                        key=f"gwp_lat_{fkey}")
+                g_height = st.number_input("Antenna height AGL (m)",
+                                           value=float(src.get("height", gp["height"])),
+                                           min_value=0.5, max_value=60.0, step=0.5,
+                                           key=f"gwp_h_{fkey}")
+                g_cable = st.number_input("Cable loss (dB)",
+                                          value=float(src.get("cable_loss", gp["cable_loss"])),
+                                          min_value=0.0, max_value=10.0, step=0.1,
+                                          key=f"gwp_cable_{fkey}")
+            with g2:
+                g_lon = st.number_input("Longitude", value=sel_gw["lon"], format="%.6f",
+                                        key=f"gwp_lon_{fkey}")
+                g_gain = st.number_input("Antenna gain (dBi)",
+                                         value=float(src.get("gain", gp["gain"])),
+                                         min_value=0.0, max_value=15.0, step=0.5,
+                                         key=f"gwp_gain_{fkey}")
+                g_tx = st.number_input("TX power (dBm)",
+                                       value=float(src.get("tx_power", gp["tx_power"])),
+                                       min_value=0.0, max_value=30.0, step=1.0,
+                                       key=f"gwp_tx_{fkey}",
+                                       help="Downlink power. The uplink budget (node → gateway) "
+                                            "depends on antenna height, gain and cable loss.")
+            new_vals = {"model": g_model, "lat": g_lat, "lon": g_lon, "height": g_height,
+                        "gain": g_gain, "cable_loss": g_cable, "tx_power": g_tx}
+            if any(sel_gw.get(k) != v for k, v in new_vals.items()):
+                if st.button("📝 Apply changes", key="apply_gw_changes", type="primary"):
+                    sel_gw.update(new_vals)
+                    st.session_state.link_results = {}
+                    st.session_state["force_recalc"] = True
                     st.rerun()
 
         st.divider()
 
         # ── Node list ──
         st.markdown("### 📱 Nodes")
+        if st.session_state.nodes:
+            st.caption("Tick nodes to highlight them on the map or to pick them for the report.")
         for i, nd in enumerate(st.session_state.nodes):
-            nc1, nc2, nc3 = st.columns([4, 1, 1])
+            nc0, nc1, nc2, nc3 = st.columns([0.6, 4, 1, 1], vertical_alignment="center")
             link = st.session_state.link_results.get(nd["name"])
             margin_str = ""
-            if link:
+            if is_cellular(nd):
+                margin_str = " 📶 4G"
+            elif link:
                 r = link["result"]
                 status = "✅" if r.link_viable else "❌"
                 margin_str = f" {status} {r.link_margin_db:+.1f}dB"
 
+            with nc0:
+                st.checkbox("Select", key=f"chk_{nd['name']}", label_visibility="collapsed")
             with nc1:
                 label = f"{nd['name']}{margin_str}"
-                if st.button(label, key=f"nd_sel_{i}"):
+                is_sel = nd["name"] == st.session_state.selected_node
+                if st.button(label, key=f"nd_sel_{i}", use_container_width=True,
+                             type="primary" if is_sel else "secondary",
+                             help=node_profile(nd)["label"]):
                     st.session_state.selected_node = nd["name"]
                     st.session_state.selected_gateway = None  # deselect gateway
                     st.rerun()
             with nc2:
-                type_icon = "🌤️" if nd.get("type") == "weather" else "📱"
+                type_icon = {"weather": "🌤️", "cellular": "📶"}.get(node_profile(nd)["type"], "📱")
                 st.caption(type_icon)
             with nc3:
                 if st.button("🗑️", key=f"nd_del_{i}"):
@@ -877,6 +1081,17 @@ with col_panel:
                         st.session_state.selected_node = None
                     st.rerun()
 
+        checked_now = checked_node_names()
+        if checked_now:
+            lc1, lc2 = st.columns(2)
+            with lc1:
+                if st.button(f"📍 Locate checked ({len(checked_now)})", use_container_width=True):
+                    st.session_state["locate_nodes"] = checked_now
+                    st.session_state.pop("map_center", None)
+                    st.rerun()
+            with lc2:
+                st.button("✖ Uncheck all", use_container_width=True, on_click=clear_checks)
+
         st.divider()
 
         # ── Selected device properties ──
@@ -885,6 +1100,7 @@ with col_panel:
 
         if sel_nd:
             st.markdown(f"### ⚙️ {sel_nd['name']} properties")
+            st.caption(f"**{node_profile(sel_nd)['label']}** — {estimated_note(node_profile(sel_nd))}")
 
             # Widget keys depend on the node's stored values: switching nodes, moving
             # or applying changes renders fresh widgets instead of reusing stale state.
@@ -902,40 +1118,48 @@ with col_panel:
                 new_lon = st.number_input("Longitude", value=sel_nd["lon"],
                                           format="%.6f", key=f"prop_lon_{prop_sig}")
 
-            p3, p4 = st.columns(2)
-            with p3:
-                new_height = st.number_input("Height AGL (m)", value=sel_nd.get("height", 1.5),
-                                             min_value=0.5, max_value=30.0, step=0.5,
-                                             key=f"prop_height_{prop_sig}")
-            with p4:
-                new_tx = st.number_input("TX power (dBm)", value=sel_nd.get("tx_power", 14),
-                                         min_value=2, max_value=20, key=f"prop_tx_{prop_sig}")
+            if is_cellular(sel_nd):
+                st.info("📶 This node sends its data over the cell network (NB-IoT / LTE-M), "
+                        "not through a LoRaWAN gateway, so it has no LoRa link budget. "
+                        "Its coverage depends on the carrier's signal at the site.")
+                new_height, new_tx, new_gain = sel_nd.get("height"), sel_nd.get("tx_power"), sel_nd.get("gain")
+                new_sf, new_env = sel_nd.get("sf"), sel_nd.get("environment", environment)
+            else:
+                p3, p4 = st.columns(2)
+                with p3:
+                    new_height = st.number_input("Height AGL (m)", value=float(sel_nd.get("height", 1.5)),
+                                                 min_value=0.5, max_value=30.0, step=0.5,
+                                                 key=f"prop_height_{prop_sig}")
+                with p4:
+                    new_tx = st.number_input("TX power (dBm)", value=float(sel_nd.get("tx_power", 14)),
+                                             min_value=2.0, max_value=22.0, step=1.0,
+                                             key=f"prop_tx_{prop_sig}")
 
-            p5, p6 = st.columns(2)
-            with p5:
-                new_gain = st.number_input("Antenna gain (dBi)",
-                                           value=sel_nd.get("gain", DEFAULT_NODE_ANTENNA_GAIN_DBI),
-                                           min_value=0.0, max_value=10.0, step=0.5,
-                                           key=f"prop_gain_{prop_sig}")
-            with p6:
-                new_sf = st.selectbox("Spreading factor",
-                                      options=list(US915_UPLINK_SF),
-                                      index=US915_UPLINK_SF.index(clamp_sf(sel_nd.get("sf", 7))),
-                                      help="US915 uplinks allow SF7–SF10 (125 kHz). "
-                                           "Higher SF = more range, slower and longer airtime.",
-                                      key=f"prop_sf_{prop_sig}")
+                p5, p6 = st.columns(2)
+                with p5:
+                    new_gain = st.number_input("Antenna gain (dBi)",
+                                               value=float(sel_nd.get("gain", DEFAULT_NODE_ANTENNA_GAIN_DBI)),
+                                               min_value=0.0, max_value=10.0, step=0.5,
+                                               key=f"prop_gain_{prop_sig}")
+                with p6:
+                    new_sf = st.selectbox("Spreading factor",
+                                          options=list(US915_UPLINK_SF),
+                                          index=US915_UPLINK_SF.index(clamp_sf(sel_nd.get("sf", 7))),
+                                          help="US915 uplinks allow SF7–SF10 (125 kHz). "
+                                               "Higher SF = more range, slower and longer airtime.",
+                                          key=f"prop_sf_{prop_sig}")
 
-            # Fix #3: per-node environment selector
-            env_options = list(ENVIRONMENT_PROFILES.keys())
-            current_env = sel_nd.get("environment", environment)
-            env_idx = env_options.index(current_env) if current_env in env_options else 0
-            new_env = st.selectbox(
-                "Environment / Clutter",
-                options=env_options,
-                index=env_idx,
-                key=f"prop_env_{prop_sig}",
-                help=ENVIRONMENT_PROFILES[env_options[env_idx]]["description"],
-            )
+                # Fix #3: per-node environment selector
+                env_options = list(ENVIRONMENT_PROFILES.keys())
+                current_env = sel_nd.get("environment", environment)
+                env_idx = env_options.index(current_env) if current_env in env_options else 0
+                new_env = st.selectbox(
+                    "Environment / Clutter",
+                    options=env_options,
+                    index=env_idx,
+                    key=f"prop_env_{prop_sig}",
+                    help=ENVIRONMENT_PROFILES[env_options[env_idx]]["description"],
+                )
 
             # Update node if changed
             changed = (
@@ -959,19 +1183,9 @@ with col_panel:
                     st.session_state.link_results.pop(sel_nd["name"], None)
                     st.session_state.terrain_cache = {}
                     # Re-route to best gateway
-                    best_result = None
-                    best_analysis = None
-                    for gw in st.session_state.gateways:
-                        if gw.get("online", True):
-                            try:
-                                analysis = run_analysis(gw, sel_nd, node_environment=new_env)
-                                if best_analysis is None or analysis["result"].link_margin_db > (best_result.link_margin_db if best_result else -999):
-                                    best_result = analysis["result"]
-                                    best_analysis = analysis
-                            except Exception:
-                                continue
-                    if best_analysis:
-                        st.session_state.link_results[sel_nd["name"]] = best_analysis
+                    best = best_link(sel_nd)
+                    if best:
+                        st.session_state.link_results[sel_nd["name"]] = best
                     st.rerun()
 
             # Per-device elevation caption
@@ -1113,7 +1327,7 @@ with col_panel:
                     rows.append({
                         "Node": nd["name"], "→ GW": "—",
                         "Dist (km)": "—", "Margin": "—",
-                        "Fresnel": "—", "Status": "⏳",
+                        "Fresnel": "—", "Status": "📶 4G" if is_cellular(nd) else "⏳",
                     })
             if rows:
                 st.dataframe(pd.DataFrame(rows), hide_index=True)
@@ -1133,19 +1347,9 @@ if (recalc or settings_changed or force_recalc) and st.session_state.gateways an
     progress = st.progress(0, text="Recalculating links...")
     total = len(st.session_state.nodes)
     for i, nd in enumerate(st.session_state.nodes):
-        best_result = None
-        best_analysis = None
-        for gw in st.session_state.gateways:
-            if gw.get("online", True):
-                try:
-                    analysis = run_analysis(gw, nd, node_environment=nd.get("environment"))
-                    if best_analysis is None or analysis["result"].link_margin_db > (best_result.link_margin_db if best_result else -999):
-                        best_result = analysis["result"]
-                        best_analysis = analysis
-                except Exception:
-                    continue
-        if best_analysis:
-            st.session_state.link_results[nd["name"]] = best_analysis
+        best = best_link(nd)
+        if best:
+            st.session_state.link_results[nd["name"]] = best
         progress.progress((i + 1) / total, text=f"Analyzed {nd['name']} ({i + 1}/{total})")
     progress.empty()
     st.rerun()
@@ -1155,7 +1359,8 @@ if (recalc or settings_changed or force_recalc) and st.session_state.gateways an
 # ══════════════════════════════════════════════════════════════
 if st.session_state.pop("make_report", False):
     with st.spinner("Building report…"):
-        m_rep = build_map(fit_all=True)
+        rep_nodes = set(checked_node_names()) if report_only_checked else None
+        m_rep = build_map(fit_all=True, only_nodes=rep_nodes, highlight=False)
         map_doc = m_rep.get_root().render().replace(
             "</body>",
             f"<script>window.addEventListener('load', () => {{ window.map = {m_rep.get_name()}; }});</script></body>",
@@ -1175,31 +1380,37 @@ if st.session_state.pop("make_report", False):
         cov = st.session_state.coverage
         if cov and cov["sig"] == coverage_signature(cov["params"]):
             p = cov["params"]
-            settings_rows.append(("Coverage map", f"SF{p['sf']}, sensor 1.5 m, {p['radius_km']} km, "
+            settings_rows.append(("Coverage map", f"SF{p['sf']}, {NODE_PROFILES[DEFAULT_NODE_PROFILE]['label']} at 1.5 m, {p['radius_km']} km, "
                                                   f"{p['radials']} directions"))
 
         gateway_rows = [
-            (g["name"], "Online" if g.get("online", True) else "Offline",
+            (g["name"], gateway_profile(g)["label"], "Online" if g.get("online", True) else "Offline",
              f"{g['lat']:.6f}", f"{g['lon']:.6f}",
              g.get("height", DEFAULT_GW_ANTENNA_HEIGHT_M),
              g.get("gain", DEFAULT_GW_ANTENNA_GAIN_DBI),
+             g.get("cable_loss", DEFAULT_CABLE_LOSS_DB),
              g.get("tx_power", DEFAULT_GW_TX_POWER_DBM))
             for g in st.session_state.gateways
         ]
 
         node_rows, link_sections = [], []
         for nd in st.session_state.nodes:
+            if rep_nodes is not None and nd["name"] not in rep_nodes:
+                continue
             link = st.session_state.link_results.get(nd["name"])
             r = link["result"] if link else None
             env = nd.get("environment", environment)
+            cellular = is_cellular(nd)
             node_rows.append((
-                nd["name"], "Weather station" if nd.get("type") == "weather" else "Sensor",
+                nd["name"], node_profile(nd)["label"],
                 f"{nd['lat']:.6f}", f"{nd['lon']:.6f}", nd.get("height"), nd.get("tx_power"),
-                nd.get("gain"), f"SF{clamp_sf(nd.get('sf', 7))}", env,
+                nd.get("gain"), "—" if cellular else f"SF{clamp_sf(nd.get('sf', 7))}",
+                "—" if cellular else env,
                 r.gateway_name if r else "—",
                 f"{r.distance_km:.2f}" if r else "—",
                 f"{r.rx_power_dbm:.1f}" if r else "—",
                 f"{r.link_margin_db:+.1f}" if r else "—",
+                "Cellular (no LoRa link)" if cellular else
                 ("Viable" if r.link_viable else "Not viable") if r else "Not calculated",
             ))
             if not r:
@@ -1243,7 +1454,8 @@ if st.session_state.pop("make_report", False):
         stamp = datetime.now()
         st.session_state.report_html = {
             "html": build_report_html(
-                title="Verea — LoRaWAN network report",
+                title=st.session_state.project["name"].strip() or "Verea — LoRaWAN network report",
+                description=st.session_state.project["description"].strip(),
                 generated_at=stamp.strftime("%Y-%m-%d %H:%M"),
                 map_html=map_doc,
                 settings=settings_rows,
@@ -1251,6 +1463,6 @@ if st.session_state.pop("make_report", False):
                 node_rows=node_rows,
                 links=link_sections,
             ),
-            "name": f"verea_report_{stamp:%Y%m%d_%H%M}.html",
+            "name": f"{project_slug()}_report_{stamp:%Y%m%d_%H%M}.html",
         }
     st.rerun()

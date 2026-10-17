@@ -73,6 +73,7 @@ class Gateway:
     bandwidth_hz: float = DEFAULT_BANDWIDTH_HZ
     channels: int = 8                  # US915: 8 uplink channels
     online: bool = True                # Power toggle for failover
+    sensitivity: Optional[dict] = None  # uplink sensitivity per SF; None = SX1276 table
 
     @property
     def antenna_height_asl(self) -> float:

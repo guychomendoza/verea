@@ -30,6 +30,18 @@ SX1276_SENSITIVITY = {
     12: -137.0,
 }
 
+# ─── SX1302 gateway sensitivity (BW=125kHz) ─────────────────
+# Gateway-side receiver used for uplinks. SenseCAP M2 lists -125 dBm (SF7)
+# to -139 dBm (SF12); Milesight UG63/SG50 list -140 dBm @292 bps (SF12).
+SX1302_SENSITIVITY = {
+    7:  -125.0,
+    8:  -128.0,
+    9:  -131.0,
+    10: -134.0,
+    11: -136.5,
+    12: -139.0,
+}
+
 # ─── US915 uplink spreading factors ─────────────────────────
 # US915 uplinks on 125 kHz channels are DR0–DR3 = SF10–SF7 (dwell time
 # limits SF11/SF12 out). SF11/12 stay in the tables above for reference only.
@@ -62,7 +74,7 @@ NOISE_FLOOR_DBM = -120.0
 
 # ─── Antenna Defaults ─────────────────────────────────────────
 DEFAULT_GW_ANTENNA_GAIN_DBI = 6.0     # typical fiberglass omni
-DEFAULT_GW_ANTENNA_HEIGHT_M = 10.0    # rooftop mount (rural default)
+DEFAULT_GW_ANTENNA_HEIGHT_M = 2.5     # typical field install (pole / shed wall)
 DEFAULT_GW_MIN_HEIGHT_M = 3.0
 DEFAULT_GW_MAX_HEIGHT_M = 60.0
 DEFAULT_NODE_ANTENNA_GAIN_DBI = 2.15  # quarter-wave whip ≈ dipole
