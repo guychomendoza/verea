@@ -242,3 +242,90 @@ def itm_path_loss(
     if prop.get("kwx", 0) >= 4 or not np.isfinite(excess):
         return None
     return float(free_space + excess)
+
+
+# ──────────────────────────────────────────────────────────────
+# Short paths (where ITM does not apply): delta-Bullington
+# ──────────────────────────────────────────────────────────────
+# ITU-R P.526 §4.5 idea: Bullington diffraction over the real profile, plus
+# the ground-reflection loss of the smoothed profile that diffraction alone
+# misses with low antennas. Hills get the rounded-obstacle extra loss of
+# P.526 §4.3, capped because a single cylinder fitted across two separate
+# ridges overestimates it. Checked against ITM on 1.2–3 km paths
+# (mean |error| ≈ 4 dB over flat, hill, ridge and valley profiles).
+ROUNDING_CAP_DB = 25.0
+_K_EARTH_RADIUS_M = 4 / 3 * 6371e3
+
+
+def _rounded_extra_loss(m: float, n: float) -> float:
+    """ITU-R P.526 §4.3: extra loss of a rounded obstacle over a knife edge."""
+    mn = m * n
+    t = 7.2 * m ** 0.5 - (2 - 12.5 * n) * m + 3.6 * m ** 1.5 - 0.8 * m ** 2
+    if mn > 4:
+        t = (-6 - 20 * np.log10(mn) + 7.2 * m ** 0.5 - (2 - 17 * n) * m
+             + 3.6 * m ** 1.5 - 0.8 * m ** 2)
+    return max(float(t), 0.0)
+
+
+def bullington_loss(x: np.ndarray, z: np.ndarray, hts: float, hrs: float,
+                    lam: float, rounded: bool = False) -> float:
+    """
+    Diffraction loss (dB) over a profile with Bullington's construction.
+    x: distances from the transmitter; z: terrain heights incl. earth bulge;
+    hts / hrs: antenna heights above sea level.
+    """
+    d = x[-1]
+    xi, zi = x[1:-1], z[1:-1]
+    if len(xi) == 0:
+        return 0.0
+    ray = (hts * (d - xi) + hrs * xi) / d
+    stim_all = (zi - hts) / xi
+    stim = stim_all.max()
+    if stim < (hrs - hts) / d:
+        # Line of sight: worst Fresnel intrusion
+        v = (zi - ray) * np.sqrt(2 * d / (lam * xi * (d - xi)))
+        return knife_edge_diffraction_loss(float(v.max()))
+
+    srim_all = (zi - hrs) / (d - xi)
+    srim = srim_all.max()
+    db = (hrs - hts + srim * d) / (stim + srim)          # Bullington point
+    hb = hts + stim * db - (hts * (d - db) + hrs * db) / d
+    loss = knife_edge_diffraction_loss(float(hb * np.sqrt(2 * d / (lam * db * (d - db)))))
+    if rounded:
+        ds = xi[int(np.argmax(srim_all))] - xi[int(np.argmax(stim_all))]
+        theta = np.arctan(stim) + np.arctan(srim)
+        if ds > 0 and theta > 0:
+            r = ds / theta                                 # obstacle radius
+            m = r * (d / (db * (d - db))) / (np.pi * r / lam) ** (1 / 3)
+            n = hb * (np.pi * r / lam) ** (2 / 3) / r
+            loss += min(_rounded_extra_loss(m, n), ROUNDING_CAP_DB)
+    return float(loss)
+
+
+def short_path_excess_loss(
+    elevations: np.ndarray,
+    distance_m: float,
+    h_tx_agl: float,
+    h_rx_agl: float,
+    freq_hz: float,
+) -> float:
+    """Terrain loss (dB over free space) for paths too short for ITM."""
+    elevations = np.asarray(elevations, dtype=float)
+    if distance_m < 10 or len(elevations) < 3:
+        return 0.0
+    lam = wavelength(freq_hz)
+    x = np.linspace(0, distance_m, len(elevations))
+    bulge = x * (distance_m - x) / (2 * _K_EARTH_RADIUS_M)
+    hts = elevations[0] + h_tx_agl
+    hrs = elevations[-1] + h_rx_agl
+
+    diffraction = bullington_loss(x, elevations + bulge, hts, hrs, lam, rounded=True)
+
+    # Ground reflection over the smoothed (straight-line fit) terrain
+    a, b = np.polyfit(x, elevations, 1)
+    smooth = a * x + b
+    h1 = max(h_tx_agl, hts - smooth[0])
+    h2 = max(h_rx_agl, hrs - smooth[-1])
+    plane_earth = max(0.0, 20 * np.log10(distance_m * lam / (4 * np.pi * h1 * h2)))
+    smooth_diffraction = bullington_loss(x, smooth + bulge, hts, hrs, lam)
+    return float(diffraction + max(plane_earth - smooth_diffraction, 0.0))

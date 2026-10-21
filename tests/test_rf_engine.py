@@ -526,3 +526,39 @@ class TestProject:
             {"name": "WX-1", "lat": 1, "lon": 2, "type": "weather", "sf": 12}]})
         assert p["nodes"][0]["model"] == "sensecap_s2120"
         assert p["nodes"][0]["sf"] == 10
+
+
+class TestShortPathModel:
+    @staticmethod
+    def _hill(h, n=100, width=0.1):
+        x = np.linspace(0, 1, n)
+        return 1500 + h * np.exp(-0.5 * ((x - 0.5) / (width / 2.355)) ** 2)
+
+    def test_flat_ground_reflection(self):
+        from core.propagation import short_path_excess_loss
+        # plane earth: 20log(d*lambda / (4*pi*h1*h2)) ≈ 15 dB at 800 m, 2.5 m / 1.5 m
+        loss = short_path_excess_loss(np.full(100, 1500.0), 800, 2.5, 1.5, 915e6)
+        assert 13 < loss < 17
+
+    def test_hills_add_loss(self):
+        from core.propagation import short_path_excess_loss
+        losses = [short_path_excess_loss(self._hill(h), 800, 2.5, 1.5, 915e6)
+                  for h in (0, 10, 30, 60, 100)]
+        assert losses == sorted(losses)
+        assert losses[-1] > losses[0] + 30
+
+    def test_close_to_itm_where_both_apply(self):
+        from core.propagation import short_path_excess_loss, itm_path_loss, fspl
+        for h in (0, 30, 60):
+            e = self._hill(h)
+            itm = itm_path_loss(e, 1500, 2.5, 1.5, 915e6) - fspl(1500, 915e6)
+            short = short_path_excess_loss(e, 1500, 2.5, 1.5, 915e6)
+            assert abs(short - itm) < 12, (h, itm, short)
+
+    def test_short_links_use_short_model(self):
+        terrain = TerrainProfile.from_manual_elevations(21.0, -102.0, 21.006, -102.0,
+                                                        self._hill(60))
+        r = calculate_link_budget(Gateway(), EndNode(spreading_factor=10), terrain,
+                                  propagation_model="itm")
+        assert r.propagation_model == "short"
+        assert r.terrain_loss_db > 40

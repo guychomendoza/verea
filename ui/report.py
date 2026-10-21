@@ -31,7 +31,8 @@ def _frame(doc: str, height: int, cls: str = "") -> str:
 GLOSSARY = [
     ("Propagation model", "How path loss over the terrain is estimated. Longley-Rice (ITM) "
      "uses the real elevation profile: ground reflection and diffraction over every ridge. "
-     "Links under 1 km use free space plus knife-edge diffraction."),
+     "Links under ~1 km, where ITM does not apply, use a short-path model (ITU-R P.526): "
+     "diffraction over rounded hills plus ground reflection."),
     ("Terrain loss", "Extra loss over free space caused by the terrain along the path."),
     ("Clutter loss", "Loss from what surrounds the sensor: crops, orchards, buildings."),
     ("Fading margin", "Reserve subtracted from the margin for rain, humidity and moving foliage."),
@@ -115,7 +116,7 @@ def build_report_html(
 <body>
   <h1>{_esc(title)}</h1>
   {f'<p class="desc">{_esc(description)}</p>' if description else ""}
-  <p class="meta">Generated {_esc(generated_at)} with Verea — LoRaWAN Packet Tracer</p>
+  <p class="meta">Generated {_esc(generated_at)} with Verea</p>
 
   <h2>Map</h2>
   {_frame(map_html, 560, "map")}

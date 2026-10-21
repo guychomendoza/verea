@@ -24,7 +24,9 @@ import numpy as np
 
 from core.devices import Gateway, EndNode
 from core.terrain import TerrainProfile, ElevationAPI
-from core.propagation import fspl, fresnel_obstruction_loss, clutter_loss, itm_path_loss
+from core.propagation import (
+    fspl, fresnel_obstruction_loss, clutter_loss, itm_path_loss, short_path_excess_loss,
+)
 from config import (
     NOISE_FLOOR_DBM,
     SX1276_SENSITIVITY,
@@ -200,7 +202,9 @@ def calculate_link_budget(
     # the margins below so predicted RSSI/SNR stay comparable to field readings.
     # ── Terrain loss over free space ──
     # ITM (default) models ground reflection and multi-obstacle diffraction over
-    # the real profile; the simple model only adds the knife-edge penalty.
+    # the real profile. Where ITM does not apply (paths under ~1 km) the
+    # delta-Bullington short-path model takes over; the simple model only
+    # adds the knife-edge penalty (kept for comparison).
     terrain_loss = diffraction_loss_val
     model_used = "simple"
     if propagation_model == "itm":
@@ -212,6 +216,12 @@ def calculate_link_budget(
             # Conservative: never better than free space
             terrain_loss = max(itm_loss - fspl_loss, 0.0)
             model_used = "itm"
+        else:
+            terrain_loss = short_path_excess_loss(
+                terrain.elevations, distance,
+                gateway.antenna.height_m, node.antenna.height_m, freq,
+            )
+            model_used = "short"
 
     total_path_loss = fspl_loss + terrain_loss + env_clutter
 

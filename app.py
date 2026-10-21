@@ -1,5 +1,5 @@
 """
-Verea — LoRaWAN Packet Tracer
+Verea
 ==============================
 Interactive GIS-based simulator for planning agricultural IoT networks.
 
@@ -20,7 +20,9 @@ Run with:  streamlit run app.py
 import sys
 import os
 import copy
+import html
 import json
+from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import streamlit as st
@@ -61,6 +63,7 @@ from core.propagation import fspl, max_fresnel_radius
 from ui.profile_chart import get_elevation_summary
 from ui.profile_interactive import build_profile_html
 from ui.report import build_report_html
+from ui.map_base import base_map, fit_view
 from core.coverage import compute_radial, compute_coverage, initial_bearing, viable_segments
 from core.profiles import (
     GATEWAY_PROFILES, NODE_PROFILES, DEFAULT_GATEWAY_PROFILE, DEFAULT_NODE_PROFILE,
@@ -69,11 +72,18 @@ from core.profiles import (
 from core.project import project_to_dict, project_from_dict
 from utils.geo import haversine
 
+# Terrain model actually used for a link (ITM falls back to the short-path model)
+MODEL_USED_LABELS = {
+    "itm": "Longley-Rice (ITM)",
+    "short": "short path, ITU-R P.526",
+    "simple": "FSPL + knife-edge",
+}
+
 # ══════════════════════════════════════════════════════════════
 # Page config
 # ══════════════════════════════════════════════════════════════
 st.set_page_config(
-    page_title="Verea — LoRaWAN Simulator",
+    page_title="Verea",
     page_icon="📡",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -128,6 +138,73 @@ def clear_checks():
         del st.session_state[k]
 
 
+def focus_map(lat: float, lon: float, zoom: int | None = None):
+    """Move the main map to a point (keeping the user's zoom unless one is given)."""
+    n = st.session_state.get("map_view", {}).get("n", 0) + 1
+    st.session_state.map_view = {"center": [lat, lon], "zoom": zoom, "n": n}
+
+
+def fit_map(points: list):
+    """Move and zoom the main map so all points are visible."""
+    if len(points) == 1:
+        focus_map(*points[0], zoom=16)
+    elif points:
+        center, zoom = fit_view(points)
+        focus_map(*center, zoom=zoom)
+
+
+def apply_project(loaded: dict):
+    """Replace the current work with a loaded project (from a file or the autosave)."""
+    st.session_state.project = {"name": loaded["name"], "description": loaded["description"]}
+    st.session_state.project_settings = loaded["settings"]
+    st.session_state.gateways = loaded["gateways"]
+    st.session_state.nodes = loaded["nodes"]
+    st.session_state.name_counters = loaded["name_counters"]
+    for k in ("link_results", "terrain_cache", "radial_cache"):
+        st.session_state[k] = {}
+    st.session_state.coverage = None
+    st.session_state.report_html = None
+    st.session_state.selected_node = None
+    st.session_state.selected_gateway = None
+    fit_map([[d["lat"], d["lon"]] for d in loaded["gateways"] + loaded["nodes"]])
+    clear_checks()
+    st.session_state.project_rev += 1
+    st.session_state["force_recalc"] = True
+
+
+# Local autosave until projects are stored in the cloud
+AUTOSAVE_PATH = Path(os.environ.get("VEREA_AUTOSAVE",
+                                    Path.home() / ".verea" / "autosave.verea.json"))
+
+
+def read_autosave() -> dict | None:
+    try:
+        data = json.loads(AUTOSAVE_PATH.read_text(encoding="utf-8"))
+        loaded = project_from_dict(data)
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    loaded["saved_at"] = str(data.get("saved_at", ""))
+    return loaded if loaded["gateways"] or loaded["nodes"] else None
+
+
+def write_autosave(doc: dict):
+    """Write the project if it changed since the last write (never an empty one)."""
+    if not (doc["gateways"] or doc["nodes"]):
+        return
+    body = json.dumps(doc, ensure_ascii=False, sort_keys=True)
+    if body == st.session_state.get("last_autosave"):
+        return
+    try:
+        AUTOSAVE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = AUTOSAVE_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps({**doc, "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M")},
+                                  ensure_ascii=False, indent=1), encoding="utf-8")
+        tmp.replace(AUTOSAVE_PATH)
+        st.session_state.last_autosave = body
+    except OSError:
+        pass
+
+
 def project_slug() -> str:
     name = st.session_state.project["name"].strip() or "verea_project"
     return "".join(c if c.isalnum() or c in "-_" else "_" for c in name)[:60]
@@ -142,7 +219,6 @@ if st.session_state.elevation_api is None:
 # ══════════════════════════════════════════════════════════════
 with st.sidebar:
     st.markdown("## 📡 Verea")
-    st.caption("LoRaWAN Packet Tracer — Agricultural IoT")
     st.divider()
 
     # ── Project ──
@@ -162,23 +238,24 @@ with st.sidebar:
         except (ValueError, KeyError, TypeError) as e:
             st.error(f"Could not open project: {e}")
         else:
-            st.session_state.project = {"name": loaded["name"], "description": loaded["description"]}
-            st.session_state.project_settings = loaded["settings"]
-            st.session_state.gateways = loaded["gateways"]
-            st.session_state.nodes = loaded["nodes"]
-            st.session_state.name_counters = loaded["name_counters"]
-            for k in ("link_results", "terrain_cache", "radial_cache"):
-                st.session_state[k] = {}
-            st.session_state.coverage = None
-            st.session_state.report_html = None
-            st.session_state.selected_node = None
-            st.session_state.selected_gateway = None
-            st.session_state.pop("map_center", None)
-            clear_checks()
-            st.session_state.project_rev += 1
-            st.session_state["force_recalc"] = True
-            st.session_state["fit_all_once"] = True
+            apply_project(loaded)
             st.rerun()
+
+    # Restore the autosaved work when the app starts empty (e.g. after a restart)
+    if not (st.session_state.gateways or st.session_state.nodes) \
+            and not st.session_state.get("autosave_dismissed"):
+        saved = read_autosave()
+        if saved:
+            n_dev = len(saved["gateways"]) + len(saved["nodes"])
+            st.info(f"Unsaved work found: **{saved['name'] or 'untitled'}** "
+                    f"({n_dev} devices, {saved['saved_at']}).")
+            ra1, ra2 = st.columns(2)
+            if ra1.button("↩️ Restore", use_container_width=True, type="primary"):
+                apply_project(saved)
+                st.rerun()
+            if ra2.button("Dismiss", use_container_width=True):
+                st.session_state.autosave_dismissed = True
+                st.rerun()
 
     st.divider()
 
@@ -194,7 +271,7 @@ with st.sidebar:
                 st.success(f"📍 {location.address[:60]}")
                 st.caption(f"({location.latitude:.5f}, {location.longitude:.5f})")
                 if st.button("📌 Center map here"):
-                    st.session_state["map_center"] = [location.latitude, location.longitude]
+                    focus_map(location.latitude, location.longitude, zoom=15)
                     st.rerun()
             else:
                 st.warning("Location not found")
@@ -243,6 +320,11 @@ with st.sidebar:
 
     st.divider()
 
+    show_labels = st.toggle("Show labels on map", value=True,
+                            help="Name of each device and its distance to the gateway.")
+
+    st.divider()
+
     # ── Environment ──
     st.markdown("### Environment")
     ps = st.session_state.project_settings
@@ -280,7 +362,8 @@ with st.sidebar:
                                        else DEFAULT_PROPAGATION_MODEL),
         key=f"set_model_{rev}",
         help="ITM models ground reflection and diffraction over multiple ridges "
-             "on the real terrain. Paths under 1 km always use the simple model.",
+             "on the real terrain. Paths under ~1 km, where ITM does not apply, use a "
+             "short-path model (ITU-R P.526: rounded hills + ground reflection).",
     )
     diff_options = ["dominant_knife_edge", "deygout", "empirical_fresnel"]
     diffraction_method = st.selectbox(
@@ -341,8 +424,7 @@ with st.sidebar:
             st.session_state.loaded_project_file = st.session_state.get("project_upload") and \
                 st.session_state["project_upload"].file_id
             st.session_state.elevation_api = ElevationAPI()
-            if "map_center" in st.session_state:
-                del st.session_state["map_center"]
+            st.session_state.pop("map_view", None)
             st.rerun()
 
     n_checked = len(checked_node_names())
@@ -377,8 +459,10 @@ with project_save_slot:
             "environment": environment,
         },
     )
+    write_autosave(project_doc)
+    st.caption(f"✔ Autosaved locally" if st.session_state.get("last_autosave") else "")
     st.download_button(
-        "💾 Save project",
+        "💾 Save project (file)",
         data=json.dumps(project_doc, indent=2, ensure_ascii=False),
         file_name=f"{project_slug()}.verea.json",
         mime="application/json",
@@ -584,31 +668,16 @@ def draw_radial(m, radial, weight=3, opacity=0.6):
                         weight=weight, opacity=opacity).add_to(m)
 
 
-def build_map(sel_radial=None, height=None, fit_all=False, only_nodes=None,
-              highlight=True) -> folium.Map:
+def build_layers(sel_radial=None, only_nodes=None, highlight=True,
+                 labels=True) -> folium.FeatureGroup:
     """
-    Folium map with devices, links, coverage and the selected node's range.
+    Devices, links, coverage and the selected node's range as one layer.
     only_nodes: names of the nodes to draw (None = all). highlight: draw the
     selection / checked halos (off for the report).
     """
     nodes = [n for n in st.session_state.nodes if only_nodes is None or n["name"] in only_nodes]
     checked = set(checked_node_names()) if highlight else set()
-    if "map_center" in st.session_state:
-        center = st.session_state["map_center"]
-    elif st.session_state.gateways:
-        g = st.session_state.gateways[0]
-        center = [g["lat"], g["lon"]]
-    else:
-        center = MAP_DEFAULT_CENTER
-
-    # ESRI satellite tiles
-    m = folium.Map(
-        location=center,
-        zoom_start=MAP_DEFAULT_ZOOM,
-        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        attr="Esri",
-        **({"height": height} if height else {}),
-    )
+    m = folium.FeatureGroup(name="Network")
 
     # ── Coverage map (drawn first, under the devices) ──
     cov = st.session_state.coverage
@@ -637,7 +706,8 @@ def build_map(sel_radial=None, height=None, fit_all=False, only_nodes=None,
     # ── Selection halos (under the markers) ──
     def halo(lat, lon, color, radius=22):
         folium.CircleMarker([lat, lon], radius=radius, color=color, weight=4,
-                            fill=True, fill_color=color, fill_opacity=0.15).add_to(m)
+                            fill=True, fill_color=color, fill_opacity=0.15,
+                            interactive=False).add_to(m)
 
     if highlight:
         for nd in nodes:
@@ -664,6 +734,7 @@ def build_map(sel_radial=None, height=None, fit_all=False, only_nodes=None,
             [gw["lat"], gw["lon"]],
             popup=folium.Popup(popup_html, max_width=200),
             icon=folium.Icon(color=color, icon=icon_name, prefix="fa"),
+            tooltip=map_label(gw["name"], gateway_profile(gw)["label"]) if labels else None,
         ).add_to(m)
 
     # ── Draw Nodes + Link lines ──
@@ -722,26 +793,53 @@ def build_map(sel_radial=None, height=None, fit_all=False, only_nodes=None,
                 f"<br>{'✅ VIABLE' if r.link_viable else '❌ FAIL'}",
             ])
 
+        if cellular:
+            label_sub = "4G"
+        elif link:
+            label_sub = f"{link['result'].distance_km:.2f} km → {link['result'].gateway_name}"
+        else:
+            label_sub = None
         folium.Marker(
             [nd["lat"], nd["lon"]],
             popup=folium.Popup("".join(popup_lines), max_width=220),
             icon=folium.Icon(color=icon_color, icon=icon_name, prefix="fa"),
+            tooltip=map_label(node_id, label_sub) if labels else None,
         ).add_to(m)
 
+    return m
 
-    if fit_all:
-        pts = [[d["lat"], d["lon"]] for d in st.session_state.gateways + nodes]
-        if cov and cov["sig"] == coverage_signature(cov["params"]):
-            pts += [list(r.coordinates[-1]) for rads in cov["radials"].values() for r in rads]
-        if len(pts) >= 2:
-            m.fit_bounds(pts, padding=(30, 30))
+
+def map_label(name: str, sub: str | None = None) -> folium.Tooltip:
+    """Small always-visible label next to a marker."""
+    text = html.escape(name) + (f' <span class="sub">· {html.escape(sub)}</span>' if sub else "")
+    return folium.Tooltip(text, permanent=True, direction="right", offset=(14, -18),
+                          class_name="verea-label", sticky=False)
+
+
+def network_points(only_nodes=None) -> list:
+    nodes = [n for n in st.session_state.nodes if only_nodes is None or n["name"] in only_nodes]
+    return [[d["lat"], d["lon"]] for d in st.session_state.gateways + nodes]
+
+
+def build_map(sel_radial=None, height=None, fit_all=False, only_nodes=None,
+              highlight=True, labels=True) -> folium.Map:
+    """Standalone map (report): base map + network layer, framed on the devices."""
+    pts = network_points(only_nodes)
+    cov = st.session_state.coverage
+    if cov and cov["sig"] == coverage_signature(cov["params"]):
+        pts += [list(r.coordinates[-1]) for rads in cov["radials"].values() for r in rads]
+    center = pts[0] if pts else MAP_DEFAULT_CENTER
+    m = base_map(center, MAP_DEFAULT_ZOOM, height=height)
+    build_layers(sel_radial, only_nodes, highlight, labels).add_to(m)
+    if fit_all and len(pts) >= 2:
+        m.fit_bounds(pts, padding=(30, 30))
     return m
 
 
 # ══════════════════════════════════════════════════════════════
 # Main Layout
 # ══════════════════════════════════════════════════════════════
-st.markdown("# 📡 Verea — LoRaWAN Packet Tracer")
+st.markdown("# 📡 Verea")
 
 # ── Summary metrics bar ──
 if st.session_state.gateways or st.session_state.nodes:
@@ -789,19 +887,26 @@ with col_map:
     sel_nd_for_map = next((n for n in st.session_state.nodes
                            if n["name"] == st.session_state.selected_node), None)
     sel_radial = range_along_link(sel_nd_for_map) if sel_nd_for_map else None
-    m = build_map(sel_radial, fit_all=st.session_state.pop("fit_all_once", False))
-    locate = [n for n in st.session_state.nodes
-              if n["name"] in st.session_state.pop("locate_nodes", [])]
-    if len(locate) == 1:
-        m.location = [locate[0]["lat"], locate[0]["lon"]]
-    elif locate:
-        m.fit_bounds([[n["lat"], n["lon"]] for n in locate], padding=(40, 40))
+    if "map_view" not in st.session_state:
+        pts = network_points()
+        if len(pts) > 1:
+            fit_map(pts)
+        else:
+            focus_map(*(pts[0] if pts else MAP_DEFAULT_CENTER), zoom=MAP_DEFAULT_ZOOM)
+    view = st.session_state.map_view
 
     # ── Render map and capture clicks ──
+    # The base map never changes, so the component keeps the user's pan/zoom;
+    # devices and links go in as a layer that is swapped on every rerun.
+    # center/zoom only move the map when they change (the tiny offset makes
+    # each focus request distinct, so re-focusing the same node works).
     map_data = st_folium(
-        m, width=None, height=520,
+        base_map(MAP_DEFAULT_CENTER, MAP_DEFAULT_ZOOM), width=None, height=520,
         returned_objects=["last_clicked", "last_object_clicked"],
         key="main_map",
+        feature_group_to_add=build_layers(sel_radial, labels=show_labels),
+        center=(view["center"][0] + view["n"] * 1e-9, view["center"][1]),
+        zoom=(view["zoom"] + view["n"] * 1e-6) if view.get("zoom") else None,
     )
 
     # ── Handle marker click: select the device under it ──
@@ -980,7 +1085,7 @@ with col_panel:
                              else "secondary"):
                     st.session_state.selected_gateway = gw["name"]
                     st.session_state.selected_node = None  # deselect node
-                    st.session_state["map_center"] = [gw["lat"], gw["lon"]]
+                    focus_map(gw["lat"], gw["lon"])
                     st.rerun()
             with gc4:
                 if st.button("🗑️", key=f"gw_del_{i}"):
@@ -1037,6 +1142,7 @@ with col_panel:
             if any(sel_gw.get(k) != v for k, v in new_vals.items()):
                 if st.button("📝 Apply changes", key="apply_gw_changes", type="primary"):
                     sel_gw.update(new_vals)
+                    focus_map(sel_gw["lat"], sel_gw["lon"])
                     st.session_state.link_results = {}
                     st.session_state["force_recalc"] = True
                     st.rerun()
@@ -1068,6 +1174,7 @@ with col_panel:
                              help=node_profile(nd)["label"]):
                     st.session_state.selected_node = nd["name"]
                     st.session_state.selected_gateway = None  # deselect gateway
+                    focus_map(nd["lat"], nd["lon"])
                     st.rerun()
             with nc2:
                 type_icon = {"weather": "🌤️", "cellular": "📶"}.get(node_profile(nd)["type"], "📱")
@@ -1086,8 +1193,8 @@ with col_panel:
             lc1, lc2 = st.columns(2)
             with lc1:
                 if st.button(f"📍 Locate checked ({len(checked_now)})", use_container_width=True):
-                    st.session_state["locate_nodes"] = checked_now
-                    st.session_state.pop("map_center", None)
+                    fit_map([[n["lat"], n["lon"]] for n in st.session_state.nodes
+                             if n["name"] in checked_now])
                     st.rerun()
             with lc2:
                 st.button("✖ Uncheck all", use_container_width=True, on_click=clear_checks)
@@ -1179,6 +1286,7 @@ with col_panel:
                     sel_nd["gain"] = new_gain
                     sel_nd["sf"] = new_sf
                     sel_nd["environment"] = new_env
+                    focus_map(sel_nd["lat"], sel_nd["lon"])
                     # Invalidate and recalculate
                     st.session_state.link_results.pop(sel_nd["name"], None)
                     st.session_state.terrain_cache = {}
@@ -1233,8 +1341,7 @@ with col_panel:
                 mc6.metric("Terrain loss", f"+{r.terrain_loss_db:.1f} dB",
                            help="Loss over free space caused by the terrain: ground "
                                 "reflection and diffraction over ridges. Model: "
-                                + ("Longley-Rice (ITM)" if r.propagation_model == "itm"
-                                   else "FSPL + knife-edge"))
+                                + MODEL_USED_LABELS.get(r.propagation_model, r.propagation_model))
 
                 mc7, mc8 = st.columns(2)
                 mc7.metric("Fresnel clear.", f"{r.fresnel_min_clearance_pct:.0f}%")
@@ -1424,7 +1531,7 @@ if st.session_state.pop("make_report", False):
                     ("Distance", f"{r.distance_km:.2f} km"),
                     ("EIRP (node)", f"{r.eirp_dbm:+.1f} dBm"),
                     ("Free-space loss", f"{r.fspl_db:.1f} dB"),
-                    ("Terrain loss", f"+{r.terrain_loss_db:.1f} dB ({'ITM' if r.propagation_model == 'itm' else 'knife-edge'})"),
+                    ("Terrain loss", f"+{r.terrain_loss_db:.1f} dB ({MODEL_USED_LABELS.get(r.propagation_model, r.propagation_model)})"),
                     ("Clutter loss", f"+{r.clutter_loss_db:.1f} dB ({env})"),
                     ("Total path loss", f"{r.total_path_loss_db:.1f} dB"),
                     ("RX power at gateway", f"{r.rx_power_dbm:.1f} dBm"),
@@ -1454,7 +1561,7 @@ if st.session_state.pop("make_report", False):
         stamp = datetime.now()
         st.session_state.report_html = {
             "html": build_report_html(
-                title=st.session_state.project["name"].strip() or "Verea — LoRaWAN network report",
+                title=st.session_state.project["name"].strip() or "Verea — network report",
                 description=st.session_state.project["description"].strip(),
                 generated_at=stamp.strftime("%Y-%m-%d %H:%M"),
                 map_html=map_doc,
