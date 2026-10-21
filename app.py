@@ -132,6 +132,11 @@ for key, val in defaults.items():
         st.session_state[key] = copy.deepcopy(val)
 
 
+for _old, _new in st.session_state.pop("pending_check_moves", []):
+    if st.session_state.pop(f"chk_{_old}", False):
+        st.session_state[f"chk_{_new}"] = True
+
+
 def checked_node_names() -> list:
     """Nodes ticked in the right panel (multi-selection)."""
     return [n["name"] for n in st.session_state.nodes if st.session_state.get(f"chk_{n['name']}")]
@@ -557,6 +562,53 @@ def best_link(nd: dict) -> tuple[dict | None, str | None]:
         if best is None or analysis["result"].link_margin_db > best["result"].link_margin_db:
             best = analysis
     return best, (None if best else error)
+
+
+MAX_NAME_LEN = 40
+
+
+def rename_device(kind: str, old: str, new: str) -> str | None:
+    """
+    Rename a gateway or node and every place that refers to it by name.
+    Returns an error message, or None when it worked (or nothing changed).
+    """
+    new = new.strip()
+    if new == old:
+        return None
+    if not new:
+        return "The name cannot be empty."
+    if len(new) > MAX_NAME_LEN:
+        return f"The name can have at most {MAX_NAME_LEN} characters."
+    taken = {d["name"].casefold() for d in st.session_state.gateways + st.session_state.nodes
+             if d["name"] != old}
+    if new.casefold() in taken:
+        return f"There is already a device called '{new}'."
+
+    ss = st.session_state
+    if kind == "node":
+        nd = next(n for n in ss.nodes if n["name"] == old)
+        nd["name"] = new
+        for store in (ss.link_results, ss.link_errors):
+            if old in store:
+                store[new] = store.pop(old)
+        if new in ss.link_results:
+            ss.link_results[new]["node_dev"].name = new
+        if ss.selected_node == old:
+            ss.selected_node = new
+        # The checkbox widget was already drawn this run: move its state next run
+        ss.setdefault("pending_check_moves", []).append((old, new))
+    else:
+        gw = next(g for g in ss.gateways if g["name"] == old)
+        gw["name"] = new
+        for analysis in ss.link_results.values():
+            if analysis["result"].gateway_name == old:
+                analysis["result"].gateway_name = new
+                analysis["gw_dev"].name = new
+        if ss.selected_gateway == old:
+            ss.selected_gateway = new
+        if ss.coverage and old in ss.coverage["radials"]:
+            ss.coverage["radials"][new] = ss.coverage["radials"].pop(old)
+    return None
 
 
 def no_result_text(nd: dict) -> str:
@@ -1105,27 +1157,21 @@ with col_panel:
         # ── Gateway list ──
         st.markdown("### 🏗️ Gateways")
         for i, gw in enumerate(st.session_state.gateways):
-            gc1, gc2, gc3, gc4 = st.columns([3, 1, 1, 1])
+            gc1, gc2, gc4 = st.columns([4, 1, 1], vertical_alignment="center")
             with gc1:
-                new_name = st.text_input(
-                    "Name", value=gw["name"], key=f"gw_name_{i}",
-                    label_visibility="collapsed",
-                )
-                if new_name != gw["name"]:
-                    gw["name"] = new_name
+                if st.button(f"🏗️ {gw['name']}", key=f"gw_sel_{i}", use_container_width=True,
+                             type="primary" if gw["name"] == st.session_state.selected_gateway
+                             else "secondary",
+                             help=f"{gateway_profile(gw)['label']} — click to edit"):
+                    st.session_state.selected_gateway = gw["name"]
+                    st.session_state.selected_node = None  # deselect node
+                    focus_map(gw["lat"], gw["lon"])
+                    st.rerun()
             with gc2:
                 online = st.toggle("ON", value=gw.get("online", True), key=f"gw_online_{i}")
                 if online != gw.get("online", True):
                     gw["online"] = online
                     request_recalc()
-                    st.rerun()
-            with gc3:
-                if st.button("📍", key=f"gw_sel_{i}",
-                             type="primary" if gw["name"] == st.session_state.selected_gateway
-                             else "secondary"):
-                    st.session_state.selected_gateway = gw["name"]
-                    st.session_state.selected_node = None  # deselect node
-                    focus_map(gw["lat"], gw["lon"])
                     st.rerun()
             with gc4:
                 if st.button("🗑️", key=f"gw_del_{i}"):
@@ -1148,6 +1194,8 @@ with col_panel:
                                    key=f"gwp_model_{gw_sig}")
             gp = GATEWAY_PROFILES[g_model]
             st.caption(estimated_note(gp))
+            g_name = st.text_input("Name", value=sel_gw["name"], max_chars=MAX_NAME_LEN,
+                                   key=f"gwp_name_{gw_sig}")
             # Picking another model loads its values; same model keeps this gateway's values
             src = sel_gw if g_model == cur_model else gp
             fkey = f"{gw_sig}_{g_model}"
@@ -1178,12 +1226,18 @@ with col_panel:
                                             "depends on antenna height, gain and cable loss.")
             new_vals = {"model": g_model, "lat": g_lat, "lon": g_lon, "height": g_height,
                         "gain": g_gain, "cable_loss": g_cable, "tx_power": g_tx}
-            if any(sel_gw.get(k) != v for k, v in new_vals.items()):
+            rf_changed = any(sel_gw.get(k) != v for k, v in new_vals.items())
+            if rf_changed or g_name.strip() != sel_gw["name"]:
                 if st.button("📝 Apply changes", key="apply_gw_changes", type="primary"):
-                    sel_gw.update(new_vals)
-                    focus_map(sel_gw["lat"], sel_gw["lon"])
-                    request_recalc()
-                    st.rerun()
+                    error = rename_device("gateway", sel_gw["name"], g_name)
+                    if error:
+                        st.error(error)
+                    else:
+                        if rf_changed:
+                            sel_gw.update(new_vals)
+                            request_recalc()
+                        focus_map(sel_gw["lat"], sel_gw["lon"])
+                        st.rerun()
 
         st.divider()
 
@@ -1259,6 +1313,9 @@ with col_panel:
                 sel_nd.get("environment"),
             )))
 
+            new_name = st.text_input("Name", value=sel_nd["name"], max_chars=MAX_NAME_LEN,
+                                     key=f"prop_name_{prop_sig}")
+
             p1, p2 = st.columns(2)
             with p1:
                 new_lat = st.number_input("Latitude", value=sel_nd["lat"],
@@ -1311,6 +1368,7 @@ with col_panel:
                 )
 
             # Update node if changed
+            renamed = new_name.strip() != sel_nd["name"]
             changed = (
                 new_lat != sel_nd["lat"] or new_lon != sel_nd["lon"]
                 or new_height != sel_nd.get("height")
@@ -1319,19 +1377,25 @@ with col_panel:
                 or new_sf != sel_nd.get("sf")
                 or new_env != sel_nd.get("environment", environment)
             )
-            if changed:
+            if changed or renamed:
                 if st.button("📝 Apply changes", key="apply_node_changes", type="primary"):
-                    sel_nd["lat"] = new_lat
-                    sel_nd["lon"] = new_lon
-                    sel_nd["height"] = new_height
-                    sel_nd["tx_power"] = new_tx
-                    sel_nd["gain"] = new_gain
-                    sel_nd["sf"] = new_sf
-                    sel_nd["environment"] = new_env
-                    focus_map(sel_nd["lat"], sel_nd["lon"])
-                    # Re-route to best gateway
-                    store_link(sel_nd["name"], *best_link(sel_nd))
-                    st.rerun()
+                    error = rename_device("node", sel_nd["name"], new_name)
+                    if error:
+                        st.error(error)
+                    elif not changed:
+                        st.rerun()
+                    else:
+                        sel_nd["lat"] = new_lat
+                        sel_nd["lon"] = new_lon
+                        sel_nd["height"] = new_height
+                        sel_nd["tx_power"] = new_tx
+                        sel_nd["gain"] = new_gain
+                        sel_nd["sf"] = new_sf
+                        sel_nd["environment"] = new_env
+                        focus_map(sel_nd["lat"], sel_nd["lon"])
+                        # Re-route to best gateway
+                        store_link(sel_nd["name"], *best_link(sel_nd))
+                        st.rerun()
 
             # Per-device elevation caption
             if sel_nd["name"] in st.session_state.link_results:
