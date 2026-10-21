@@ -8,3 +8,7 @@ dist/
 build/
 .env
 .venv/
+
+# Coverage maps (large downloads) and their tile cache
+data/coverage/*.gpkg
+data/coverage/cache/

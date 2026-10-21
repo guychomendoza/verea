@@ -8,3 +8,7 @@ pandas>=2.0.0
 geopy>=2.3.0
 pytest>=7.0.0
 itmlogic==1.2
+geopandas>=1.0
+pyogrio>=0.9
+shapely>=2.0
+pyproj>=3.6

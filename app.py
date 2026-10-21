@@ -22,6 +22,8 @@ import os
 import copy
 import html
 import json
+import shapely
+import shapely.geometry
 from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -72,6 +74,7 @@ from core.profiles import (
     gateway_profile, node_profile, is_cellular, new_gateway, new_node, estimated_note,
 )
 from core.project import project_to_dict, project_from_dict
+from core.cellular import find_sources
 from utils.geo import haversine
 
 # Terrain model actually used for a link (ITM falls back to the short-path model)
@@ -218,6 +221,50 @@ def write_autosave(doc: dict):
         st.session_state.last_autosave = body
     except OSError:
         pass
+
+
+# ── 4G coverage (operator maps published by the regulator, see data/coverage/README.md) ──
+COVERAGE_DIR = Path(__file__).parent / "data" / "coverage"
+COVERAGE_DATASETS_URL = "https://www.datos.gob.mx/dataset/mapas_cobertura_servicio_movil_radiomovil_dipsa"
+SOLID_SHARE = 0.7       # below this share of covered surroundings the spot is "patchy"
+
+
+@st.cache_resource
+def coverage_sources() -> dict:
+    """{operator: {"guaranteed": source, "differentiated": source}} for the files on disk."""
+    out = {}
+    for s in find_sources(COVERAGE_DIR):
+        if s.tech == "4G":
+            out.setdefault(s.operator, {})[s.kind] = s
+    return out
+
+
+def cell_status(nd: dict, operator: str | None) -> dict:
+    """4G coverage of a cellular node: state (ok / patchy / differentiated / none / unknown) and text."""
+    srcs = coverage_sources().get(operator) if operator else None
+    if not srcs:
+        return {"state": "unknown", "text": "4G (no coverage data)", "short": "4G", "hit": None}
+    key = (operator, round(nd["lat"], 6), round(nd["lon"], 6))
+    cache = st.session_state.setdefault("cell_status_cache", {})
+    if key not in cache:
+        g = srcs.get("guaranteed")
+        hit = g.status_at(nd["lat"], nd["lon"]) if g else None
+        d = srcs.get("differentiated")
+        diff = d.status_at(nd["lat"], nd["lon"]) if d and not (hit and hit.covered) else None
+        if hit and hit.covered and hit.nearby_share >= SOLID_SHARE:
+            st_ = ("ok", f"✅ {operator} 4G guaranteed", f"{operator} 4G ✓")
+        elif hit and hit.covered:
+            st_ = ("patchy", f"⚠️ {operator} 4G guaranteed, patchy area ({hit.nearby_share:.0%} around)",
+                   f"{operator} 4G patchy")
+        elif diff and diff.covered:
+            st_ = ("differentiated", f"⚠️ {operator} 4G differentiated only (no guarantee)",
+                   f"{operator} 4G no guarantee")
+        else:
+            near = (f"nearest {hit.nearest_m:,.0f} m away" if hit and hit.nearest_m is not None
+                    else "none within 20 km")
+            st_ = ("none", f"❌ No {operator} 4G declared ({near})", f"no {operator} 4G")
+        cache[key] = {"state": st_[0], "text": st_[1], "short": st_[2], "hit": hit}
+    return cache[key]
 
 
 def project_slug() -> str:
@@ -395,6 +442,28 @@ with st.sidebar:
             st.session_state.coverage = None
             st.rerun()
 
+    # ── 4G coverage ──
+    st.markdown("### 📶 4G coverage")
+    cell_ops = list(coverage_sources())
+    if cell_ops:
+        saved_op = ps.get("cell_operator")
+        cell_operator = st.selectbox(
+            "Operator", cell_ops, index=cell_ops.index(saved_op) if saved_op in cell_ops else 0,
+            key=f"set_cell_op_{rev}",
+            help="Coverage declared by the operator to the regulator (CRT open data). "
+                 "4G sensors are checked against it.")
+        show_cell = st.toggle("Show on map", value=False, key="show_cell_layer",
+                              help="Green tint = guaranteed 4G, yellow = differentiated only, "
+                                   "red = no 4G declared.")
+        st.caption(" · ".join(s.label for s in coverage_sources()[cell_operator].values())
+                   + " — source: CRT / datos.gob.mx (CC BY 4.0)")
+    else:
+        cell_operator, show_cell = None, False
+        st.caption(f"No coverage files yet. Download the 4G maps from "
+                   f"[datos.gob.mx]({COVERAGE_DATASETS_URL}) into `data/coverage/`.")
+
+    st.divider()
+
     # ── Advanced (rarely changed) ──
     with st.expander("⚙️ Advanced"):
         model_labels = {
@@ -479,6 +548,7 @@ with project_save_slot:
         settings={
             "freq_mhz": freq_mhz, "propagation_model": propagation_model,
             "diffraction_method": diffraction_method, "safety_margin": safety_margin,
+            "cell_operator": cell_operator,
             "environment": environment,
         },
     )
@@ -609,6 +679,40 @@ def rename_device(kind: str, old: str, new: str) -> str | None:
         if ss.coverage and old in ss.coverage["radials"]:
             ss.coverage["radials"][new] = ss.coverage["radials"].pop(old)
     return None
+
+
+CELL_COLORS = {"ok": "green", "patchy": "orange", "differentiated": "orange", "none": "red",
+               "unknown": "purple"}
+
+
+CELL_LAYER_STYLE = {
+    "guaranteed": {"color": "#2a9d8f", "weight": 0.5, "opacity": 0.5, "fillColor": "#2a9d8f", "fillOpacity": 0.12},
+    "differentiated": {"color": "#e9c46a", "weight": 0.5, "opacity": 0.6, "fillColor": "#e9c46a", "fillOpacity": 0.25},
+    "none": {"color": "#e63946", "weight": 0.8, "opacity": 0.8, "fillColor": "#e63946", "fillOpacity": 0.35},
+}
+
+
+def cell_layer(operator: str, bbox: tuple) -> list:
+    """GeoJSON features of the operator's 4G coverage inside bbox (simplified for drawing)."""
+    key = (operator, tuple(round(v, 3) for v in bbox))
+    cache = st.session_state.setdefault("cell_layer_cache", {})
+    if key not in cache:
+        feats, covered = [], []
+        for kind, src in coverage_sources().get(operator, {}).items():
+            for level, g in src.geometries(bbox):
+                g = shapely.simplify(g, 0.0002, preserve_topology=True)
+                if not g.is_empty:
+                    covered.append(g)
+                    feats.append({"type": "Feature", "geometry": shapely.geometry.mapping(g),
+                                  "properties": {"kind": kind}})
+        # Where there is no coverage at all: in a mostly covered valley this is what stands out
+        gaps = shapely.difference(shapely.box(*bbox), shapely.union_all(covered)) if covered \
+            else shapely.box(*bbox)
+        if not gaps.is_empty:
+            feats.append({"type": "Feature", "geometry": shapely.geometry.mapping(gaps),
+                          "properties": {"kind": "none"}})
+        cache[key] = feats
+    return cache[key]
 
 
 def no_result_text(nd: dict) -> str:
@@ -775,6 +879,19 @@ def build_layers(sel_radial=None, only_nodes=None, highlight=True,
     checked = set(checked_node_names()) if highlight else set()
     m = folium.FeatureGroup(name="Network")
 
+    # ── 4G coverage of the selected operator (bottom layer, not clickable) ──
+    if show_cell and cell_operator:
+        pts = network_points() or [MAP_DEFAULT_CENTER]
+        lats, lons = [p[0] for p in pts], [p[1] for p in pts]
+        bbox = (min(lons) - 0.05, min(lats) - 0.05, max(lons) + 0.05, max(lats) + 0.05)
+        feats = cell_layer(cell_operator, bbox)
+        if feats:
+            folium.GeoJson(
+                {"type": "FeatureCollection", "features": feats},
+                style_function=lambda f: CELL_LAYER_STYLE[f["properties"]["kind"]],
+                interactive=False,
+            ).add_to(m)
+
     # ── Coverage map (drawn first, under the devices) ──
     cov = st.session_state.coverage
     if cov and cov["sig"] == coverage_signature(cov["params"]):
@@ -867,8 +984,9 @@ def build_layers(sel_radial=None, only_nodes=None, highlight=True,
 
         # Node marker: green / red by link, gray while it has no result, purple for 4G
         no_result = no_result_text(nd) if not cellular and not link else None
+        cell = cell_status(nd, cell_operator) if cellular else None
         if cellular:
-            icon_name, icon_color = "signal", "purple"
+            icon_name, icon_color = "signal", CELL_COLORS[cell["state"]]
         else:
             icon_name = "cloud-sun" if nd.get("type") == "weather" else "microchip"
             icon_color = "gray" if viable is None else ("green" if viable else "red")
@@ -876,7 +994,7 @@ def build_layers(sel_radial=None, only_nodes=None, highlight=True,
         popup_lines = [f"<b>{node_id}</b><br>{node_profile(nd)['label']}<br>"
                        f"({nd['lat']:.5f}, {nd['lon']:.5f})"]
         if cellular:
-            popup_lines.append("<br>📶 Cellular (no LoRa link)")
+            popup_lines.append(f"<br>📶 {html.escape(cell['text'])}")
         if no_result:
             popup_lines.append(f"<br>{html.escape(no_result)}")
         if link:
@@ -889,7 +1007,7 @@ def build_layers(sel_radial=None, only_nodes=None, highlight=True,
             ])
 
         if cellular:
-            label_sub = "4G"
+            label_sub = cell["short"]
         elif link:
             label_sub = f"{link['result'].distance_km:.2f} km → {link['result'].gateway_name}"
         else:
@@ -1004,7 +1122,8 @@ with col_map:
         zoom=(view["zoom"] + view["n"] * 1e-6) if view.get("zoom") else None,
     )
     st.caption("🟢 viable · 🔴 not viable · ⚪ no result yet (calculating, or no gateway online) "
-               "· 🟣 4G (cell network)")
+               "· 📶 4G sensors use the same colors for the operator's declared coverage "
+               "(🟠 patchy or no guarantee)")
 
     # ── Handle marker click: select the device under it ──
     obj = map_data.get("last_object_clicked") if map_data else None
@@ -1250,7 +1369,7 @@ with col_panel:
             link = st.session_state.link_results.get(nd["name"])
             margin_str = ""
             if is_cellular(nd):
-                margin_str = " 📶 4G"
+                margin_str = " " + cell_status(nd, cell_operator)["text"].split(" ")[0] + " 4G"
             elif link:
                 r = link["result"]
                 status = "✅" if r.link_viable else "❌"
@@ -1325,9 +1444,25 @@ with col_panel:
                                           format="%.6f", key=f"prop_lon_{prop_sig}")
 
             if is_cellular(sel_nd):
-                st.info("📶 This node sends its data over the cell network (NB-IoT / LTE-M), "
-                        "not through a LoRaWAN gateway, so it has no LoRa link budget. "
-                        "Its coverage depends on the carrier's signal at the site.")
+                cell = cell_status(sel_nd, cell_operator)
+                box = {"ok": st.success, "none": st.error}.get(cell["state"], st.warning)
+                box(cell["text"])
+                hit = cell["hit"]
+                if hit:
+                    c1, c2 = st.columns(2)
+                    c1.metric("Covered around (300 m)", f"{hit.nearby_share:.0%}",
+                              help="Share of the surroundings inside the operator's guaranteed "
+                                   "4G area. Low values mean a patchy spot: moving the sensor a "
+                                   "few metres can change the signal.")
+                    if hit.covered:
+                        c2.metric("Declared signal", f"{hit.level_dbm:.0f} dBm" if hit.level_dbm else "—",
+                                  help="Signal level the operator declares for this area.")
+                    else:
+                        c2.metric("Nearest coverage", f"{hit.nearest_m:,.0f} m"
+                                  if hit.nearest_m is not None else "> 20 km")
+                st.caption("Sends data over the cell network (NB-IoT / LTE-M), not through a "
+                           "LoRaWAN gateway. Coverage = what the operator declares to the regulator "
+                           "for outdoor 4G; LTE-M / NB-IoT usually reach as far or a bit farther.")
                 new_height, new_tx, new_gain = sel_nd.get("height"), sel_nd.get("tx_power"), sel_nd.get("gain")
                 new_sf, new_env = sel_nd.get("sf"), sel_nd.get("environment", environment)
             else:
@@ -1537,7 +1672,8 @@ with col_panel:
                         "Node": nd["name"], "→ GW": "—",
                         "Dist (km)": "—", "Margin": "—",
                         "Fresnel": "—",
-                        "Status": "📶 4G" if is_cellular(nd) else no_result_text(nd),
+                        "Status": cell_status(nd, cell_operator)["text"] if is_cellular(nd)
+                        else no_result_text(nd),
                     })
             if rows:
                 st.dataframe(pd.DataFrame(rows), hide_index=True)
@@ -1591,6 +1727,9 @@ if st.session_state.pop("make_report", False):
             ("Terrain samples per link", "automatic (one per ~90 m, up to 100)"),
             ("Safety margin", f"{safety_margin:.1f} dB"),
             ("Default environment", environment),
+            ("4G coverage data", " · ".join(s.label for s in coverage_sources().get(cell_operator, {}).values())
+             + " — Comisión Reguladora de Telecomunicaciones, datos.gob.mx (CC BY 4.0)"
+             if cell_operator else "—"),
             ("Elevation data", st.session_state.elevation_api.source_name
              if st.session_state.elevation_api else "—"),
         ]
@@ -1627,7 +1766,7 @@ if st.session_state.pop("make_report", False):
                 f"{r.distance_km:.2f}" if r else "—",
                 f"{r.rx_power_dbm:.1f}" if r else "—",
                 f"{r.link_margin_db:+.1f}" if r else "—",
-                "Cellular (no LoRa link)" if cellular else
+                cell_status(nd, cell_operator)["text"] if cellular else
                 ("Viable" if r.link_viable else "Not viable") if r else "Not calculated",
             ))
             if not r:

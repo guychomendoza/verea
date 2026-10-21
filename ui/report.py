@@ -47,7 +47,11 @@ GLOSSARY = [
      "Where a value is not published (mostly antenna gains) a typical figure is used; "
      "these are refined with real RSSI readings from the network."),
     ("Cellular nodes", "4G sensors (NB-IoT / LTE-M) send data over the cell network, not "
-     "through a LoRaWAN gateway, so they have no LoRa link budget."),
+     "through a LoRaWAN gateway. They are checked against the 4G coverage the operator "
+     "declares to the regulator (outdoor LTE); LTE-M / NB-IoT usually reach as far or farther."),
+    ("Guaranteed / differentiated coverage", "Guaranteed: the operator commits to service quality "
+     "there. Differentiated: there is signal but without that commitment (weaker or variable). "
+     "'Patchy' means less than 70% of the 300 m around the sensor is covered."),
     ("Continuous coverage / farthest signal", "Along the gateway→node direction: distance "
      "before the first point without signal, and the last point that still has signal."),
 ]
