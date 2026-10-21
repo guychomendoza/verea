@@ -82,6 +82,7 @@ DEFAULT_CABLE_LOSS_DB = 1.5           # coax + connectors
 
 # ─── Terrain / GIS ───────────────────────────────────────────
 TERRAIN_SAMPLE_POINTS = 100
+MAX_ELEVATION_POINTS = 100            # Open-Meteo and OpenTopoData reject more per request
 MIN_FRESNEL_CLEARANCE_PCT = 60.0      # 60% of F1 = acceptable
 FLAT_TERRAIN_ELEVATION_M = 1500.0     # last-resort fallback elevation
 
@@ -115,6 +116,8 @@ ENVIRONMENT_PROFILES = {
 # ─── Fading Margin ───────────────────────────────────────────
 # Extra margin to account for temporal fading (rain, humidity, foliage sway)
 DEFAULT_FADING_MARGIN_DB = 8.0    # conservative default for agricultural
+# Total reserve the app asks for: fading margin + 3 dB minimum link margin
+DEFAULT_SAFETY_MARGIN_DB = 11.0
 
 # ─── Link Budget Thresholds ──────────────────────────────────
 REQUIRED_LINK_MARGIN_DB = 10.0        # default, overridden by UI slider

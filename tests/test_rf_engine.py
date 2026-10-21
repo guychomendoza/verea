@@ -562,3 +562,36 @@ class TestShortPathModel:
                                   propagation_model="itm")
         assert r.propagation_model == "short"
         assert r.terrain_loss_db > 40
+
+
+class TestSafetyMarginAndSampling:
+    def test_single_safety_margin_same_viability(self):
+        """fading 8 + minimum 3 dB  ==  one 11 dB safety margin with minimum 0."""
+        for km in (1, 3, 6, 7, 8, 9, 12):
+            terrain = TerrainProfile.from_manual_elevations(
+                21.0, -102.0, 21.0 + km / 111.0, -102.0, np.full(100, 1500.0))
+            node = EndNode(spreading_factor=10)
+            old = calculate_link_budget(Gateway(), node, terrain,
+                                        margin_threshold=3.0, fading_margin_db=8.0)
+            new = calculate_link_budget(Gateway(), node, terrain,
+                                        margin_threshold=0.0, fading_margin_db=11.0)
+            assert old.link_viable == new.link_viable, km
+            assert new.link_margin_db == pytest.approx(old.link_margin_db - 3.0)
+
+    def test_link_samples(self):
+        from core.terrain import link_samples
+        assert link_samples(100) == 30
+        assert link_samples(4500) == 51
+        assert link_samples(50_000) == 100
+
+    def test_never_asks_api_for_more_than_100_points(self):
+        from config import MAX_ELEVATION_POINTS
+
+        class FakeAPI:
+            source_name = "fake"
+            def fetch_elevations(self, coords):
+                assert len(coords) <= MAX_ELEVATION_POINTS
+                return np.full(len(coords), 1500.0)
+
+        t = TerrainProfile.from_coordinates(21.0, -102.0, 21.2, -102.0, n_points=200, api=FakeAPI())
+        assert t.n_points == MAX_ELEVATION_POINTS

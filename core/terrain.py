@@ -21,6 +21,7 @@ from config import (
     OPEN_METEO_ELEVATION_URL,
     OPENTOPODATA_ELEVATION_URL,
     TERRAIN_SAMPLE_POINTS,
+    MAX_ELEVATION_POINTS,
     EFFECTIVE_EARTH_K,
     MIN_FRESNEL_CLEARANCE_PCT,
     FLAT_TERRAIN_ELEVATION_M,
@@ -37,6 +38,14 @@ from core.propagation import fresnel_obstruction_loss
 
 # Module-level flag to print fallback warning only once
 _flat_terrain_warned = False
+
+
+def link_samples(distance_m: float) -> int:
+    """
+    Elevation points for a link: about one per 90 m DEM cell, between 30 and
+    the 100 the elevation APIs accept per request.
+    """
+    return int(min(max(np.ceil(distance_m / 90.0) + 1, 30), MAX_ELEVATION_POINTS))
 
 
 class ElevationAPI:
@@ -198,6 +207,7 @@ class TerrainProfile:
         if api is None:
             api = ElevationAPI()
 
+        n_points = max(3, min(int(n_points), MAX_ELEVATION_POINTS))
         coords = interpolate_coordinates(lat1, lon1, lat2, lon2, n_points)
         elevations = api.fetch_elevations(coords)
 

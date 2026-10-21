@@ -44,6 +44,7 @@ from config import (
     SX1276_SENSITIVITY,
     SX1276_DATARATE_BPS,
     TERRAIN_SAMPLE_POINTS,
+    MAX_ELEVATION_POINTS,
     MAP_DEFAULT_CENTER,
     MAP_DEFAULT_ZOOM,
     NOISE_FLOOR_DBM,
@@ -53,11 +54,12 @@ from config import (
     DEFAULT_PROPAGATION_MODEL,
     ENVIRONMENT_PROFILES,
     DEFAULT_FADING_MARGIN_DB,
+    DEFAULT_SAFETY_MARGIN_DB,
     US915_UPLINK_SF,
     clamp_sf,
 )
 from core.devices import Gateway, EndNode, WeatherStation, Antenna
-from core.terrain import TerrainProfile, ElevationAPI
+from core.terrain import TerrainProfile, ElevationAPI, link_samples
 from core.link_budget import calculate_link_budget, route_to_best_gateway
 from core.propagation import fspl, max_fresnel_radius
 from ui.profile_chart import get_elevation_summary
@@ -122,6 +124,8 @@ defaults = {
     "project_settings": {},         # RF settings restored from an opened project
     "project_rev": 0,               # bumps on open/clear so settings widgets re-read defaults
     "loaded_project_file": None,    # id of the last uploaded project (avoid re-applying)
+    "recalc_pending": False,        # links must be recalculated (survives interrupted runs)
+    "link_errors": {},              # node name -> why it has no link result
 }
 for key, val in defaults.items():
     if key not in st.session_state:
@@ -136,6 +140,11 @@ def checked_node_names() -> list:
 def clear_checks():
     for k in [k for k in st.session_state if str(k).startswith("chk_")]:
         del st.session_state[k]
+
+
+def request_recalc():
+    """Recalculate every link at the end of this run (or the next, if this one is cut short)."""
+    st.session_state.recalc_pending = True
 
 
 def focus_map(lat: float, lon: float, zoom: int | None = None):
@@ -169,7 +178,8 @@ def apply_project(loaded: dict):
     fit_map([[d["lat"], d["lon"]] for d in loaded["gateways"] + loaded["nodes"]])
     clear_checks()
     st.session_state.project_rev += 1
-    st.session_state["force_recalc"] = True
+    st.session_state.link_errors = {}
+    request_recalc()
 
 
 # Local autosave until projects are stored in the cloud
@@ -290,13 +300,18 @@ with st.sidebar:
         "node": "📱 Node (sensor / weather station)",
         "move": "✋ Move selected device",
     }
+    # Set the radio through its key (before it is drawn) so code can change the mode,
+    # e.g. switch to Node after placing a gateway
+    if "switch_mode_to" in st.session_state:
+        st.session_state.mode_radio = st.session_state.pop("switch_mode_to")
+    if st.session_state.get("mode_radio") not in mode_options:
+        st.session_state.mode_radio = (st.session_state.placement_mode
+                                       if st.session_state.placement_mode in mode_options
+                                       else "gateway")
     mode = st.radio(
         "Device type",
         options=mode_options,
         format_func=lambda x: mode_labels[x],
-        index=mode_options.index(st.session_state.placement_mode)
-        if st.session_state.placement_mode in mode_options
-        else 0,
         key="mode_radio",
     )
     st.session_state.placement_mode = mode
@@ -349,64 +364,69 @@ with st.sidebar:
                             index=freq_options.index(ps["freq_mhz"]) if ps.get("freq_mhz") in freq_options else 0,
                             key=f"set_freq_{rev}")
     freq_hz = freq_mhz * 1e6
-    model_labels = {
-        "itm": "Longley-Rice (ITM)",
-        "simple": "Simple (FSPL + diffraction)",
-    }
-    propagation_model = st.selectbox(
-        "Propagation model",
-        options=list(model_labels),
-        format_func=model_labels.get,
-        index=list(model_labels).index(ps.get("propagation_model", DEFAULT_PROPAGATION_MODEL)
-                                       if ps.get("propagation_model") in model_labels
-                                       else DEFAULT_PROPAGATION_MODEL),
-        key=f"set_model_{rev}",
-        help="ITM models ground reflection and diffraction over multiple ridges "
-             "on the real terrain. Paths under ~1 km, where ITM does not apply, use a "
-             "short-path model (ITU-R P.526: rounded hills + ground reflection).",
+    # Older projects stored the reserve as fading margin + minimum margin threshold
+    default_safety = ps.get("safety_margin",
+                            ps.get("fading_margin", DEFAULT_FADING_MARGIN_DB) + ps.get("margin_threshold", 3.0)
+                            if "fading_margin" in ps else DEFAULT_SAFETY_MARGIN_DB)
+    safety_margin = st.slider(
+        "Safety margin (dB)", 0.0, 25.0, float(min(max(default_safety, 0.0), 25.0)), 0.5,
+        key=f"set_safety_{rev}",
+        help="How many dB above the gateway's minimum the signal must arrive to call a link "
+             "viable. It is the reserve for bad days: rain, wet or moving foliage, a vehicle "
+             "in the way. Higher = stricter. Link margin shows what is left over it.",
     )
-    diff_options = ["dominant_knife_edge", "deygout", "empirical_fresnel"]
-    diffraction_method = st.selectbox(
-        "Diffraction model (simple)",
-        diff_options,
-        index=diff_options.index(ps["diffraction_method"])
-        if ps.get("diffraction_method") in diff_options else 0,
-        key=f"set_diff_{rev}",
-    )
-    n_terrain_points = st.slider("Terrain samples", 30, 200,
-                                 int(ps.get("n_terrain_points", TERRAIN_SAMPLE_POINTS)), 10,
-                                 key=f"set_samples_{rev}")
-    margin_threshold = st.slider("Min margin threshold (dB)", 0.0, 20.0,
-                                 float(ps.get("margin_threshold", 3.0)), 0.5,
-                                 help="Links below this margin are marked NOT VIABLE",
-                                 key=f"set_margin_{rev}")
-    fading_margin = st.slider("Fading margin (dB)", 0.0, 15.0,
-                              float(ps.get("fading_margin", DEFAULT_FADING_MARGIN_DB)), 0.5,
-                              help="Extra loss for rain, humidity, foliage sway. "
-                                   "8 dB is conservative for agriculture.",
-                              key=f"set_fading_{rev}")
 
     st.divider()
 
     # ── Coverage ──
     st.markdown("### Coverage")
-    cov_sf = st.selectbox(
-        "Sensor SF", list(US915_UPLINK_SF), index=len(US915_UPLINK_SF) - 1,
-        help="Spreading factor of the sensor used for the coverage map. US915 uplinks "
-             "on 125 kHz channels allow SF7–SF10; SF10 reaches the farthest.",
-    )
-    cov_radius_km = st.slider("Max radius (km)", 2, 40, 15, 1)
-    cov_radials = st.select_slider("Directions", options=[12, 24, 36], value=24,
-                                   help="More directions = finer map, slower to compute (~1 s each)")
     cv1, cv2 = st.columns(2)
     with cv1:
         compute_cov = st.button("📡 Compute", disabled=not st.session_state.gateways,
-                                help="Where a 1.5 m sensor with the sidebar environment "
-                                     "reaches each online gateway")
+                                help="How far the signal reaches around each online gateway "
+                                     "(settings in Advanced)")
     with cv2:
         if st.button("Hide", disabled=st.session_state.coverage is None):
             st.session_state.coverage = None
             st.rerun()
+
+    # ── Advanced (rarely changed) ──
+    with st.expander("⚙️ Advanced"):
+        model_labels = {
+            "itm": "Longley-Rice (ITM)",
+            "simple": "Simple (FSPL + diffraction)",
+        }
+        propagation_model = st.selectbox(
+            "Propagation model",
+            options=list(model_labels),
+            format_func=model_labels.get,
+            index=list(model_labels).index(ps.get("propagation_model", DEFAULT_PROPAGATION_MODEL)
+                                           if ps.get("propagation_model") in model_labels
+                                           else DEFAULT_PROPAGATION_MODEL),
+            key=f"set_model_{rev}",
+            help="ITM models ground reflection and diffraction over multiple ridges "
+                 "on the real terrain. Paths under ~1 km, where ITM does not apply, use a "
+                 "short-path model (ITU-R P.526: rounded hills + ground reflection). "
+                 "Simple is the old optimistic model, only for comparison.",
+        )
+        diff_options = ["dominant_knife_edge", "deygout", "empirical_fresnel"]
+        diffraction_method = st.selectbox(
+            "Diffraction model (simple)",
+            diff_options,
+            index=diff_options.index(ps["diffraction_method"])
+            if ps.get("diffraction_method") in diff_options else 0,
+            key=f"set_diff_{rev}",
+            help="Only used by the Simple model.",
+        )
+        st.markdown("**Coverage map**")
+        cov_sf = st.selectbox(
+            "Sensor SF", list(US915_UPLINK_SF), index=len(US915_UPLINK_SF) - 1,
+            help="Spreading factor of the test sensor. SF10 reaches the farthest.",
+        )
+        cov_radius_km = st.slider("Max radius (km)", 2, 40, 15, 1,
+                                  help="How far from the gateway to look.")
+        cov_radials = st.select_slider("Directions", options=[12, 24, 36], value=24,
+                                       help="More directions = finer map, slower (~1 s each).")
 
     st.divider()
 
@@ -445,8 +465,7 @@ with st.sidebar:
         )
 
 # Global RF settings — any change triggers a full recalculation
-rf_settings = (freq_mhz, propagation_model, diffraction_method, n_terrain_points,
-               margin_threshold, fading_margin)
+rf_settings = (freq_mhz, propagation_model, diffraction_method, safety_margin)
 
 with project_save_slot:
     project_doc = project_to_dict(
@@ -454,8 +473,7 @@ with project_save_slot:
         st.session_state.gateways, st.session_state.nodes, st.session_state.name_counters,
         settings={
             "freq_mhz": freq_mhz, "propagation_model": propagation_model,
-            "diffraction_method": diffraction_method, "n_terrain_points": n_terrain_points,
-            "margin_threshold": margin_threshold, "fading_margin": fading_margin,
+            "diffraction_method": diffraction_method, "safety_margin": safety_margin,
             "environment": environment,
         },
     )
@@ -519,20 +537,42 @@ def node_device(node_info: dict) -> EndNode:
     return node_dev
 
 
-def best_link(nd: dict):
-    """Analysis against the online gateway with the best margin (None for cellular nodes)."""
+def best_link(nd: dict) -> tuple[dict | None, str | None]:
+    """
+    Analysis against the online gateway with the best margin, and the reason
+    when there is none (cellular nodes have neither).
+    """
     if is_cellular(nd):
-        return None
-    best = None
-    for gw in st.session_state.gateways:
-        if gw.get("online", True):
-            try:
-                analysis = run_analysis(gw, nd, node_environment=nd.get("environment"))
-            except Exception:
-                continue
-            if best is None or analysis["result"].link_margin_db > best["result"].link_margin_db:
-                best = analysis
-    return best
+        return None, None
+    online = [gw for gw in st.session_state.gateways if gw.get("online", True)]
+    if not online:
+        return None, "No gateway online"
+    best, error = None, None
+    for gw in online:
+        try:
+            analysis = run_analysis(gw, nd, node_environment=nd.get("environment"))
+        except Exception as e:
+            error = f"Calculation failed ({type(e).__name__}: {e})"
+            continue
+        if best is None or analysis["result"].link_margin_db > best["result"].link_margin_db:
+            best = analysis
+    return best, (None if best else error)
+
+
+def no_result_text(nd: dict) -> str:
+    """Why a LoRa node has no link result right now."""
+    if st.session_state.recalc_pending:
+        return "calculating…"
+    return "⚠ " + st.session_state.link_errors.get(nd["name"], "not calculated — press Recalculate")
+
+
+def store_link(name: str, best: dict | None, error: str | None):
+    st.session_state.link_results.pop(name, None)
+    st.session_state.link_errors.pop(name, None)
+    if best:
+        st.session_state.link_results[name] = best
+    elif error:
+        st.session_state.link_errors[name] = error
 
 
 def budget_kwargs(env: str) -> dict:
@@ -540,8 +580,10 @@ def budget_kwargs(env: str) -> dict:
     return dict(
         diffraction_method=diffraction_method,
         environment=env,
-        margin_threshold=margin_threshold,
-        fading_margin_db=fading_margin,
+        # The whole safety margin is the reserve: Link margin = dB left over it,
+        # viable when >= 0 (same result as the old fading 8 dB + minimum 3 dB)
+        margin_threshold=0.0,
+        fading_margin_db=safety_margin,
         propagation_model=propagation_model,
     )
 
@@ -573,7 +615,7 @@ def range_along_link(nd: dict):
         try:
             cache[key] = compute_radial(
                 gateway_device(gw), node_device(nd), bearing, max_d,
-                n_points=n_terrain_points, api=st.session_state.elevation_api,
+                n_points=MAX_ELEVATION_POINTS, api=st.session_state.elevation_api,
                 **budget_kwargs(env),
             )
         except Exception:
@@ -588,10 +630,12 @@ def coverage_signature(params: dict) -> tuple:
 
 def run_analysis(gw_info: dict, node_info: dict, node_environment: str = None) -> dict:
     """Run full terrain + link budget analysis for a GW-Node pair."""
+    n_points = link_samples(haversine(gw_info["lat"], gw_info["lon"],
+                                      node_info["lat"], node_info["lon"]))
     cache_key = (
         f"{gw_info['lat']:.6f},{gw_info['lon']:.6f}_"
         f"{node_info['lat']:.6f},{node_info['lon']:.6f}_"
-        f"{n_terrain_points}"
+        f"{n_points}"
     )
 
     gw_dev = gateway_device(gw_info)
@@ -607,14 +651,14 @@ def run_analysis(gw_info: dict, node_info: dict, node_environment: str = None) -
             terrain = TerrainProfile.from_coordinates(
                 gw_info["lat"], gw_info["lon"],
                 node_info["lat"], node_info["lon"],
-                n_points=n_terrain_points,
+                n_points=n_points,
                 api=api,
             )
         except Exception:
             terrain = TerrainProfile.from_manual_elevations(
                 gw_info["lat"], gw_info["lon"],
                 node_info["lat"], node_info["lon"],
-                np.full(n_terrain_points, 1500.0),
+                np.full(n_points, 1500.0),
             )
         st.session_state.terrain_cache[cache_key] = terrain
 
@@ -652,7 +696,7 @@ if compute_cov:
     for gi, gw in enumerate(online):
         radials[gw["name"]] = compute_coverage(
             gateway_device(gw), template, cov_radius_km * 1000,
-            n_radials=cov_radials, n_points=n_terrain_points,
+            n_radials=cov_radials, n_points=MAX_ELEVATION_POINTS,
             api=st.session_state.elevation_api,
             progress=lambda f, gi=gi: bar.progress((gi + f) / len(online),
                                                    text=f"Computing coverage of {gw['name']}…"),
@@ -769,21 +813,20 @@ def build_layers(sel_radial=None, only_nodes=None, highlight=True,
                     dash_array=line_dash if is_best else "4",
                 ).add_to(m)
 
-        # Node marker
+        # Node marker: green / red by link, gray while it has no result, purple for 4G
+        no_result = no_result_text(nd) if not cellular and not link else None
         if cellular:
-            icon_name = "signal"
-            icon_color = "purple"
-        elif nd.get("type") == "weather":
-            icon_name = "cloud-sun"
-            icon_color = "orange" if viable is None else ("green" if viable else "red")
+            icon_name, icon_color = "signal", "purple"
         else:
-            icon_name = "microchip"
-            icon_color = "blue" if viable is None else ("green" if viable else "red")
+            icon_name = "cloud-sun" if nd.get("type") == "weather" else "microchip"
+            icon_color = "gray" if viable is None else ("green" if viable else "red")
 
         popup_lines = [f"<b>{node_id}</b><br>{node_profile(nd)['label']}<br>"
                        f"({nd['lat']:.5f}, {nd['lon']:.5f})"]
         if cellular:
             popup_lines.append("<br>📶 Cellular (no LoRa link)")
+        if no_result:
+            popup_lines.append(f"<br>{html.escape(no_result)}")
         if link:
             r = link["result"]
             popup_lines.extend([
@@ -798,7 +841,7 @@ def build_layers(sel_radial=None, only_nodes=None, highlight=True,
         elif link:
             label_sub = f"{link['result'].distance_km:.2f} km → {link['result'].gateway_name}"
         else:
-            label_sub = None
+            label_sub = no_result
         folium.Marker(
             [nd["lat"], nd["lon"]],
             popup=folium.Popup("".join(popup_lines), max_width=220),
@@ -908,6 +951,8 @@ with col_map:
         center=(view["center"][0] + view["n"] * 1e-9, view["center"][1]),
         zoom=(view["zoom"] + view["n"] * 1e-6) if view.get("zoom") else None,
     )
+    st.caption("🟢 viable · 🔴 not viable · ⚪ no result yet (calculating, or no gateway online) "
+               "· 🟣 4G (cell network)")
 
     # ── Handle marker click: select the device under it ──
     obj = map_data.get("last_object_clicked") if map_data else None
@@ -953,9 +998,8 @@ with col_map:
                 if nd:
                     nd["lat"] = clat
                     nd["lon"] = clon
-                    # Invalidate cached results for this node
+                    # Its old result no longer applies; recalculated below
                     st.session_state.link_results.pop(sel, None)
-                    st.session_state.terrain_cache = {}
                     moved = True
             # If no node selected, try selected gateway
             if not moved:
@@ -965,11 +1009,9 @@ with col_map:
                     if gw:
                         gw["lat"] = clat
                         gw["lon"] = clon
-                        st.session_state.link_results = {}
-                        st.session_state.terrain_cache = {}
                         moved = True
             if moved:
-                st.session_state["force_recalc"] = True
+                request_recalc()
                 st.rerun()
             else:
                 st.warning("Select a device first (click its name in the right panel)")
@@ -980,8 +1022,9 @@ with col_map:
             st.session_state.selected_gateway = new_gw["name"]
             st.session_state.selected_node = None
             # Re-route every node: the new gateway may be their best one
-            st.session_state.link_results = {}
-            st.session_state["force_recalc"] = True
+            request_recalc()
+            # Next click places a node, not another gateway
+            st.session_state["switch_mode_to"] = "node"
             st.rerun()
 
         elif st.session_state.placement_mode == "node":
@@ -997,9 +1040,7 @@ with col_map:
                 st.session_state.selected_gateway = None
 
                 with st.spinner(f"Analyzing {nd_new['name']}..."):
-                    best = best_link(nd_new)
-                    if best:
-                        st.session_state.link_results[nd_new["name"]] = best
+                    store_link(nd_new["name"], *best_link(nd_new))
 
                 st.rerun()
 
@@ -1076,8 +1117,7 @@ with col_panel:
                 online = st.toggle("ON", value=gw.get("online", True), key=f"gw_online_{i}")
                 if online != gw.get("online", True):
                     gw["online"] = online
-                    st.session_state.link_results = {}
-                    st.session_state["force_recalc"] = True
+                    request_recalc()
                     st.rerun()
             with gc3:
                 if st.button("📍", key=f"gw_sel_{i}",
@@ -1092,8 +1132,7 @@ with col_panel:
                     removed = st.session_state.gateways.pop(i)
                     if st.session_state.selected_gateway == removed["name"]:
                         st.session_state.selected_gateway = None
-                    st.session_state.link_results = {}
-                    st.session_state["force_recalc"] = True
+                    request_recalc()
                     st.rerun()
 
         # ── Selected gateway properties ──
@@ -1143,8 +1182,7 @@ with col_panel:
                 if st.button("📝 Apply changes", key="apply_gw_changes", type="primary"):
                     sel_gw.update(new_vals)
                     focus_map(sel_gw["lat"], sel_gw["lon"])
-                    st.session_state.link_results = {}
-                    st.session_state["force_recalc"] = True
+                    request_recalc()
                     st.rerun()
 
         st.divider()
@@ -1163,6 +1201,8 @@ with col_panel:
                 r = link["result"]
                 status = "✅" if r.link_viable else "❌"
                 margin_str = f" {status} {r.link_margin_db:+.1f}dB"
+            else:
+                margin_str = " ⏳" if st.session_state.recalc_pending else " ⚠️"
 
             with nc0:
                 st.checkbox("Select", key=f"chk_{nd['name']}", label_visibility="collapsed")
@@ -1171,7 +1211,8 @@ with col_panel:
                 is_sel = nd["name"] == st.session_state.selected_node
                 if st.button(label, key=f"nd_sel_{i}", use_container_width=True,
                              type="primary" if is_sel else "secondary",
-                             help=node_profile(nd)["label"]):
+                             help=node_profile(nd)["label"] + (
+                                 f" — {no_result_text(nd)}" if not link and not is_cellular(nd) else "")):
                     st.session_state.selected_node = nd["name"]
                     st.session_state.selected_gateway = None  # deselect gateway
                     focus_map(nd["lat"], nd["lon"])
@@ -1184,6 +1225,7 @@ with col_panel:
                     name = nd["name"]
                     st.session_state.nodes.pop(i)
                     st.session_state.link_results.pop(name, None)
+                    st.session_state.link_errors.pop(name, None)
                     if st.session_state.selected_node == name:
                         st.session_state.selected_node = None
                     st.rerun()
@@ -1287,13 +1329,8 @@ with col_panel:
                     sel_nd["sf"] = new_sf
                     sel_nd["environment"] = new_env
                     focus_map(sel_nd["lat"], sel_nd["lon"])
-                    # Invalidate and recalculate
-                    st.session_state.link_results.pop(sel_nd["name"], None)
-                    st.session_state.terrain_cache = {}
                     # Re-route to best gateway
-                    best = best_link(sel_nd)
-                    if best:
-                        st.session_state.link_results[sel_nd["name"]] = best
+                    store_link(sel_nd["name"], *best_link(sel_nd))
                     st.rerun()
 
             # Per-device elevation caption
@@ -1348,7 +1385,8 @@ with col_panel:
                 mc8.metric("Clutter loss", f"+{r.clutter_loss_db:.1f} dB")
 
                 mc9, mc10 = st.columns(2)
-                mc9.metric("Fading margin", f"+{r.fading_margin_db:.1f} dB")
+                mc9.metric("Safety margin", f"{r.fading_margin_db:.1f} dB",
+                           help="Reserve required over the gateway's minimum; set in the sidebar.")
                 mc10.metric("Total loss", f"{r.total_path_loss_db:.1f} dB")
 
                 rad = range_along_link(sel_nd)
@@ -1434,7 +1472,8 @@ with col_panel:
                     rows.append({
                         "Node": nd["name"], "→ GW": "—",
                         "Dist (km)": "—", "Margin": "—",
-                        "Fresnel": "—", "Status": "📶 4G" if is_cellular(nd) else "⏳",
+                        "Fresnel": "—",
+                        "Status": "📶 4G" if is_cellular(nd) else no_result_text(nd),
                     })
             if rows:
                 st.dataframe(pd.DataFrame(rows), hide_index=True)
@@ -1442,23 +1481,31 @@ with col_panel:
 # ══════════════════════════════════════════════════════════════
 # Recalculate all links
 # ══════════════════════════════════════════════════════════════
-# Auto-recalculate when global RF settings change or a device was moved
-settings_changed = st.session_state.get("last_rf_settings") not in (None, rf_settings)
+# Recalculate when global RF settings change or a device / gateway changed.
+# The pending flag is cleared only after every node is done: if the user
+# touches something mid-way, Streamlit stops this run and the next one
+# starts over instead of leaving nodes without a result.
+if st.session_state.get("last_rf_settings") not in (None, rf_settings):
+    request_recalc()
 st.session_state["last_rf_settings"] = rf_settings
-force_recalc = st.session_state.pop("force_recalc", False)
+if recalc:
+    st.session_state.terrain_cache = {}
+    request_recalc()
 
-if (recalc or settings_changed or force_recalc) and st.session_state.gateways and st.session_state.nodes:
-    if recalc:
-        st.session_state.terrain_cache = {}
-    st.session_state.link_results = {}
-    progress = st.progress(0, text="Recalculating links...")
-    total = len(st.session_state.nodes)
-    for i, nd in enumerate(st.session_state.nodes):
-        best = best_link(nd)
+if st.session_state.recalc_pending:
+    new_results, new_errors = {}, {}
+    nodes = st.session_state.nodes
+    progress = st.progress(0, text="Recalculating links...") if nodes else None
+    for i, nd in enumerate(nodes):
+        best, error = best_link(nd)
         if best:
-            st.session_state.link_results[nd["name"]] = best
-        progress.progress((i + 1) / total, text=f"Analyzed {nd['name']} ({i + 1}/{total})")
-    progress.empty()
+            new_results[nd["name"]] = best
+        elif error:
+            new_errors[nd["name"]] = error
+        progress.progress((i + 1) / len(nodes), text=f"Analyzed {nd['name']} ({i + 1}/{len(nodes)})")
+    st.session_state.link_results = new_results
+    st.session_state.link_errors = new_errors
+    st.session_state.recalc_pending = False
     st.rerun()
 
 # ══════════════════════════════════════════════════════════════
@@ -1477,9 +1524,8 @@ if st.session_state.pop("make_report", False):
             ("Propagation model", model_name),
             ("Frequency", f"{freq_mhz} MHz"),
             ("Diffraction model (simple)", diffraction_method),
-            ("Terrain samples per link", n_terrain_points),
-            ("Min margin threshold", f"{margin_threshold:.1f} dB"),
-            ("Fading margin", f"{fading_margin:.1f} dB"),
+            ("Terrain samples per link", "automatic (one per ~90 m, up to 100)"),
+            ("Safety margin", f"{safety_margin:.1f} dB"),
             ("Default environment", environment),
             ("Elevation data", st.session_state.elevation_api.source_name
              if st.session_state.elevation_api else "—"),
@@ -1536,7 +1582,7 @@ if st.session_state.pop("make_report", False):
                     ("Total path loss", f"{r.total_path_loss_db:.1f} dB"),
                     ("RX power at gateway", f"{r.rx_power_dbm:.1f} dBm"),
                     (f"Sensitivity (SF{r.spreading_factor})", f"{r.sensitivity_dbm:.1f} dBm"),
-                    ("Fading margin", f"−{r.fading_margin_db:.1f} dB"),
+                    ("Safety margin required", f"−{r.fading_margin_db:.1f} dB"),
                     ("Link margin", f"{r.link_margin_db:+.1f} dB"),
                     ("SNR", f"{r.snr_db:+.1f} dB (needs {r.snr_required_db:+.1f})"),
                     ("Fresnel clearance", f"{r.fresnel_min_clearance_pct:.0f}%"),

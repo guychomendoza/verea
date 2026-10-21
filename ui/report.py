@@ -35,9 +35,10 @@ GLOSSARY = [
      "diffraction over rounded hills plus ground reflection."),
     ("Terrain loss", "Extra loss over free space caused by the terrain along the path."),
     ("Clutter loss", "Loss from what surrounds the sensor: crops, orchards, buildings."),
-    ("Fading margin", "Reserve subtracted from the margin for rain, humidity and moving foliage."),
-    ("Link margin", "How many dB the received signal is above the receiver sensitivity, "
-     "after the fading margin. Viable when above the minimum margin threshold."),
+    ("Safety margin", "How many dB above the gateway's minimum (sensitivity) the signal must "
+     "arrive to call a link viable: the reserve for rain, wet or moving foliage and other "
+     "day-to-day variation."),
+    ("Link margin", "dB left over the safety margin. Viable when it is zero or more."),
     ("Spreading factor (SF)", "LoRa data rate. Higher SF = more range, slower and longer "
      "airtime. US915 uplinks allow SF7–SF10."),
     ("Fresnel clearance", "How much of the zone around the line of sight is free of terrain. "
