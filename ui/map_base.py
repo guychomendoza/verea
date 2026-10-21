@@ -252,6 +252,45 @@ class RulerControl(MacroElement):
 """)
 
 
+class CoverageLibrary(JSCSSMixin, MacroElement):
+    """Loads the PMTiles reader with the base map, so the base never changes."""
+
+    default_js = [("pmtiles", "https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js")]
+    _template = Template("")
+
+
+class CoverageTiles(MacroElement):
+    """
+    4G coverage image tiles from a PMTiles file (scripts/build_coverage_tiles.py),
+    added to the network layer. The Leaflet layer is kept in
+    window.__vereaCoverage and reused across reruns, so tiles already loaded
+    are not fetched again.
+    """
+
+    _template = Template("""
+{% macro script(this, kwargs) %}
+(function () {
+  if (typeof pmtiles === "undefined") return;
+  const url = {{ this.url|tojson }};
+  if (!window.__vereaCoverage || window.__vereaCoverageUrl !== url) {
+    window.__vereaCoverage = pmtiles.leafletRasterLayer(new pmtiles.PMTiles(url), {
+      maxNativeZoom: {{ this.max_zoom }}, maxZoom: 22, zIndex: 2,
+      attribution: "4G coverage: CRT / datos.gob.mx (CC BY 4.0)",
+    });
+    window.__vereaCoverageUrl = url;
+  }
+  {{ this._parent.get_name() }}.addLayer(window.__vereaCoverage);
+})();
+{% endmacro %}
+""")
+
+    def __init__(self, url: str, max_zoom: int = 13):
+        super().__init__()
+        self._name = "CoverageTiles"
+        self.url = url
+        self.max_zoom = max_zoom
+
+
 def base_map(center, zoom: int, height=None) -> folium.Map:
     # Vectors on canvas (not SVG) so the capture button includes links and halos
     m = folium.Map(location=center, zoom_start=zoom, tiles=None, prefer_canvas=True,
@@ -261,6 +300,7 @@ def base_map(center, zoom: int, height=None) -> folium.Map:
     m.get_root().header.add_child(Element(LABEL_CSS))
     CaptureControl().add_to(m)
     RulerControl().add_to(m)
+    CoverageLibrary().add_to(m)
     return m
 
 

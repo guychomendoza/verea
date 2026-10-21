@@ -67,14 +67,15 @@ from core.propagation import fspl, max_fresnel_radius
 from ui.profile_chart import get_elevation_summary
 from ui.profile_interactive import build_profile_html
 from ui.report import build_report_html
-from ui.map_base import base_map, fit_view
+from ui.map_base import base_map, fit_view, CoverageTiles
+from ui.tile_server import start_tile_server
 from core.coverage import compute_radial, compute_coverage, initial_bearing, viable_segments
 from core.profiles import (
     GATEWAY_PROFILES, NODE_PROFILES, DEFAULT_GATEWAY_PROFILE, DEFAULT_NODE_PROFILE,
     gateway_profile, node_profile, is_cellular, new_gateway, new_node, estimated_note,
 )
 from core.project import project_to_dict, project_from_dict
-from core.cellular import find_sources
+from core.cellular import find_sources, EDGE_MARGIN_M
 from utils.geo import haversine
 
 # Terrain model actually used for a link (ITM falls back to the short-path model)
@@ -225,7 +226,6 @@ def write_autosave(doc: dict):
 
 # ── 4G coverage (operator maps published by the regulator, see data/coverage/README.md) ──
 COVERAGE_DIR = Path(__file__).parent / "data" / "coverage"
-SOLID_SHARE = 0.7       # below this share of covered surroundings the spot is "patchy"
 
 
 @st.cache_resource
@@ -238,8 +238,20 @@ def coverage_sources() -> dict:
     return out
 
 
+@st.cache_resource
+def tiles_base_url() -> str:
+    """Local server for the coverage PMTiles (started once per app process)."""
+    return start_tile_server(COVERAGE_DIR)
+
+
+def coverage_tiles_file(operator: str) -> Path | None:
+    """Newest PMTiles built for the operator (scripts/build_coverage_tiles.py), if any."""
+    files = sorted(COVERAGE_DIR.glob(f"{operator.lower()}_4g_*.pmtiles"))
+    return files[-1] if files else None
+
+
 def cell_status(nd: dict, operator: str | None) -> dict:
-    """4G coverage of a cellular node: state (ok / patchy / differentiated / none / unknown) and text."""
+    """4G coverage of a cellular node: state (ok / edge / differentiated / none / unknown) and text."""
     srcs = coverage_sources().get(operator) if operator else None
     if not srcs:
         return {"state": "unknown", "text": "4G (no coverage data)", "short": "4G", "hit": None}
@@ -250,11 +262,11 @@ def cell_status(nd: dict, operator: str | None) -> dict:
         hit = g.status_at(nd["lat"], nd["lon"]) if g else None
         d = srcs.get("differentiated")
         diff = d.status_at(nd["lat"], nd["lon"]) if d and not (hit and hit.covered) else None
-        if hit and hit.covered and hit.nearby_share >= SOLID_SHARE:
+        if hit and hit.covered and hit.margin_ok:
             st_ = ("ok", f"✅ {operator} 4G guaranteed", f"{operator} 4G ✓")
         elif hit and hit.covered:
-            st_ = ("patchy", f"⚠️ {operator} 4G guaranteed, patchy area ({hit.nearby_share:.0%} around)",
-                   f"{operator} 4G patchy")
+            st_ = ("edge", f"⚠️ {operator} 4G uncertain: less than {EDGE_MARGIN_M} m from an area "
+                           f"without signal", f"{operator} 4G uncertain")
         elif diff and diff.covered:
             st_ = ("differentiated", f"⚠️ {operator} 4G differentiated only (no guarantee)",
                    f"{operator} 4G no guarantee")
@@ -452,8 +464,12 @@ with st.sidebar:
             help="Coverage declared by the operator to the regulator (CRT open data). "
                  "4G sensors are checked against it.")
         show_cell = st.toggle("Show on map", value=False, key="show_cell_layer",
-                              help="Green tint = guaranteed 4G, yellow = differentiated only, "
-                                   "red = no 4G declared.")
+                              help=f"Green = 4G guaranteed. Yellow = covered but less than "
+                                   f"{EDGE_MARGIN_M} m from an area without signal (not certain). "
+                                   f"Red = no 4G declared.")
+        if show_cell and not coverage_tiles_file(cell_operator):
+            st.caption("Map tiles not found: showing only the area around the project. "
+                       "Run `python scripts/get_coverage.py` to see the whole country.")
         st.caption(" · ".join(s.label for s in coverage_sources()[cell_operator].values())
                    + " — source: CRT / datos.gob.mx (CC BY 4.0)")
     else:
@@ -681,8 +697,10 @@ def rename_device(kind: str, old: str, new: str) -> str | None:
     return None
 
 
-CELL_COLORS = {"ok": "green", "patchy": "orange", "differentiated": "orange", "none": "red",
+CELL_COLORS = {"ok": "green", "edge": "orange", "differentiated": "orange", "none": "red",
                "unknown": "purple"}
+
+
 
 
 CELL_LAYER_STYLE = {
@@ -880,7 +898,12 @@ def build_layers(sel_radial=None, only_nodes=None, highlight=True,
     m = folium.FeatureGroup(name="Network")
 
     # ── 4G coverage of the selected operator (bottom layer, not clickable) ──
-    if show_cell and cell_operator:
+    tiles = coverage_tiles_file(cell_operator) if show_cell and cell_operator else None
+    if tiles:
+        # Whole country as vector tiles: the browser loads only what is on screen
+        CoverageTiles(f"{tiles_base_url()}/{tiles.name}").add_to(m)
+    elif show_cell and cell_operator:
+        # Fallback without tiles: polygons around the project, straight from the GeoPackage
         pts = network_points() or [MAP_DEFAULT_CENTER]
         lats, lons = [p[0] for p in pts], [p[1] for p in pts]
         bbox = (min(lons) - 0.05, min(lats) - 0.05, max(lons) + 0.05, max(lats) + 0.05)
@@ -1122,8 +1145,8 @@ with col_map:
         zoom=(view["zoom"] + view["n"] * 1e-6) if view.get("zoom") else None,
     )
     st.caption("🟢 viable · 🔴 not viable · ⚪ no result yet (calculating, or no gateway online) "
-               "· 📶 4G sensors use the same colors for the operator's declared coverage "
-               "(🟠 patchy or no guarantee)")
+               "· 📶 4G sensors: same colors for the operator's declared coverage "
+               f"(🟠 within {EDGE_MARGIN_M} m of an area without signal)")
 
     # ── Handle marker click: select the device under it ──
     obj = map_data.get("last_object_clicked") if map_data else None
@@ -1452,7 +1475,7 @@ with col_panel:
                     c1, c2 = st.columns(2)
                     c1.metric("Covered around (300 m)", f"{hit.nearby_share:.0%}",
                               help="Share of the surroundings inside the operator's guaranteed "
-                                   "4G area. Low values mean a patchy spot: moving the sensor a "
+                                   "4G area. Low values mean a spotty area: moving the sensor a "
                                    "few metres can change the signal.")
                     if hit.covered:
                         c2.metric("Declared signal", f"{hit.level_dbm:.0f} dBm" if hit.level_dbm else "—",

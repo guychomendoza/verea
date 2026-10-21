@@ -12,3 +12,5 @@ build/
 # Coverage maps (large downloads) and their tile cache
 data/coverage/*.gpkg
 data/coverage/cache/
+data/coverage/*.pmtiles
+data/coverage/.build_*/

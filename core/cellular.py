@@ -21,6 +21,8 @@ import shapely
 
 TILE_DEG = 0.2
 NEARBY_RADIUS_M = 300            # surroundings checked for the coverage share
+EDGE_MARGIN_M = 100              # next to an area without coverage, signal is not certain
+#                                  (the operator maps are rasters of 50 m pixels)
 SEARCH_STEPS_M = (1_000, 5_000, 20_000)  # where to look for the nearest coverage
 
 OPERATORS = {
@@ -46,6 +48,7 @@ class CoverageHit:
     level_dbm: Optional[float] = None       # signal level the operator declares for that area
     nearby_share: float = 0.0                # share of the surroundings (300 m) with coverage, 0–1
     nearest_m: Optional[float] = None        # outside: distance to the nearest coverage (None = > 20 km)
+    margin_ok: bool = False                  # covered and no gap within EDGE_MARGIN_M (certain)
 
 
 class CoverageSource:
@@ -158,7 +161,9 @@ class CoverageSource:
         covered_area = sum(shapely.intersection(g, circle).area for _, g in local)
         share = min(covered_area / circle.area, 1.0)
         if hit:
-            return CoverageHit(True, hit[0], share, 0.0)
+            margin = origin.buffer(EDGE_MARGIN_M, quad_segs=16)
+            gap = margin.area - sum(shapely.intersection(g, margin).area for _, g in local)
+            return CoverageHit(True, hit[0], share, 0.0, margin_ok=gap < 1.0)
         nearest = None
         for radius in SEARCH_STEPS_M:
             pieces = self._local(lat, lon, radius) if radius > NEARBY_RADIUS_M else local
@@ -168,6 +173,17 @@ class CoverageSource:
                     nearest = float(d)
                     break
         return CoverageHit(False, None, share, nearest)
+
+
+def split_by_margin(covered, margin_m: float = EDGE_MARGIN_M):
+    """
+    Covered area (in metres) -> (certain, edge): certain = farther than margin_m
+    from any area without coverage; edge = the rest of the covered area.
+    """
+    covered = shapely.make_valid(covered)
+    certain = covered.buffer(-margin_m, quad_segs=4)
+    edge = shapely.difference(covered, certain)
+    return certain, edge
 
 
 def find_sources(directory) -> list[CoverageSource]:

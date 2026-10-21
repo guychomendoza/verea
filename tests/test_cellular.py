@@ -65,3 +65,25 @@ def test_geometries_clip_to_bbox(coverage_file):
     bbox = (-103.49, 19.61, -103.41, 19.69)
     pieces = s.geometries(bbox)
     assert pieces and all(shapely.box(*bbox).buffer(1e-9).covers(g) for _, g in pieces)
+
+
+def test_margin_near_a_gap(coverage_file):
+    """Covered points closer than EDGE_MARGIN_M (100 m) to a gap are not certain."""
+    from core.cellular import EDGE_MARGIN_M
+    s = CoverageSource(coverage_file)
+    deg_lon = 111_320 * math.cos(math.radians(19.62))
+    near = s.status_at(19.62, -103.50 + 60 / deg_lon)     # 60 m inside the west edge
+    far = s.status_at(19.62, -103.50 + 160 / deg_lon)     # 160 m inside
+    assert near.covered and not near.margin_ok
+    assert far.covered and far.margin_ok
+    assert EDGE_MARGIN_M == 100
+
+
+def test_split_by_margin_partitions_coverage():
+    from core.cellular import split_by_margin
+    cov = shapely.box(0, 0, 1000, 600).difference(shapely.box(400, 200, 450, 250))   # 50 m hole
+    certain, edge = split_by_margin(cov, 100)
+    assert certain.intersection(edge).area < 1e-6
+    assert abs(certain.union(edge).area - cov.area) < 1e-3
+    assert not certain.intersects(shapely.Point(425, 300))      # within 100 m of the hole
+    assert certain.contains(shapely.Point(700, 300))
