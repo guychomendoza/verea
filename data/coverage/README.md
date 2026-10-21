@@ -5,9 +5,19 @@ Mexico's telecom regulator (Comisión Reguladora de Telecomunicaciones, CRT),
 published quarterly as open data on datos.gob.mx under **CC BY 4.0**
 (commercial use allowed with attribution).
 
-Put the GeoPackage files in this folder with their original names, e.g.
-`RADIOMOVIL_4G_GARANTIZADA_2T_2026.gpkg`. The app recognises operator, technology,
-coverage type and quarter from the name. They are not in git (≈1.2 GB each).
+**Get them with one command** (from the project folder, once per computer):
+
+    python scripts/get_coverage.py
+
+It downloads the files from this repo's GitHub release (`coverage-2026Q2`) into
+this folder and checks them (SHA-256). They are not in git (≈1.2 GB each).
+
+The app recognises operator, technology, coverage type and quarter from the file
+name, e.g. `RADIOMOVIL_4G_GARANTIZADA_2T_2026.gpkg`.
+
+**New quarter:** download the new files from datos.gob.mx (below), publish them as
+a new release (`gh release create coverage-YYYYQn <files>`), and update
+`RELEASE_TAG` and `FILES` (name, size, sha256) in `scripts/get_coverage.py`.
 
 | Operator | Dataset |
 |---|---|
@@ -21,7 +31,8 @@ Telcel 4G, 2nd quarter 2026:
 - Differentiated: https://repodatos.atdt.gob.mx/api_update/crt/mapas_cobertura_servicio_movil_radiomovil_dipsa/RADIOMOVIL_4G_DIFERENCIADA_2T_2026.gpkg
   (in Oct 2026 the server returned an error for the differentiated files)
 
-Download them from a browser (the server blocks scripted downloads). The first
+From datos.gob.mx, download them with a browser (the server blocks scripted
+downloads). The first
 look-up in a new area reads the big file (a few seconds) and caches 0.2° tiles in
 `cache/`; later look-ups are instant. Delete `cache/` after replacing a file.
 

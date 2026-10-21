@@ -225,7 +225,6 @@ def write_autosave(doc: dict):
 
 # ── 4G coverage (operator maps published by the regulator, see data/coverage/README.md) ──
 COVERAGE_DIR = Path(__file__).parent / "data" / "coverage"
-COVERAGE_DATASETS_URL = "https://www.datos.gob.mx/dataset/mapas_cobertura_servicio_movil_radiomovil_dipsa"
 SOLID_SHARE = 0.7       # below this share of covered surroundings the spot is "patchy"
 
 
@@ -459,8 +458,9 @@ with st.sidebar:
                    + " — source: CRT / datos.gob.mx (CC BY 4.0)")
     else:
         cell_operator, show_cell = None, False
-        st.caption(f"No coverage files yet. Download the 4G maps from "
-                   f"[datos.gob.mx]({COVERAGE_DATASETS_URL}) into `data/coverage/`.")
+        st.caption("No coverage files yet. From the project folder run "
+                   "`python scripts/get_coverage.py` (one-time download, ≈1.2 GB), "
+                   "then restart the app.")
 
     st.divider()
 
