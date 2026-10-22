@@ -1,0 +1,72 @@
+{
+ "version": 1,
+ "name": "e2e sample",
+ "description": "",
+ "gateways": [
+  {
+   "name": "GW-1",
+   "lat": 21.262,
+   "lon": -102.3,
+   "model": "sensecap_m2",
+   "height": 6.0,
+   "tx_power": 27,
+   "gain": 6.0,
+   "cable_loss": 1.5,
+   "online": true
+  }
+ ],
+ "nodes": [
+  {
+   "name": "N-1",
+   "lat": 21.2519,
+   "lon": -102.2952,
+   "model": "dragino_se0x_lb",
+   "type": "sensor",
+   "sf": 10,
+   "tx_power": 20,
+   "height": 1.5,
+   "gain": 2.15,
+   "cable_loss": 0.0,
+   "environment": "Cultivo bajo"
+  },
+  {
+   "name": "N-2",
+   "lat": 21.24,
+   "lon": -102.32,
+   "model": "dragino_se0x_lb",
+   "type": "sensor",
+   "sf": 9,
+   "tx_power": 20,
+   "height": 1.5,
+   "gain": 2.15,
+   "cable_loss": 0.0,
+   "environment": "Rural / Open"
+  },
+  {
+   "name": "4G-1",
+   "lat": 21.3099,
+   "lon": -102.3945,
+   "model": "dragino_se0x_cs",
+   "type": "cellular",
+   "sf": 10,
+   "tx_power": 23,
+   "height": 1.5,
+   "gain": 0.0,
+   "cable_loss": 0.0,
+   "environment": "Rural / Open"
+  }
+ ],
+ "name_counters": {
+  "GW": 1,
+  "Node": 2,
+  "4G": 1
+ },
+ "settings": {
+  "freq_mhz": 915,
+  "propagation_model": "itm",
+  "diffraction_method": "dominant_knife_edge",
+  "safety_margin": 11.0,
+  "cell_operator": "Telcel",
+  "environment": "Rural / Open"
+ }
+}

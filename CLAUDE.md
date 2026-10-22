@@ -10,7 +10,10 @@ frontend, DB with users) is planned.
 - App: `.venv/bin/streamlit run app.py` (port 8501). Windows: `python -m streamlit run app.py`.
 - Tests: `.venv/bin/python -m pytest -q` (101 tests).
 - Web API: `VEREA_DEV=1 .venv/bin/uvicorn backend.main:app --port 8000` (docs at /docs).
-  `pip install -r backend/requirements.txt` first. Headless app tests use
+  `pip install -r backend/requirements.txt` first.
+- Web frontend: `cd frontend && npm run dev` (port 5173; proxies /api to 8000, serves the PMTiles).
+  Node 22 is in `~/.local/node/bin` (the `npm` on PATH is the Windows one: don't use it).
+  Checks: `npm run lint`, `npx tsc -b`, `npm test`; browser test `frontend/e2e/run.py`. Headless app tests use
   `streamlit.testing.v1.AppTest`; set `VEREA_AUTOSAVE=<tmp file>` so they do not
   overwrite the user's autosave (`~/.verea/autosave.verea.json`).
 - Browser tests: Playwright with Chromium; in WSL run with
@@ -24,6 +27,10 @@ frontend, DB with users) is planned.
 - `app.py` — the whole Streamlit UI (sidebar, map, panels, report, projects, autosave).
 - `core/network.py` — device dicts → Gateway/EndNode, `RFSettings`, `analyze_link`, `best_link`,
   `cell_state`: the calculations shared by Streamlit and the API (results must stay identical).
+- `frontend/` — React + MapLibre web app: `App.tsx` (state, recalculation, import/export),
+  `MapView.tsx` (map, drag, add), `Sidebar.tsx`, `DevicePanel.tsx`, `project.ts` (pure reducer,
+  device naming like the app), `api.ts`. maplibre-gl.css forces `.maplibregl-map` to
+  position: relative: size the map container with an inline style.
 - `backend/` — FastAPI web API (`main.py`), request limits (`schemas.py`), Supabase JWT check
   (`auth.py`: no `SUPABASE_URL` and no `VEREA_DEV=1` → every protected request is refused).
   Elevations from the local DEM (`core/dem.py`), sampled like Open-Meteo (cell containing the
@@ -105,7 +112,7 @@ are close, real PDF report, cloud projects with users, LoRa calibration with Chi
 ## Web migration (plan approved 2026-10-21; team only, invite-only accounts)
 React + TypeScript + Vite + MapLibre (PMTiles from Cloudflare R2) on Cloudflare Pages; FastAPI on
 Fly.io with a volume for data; Supabase for Auth + Postgres (projects as the JSON of
-`core/project.py`, Row Level Security). No own domain yet. Phases: 1 API (done) → 2 frontend MVP →
+`core/project.py`, Row Level Security). No own domain yet. Phases: 1 API (done) → 2 frontend MVP (done) →
 3 accounts/cloud → 4 deploy → 5 PDF report + parity, retire Streamlit.
 - Deploy note: a cold 4G lookup reads the 1.2 GB GeoPackage (1.36 GB RAM peak, 7–10 s). On the
   server, pre-build the national 0.2° tile cache instead (≈3–5 GB) and skip the GeoPackage.
