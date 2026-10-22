@@ -1,10 +1,11 @@
 import { useId, useState } from 'react'
 import { supabase } from './cloud'
-import { Logo } from './Logo'
+import { Logo, ThemeButton } from './Logo'
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="login-wrap">
+      <ThemeButton className="login-theme" />
       <div className="login-card">
         <div className="flex justify-center py-2"><Logo width={210} /></div>
         <h1 className="text-base text-[var(--muted)]">{title}</h1>

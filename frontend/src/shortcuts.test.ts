@@ -42,3 +42,13 @@ describe('geo', () => {
     expect(distance(1234)).toBe('1.23 km')
   })
 })
+
+describe('undo / redo', () => {
+  it('Ctrl+Z undoes, Ctrl+Y and Ctrl+Shift+Z redo, not while typing', () => {
+    const ev = (key: string, extra = {}) => ({ key, ctrlKey: true, metaKey: false, altKey: false, target: null, ...extra })
+    expect(shortcutFor(ev('z'))).toBe('undo')
+    expect(shortcutFor(ev('y'))).toBe('redo')
+    expect(shortcutFor(ev('Z', { shiftKey: true }))).toBe('redo')
+    expect(shortcutFor(ev('z', { target: document.createElement('input') }))).toBeNull()
+  })
+})

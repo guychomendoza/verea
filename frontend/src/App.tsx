@@ -12,14 +12,16 @@ import { Login, Notice, SetPassword } from './Login'
 import MapView, { type Focus, type MapMode } from './MapView'
 import ProfilePanel from './ProfilePanel'
 import { profileTitle } from './profilePlot'
-import { emptyProject, isCellular, isStation, PROJECT_VERSION, reduce, rename, selected, type Action } from './project'
+import { emptyProject, isCellular, isStation, PROJECT_VERSION, reduce, rename, selected, reduceHistory, type HistoryAction } from './project'
 import ProjectsDialog from './ProjectsDialog'
+import BulkModelDialog from './BulkModelDialog'
+import SuggestGatewaysDialog from './SuggestGatewaysDialog'
 import ImportDialog from './import/ImportDialog'
 import ReportDialog from './report/ReportDialog'
 import SearchBox from './SearchBox'
 import { shortcutFor } from './shortcuts'
 import Sidebar from './Sidebar'
-import type { Catalog, CellStatus, LinkDetail, LinkResult, NodeDevice, Project, Selection } from './types'
+import type { Catalog, CellStatus, Gateway, LinkDetail, LinkResult, NodeDevice, Project, Radial, Selection } from './types'
 
 const STORAGE_KEY = 'verea.project'     // local mode (no Supabase configured)
 const LAST_PROJECT_KEY = 'verea.lastProject'
@@ -173,8 +175,9 @@ type SaveState = 'saved' | 'saving' | 'pending' | 'conflict' | 'error'
 function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me; signOut: () => void } }) {
   const cloudMode = !!user
   const narrow = useNarrow()
-  const [project, dispatchRaw] = useReducer(reduce, null, () =>
-    (cloudMode ? null : loadLocal()) ?? emptyProject(catalog.defaults))
+  const [history, dispatchRaw] = useReducer(reduceHistory, null, () =>
+    ({ present: (cloudMode ? null : loadLocal()) ?? emptyProject(catalog.defaults), past: [], future: [] }))
+  const project = history.present
   const [selection, setSelection] = useState<Selection>(null)
   const [mode, setMode] = useState<MapMode>('select')
   const [addModel, setAddModel] = useState('')
@@ -197,7 +200,12 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
   const [ruler, setRuler] = useState<[number, number][]>([])
   const [showReport, setShowReport] = useState(false)
   const [showImport, setShowImport] = useState(false)
-  const dispatch = useCallback((a: Action) => dispatchRaw(a), [])
+  const [suggest, setSuggest] = useState(false)
+  const [bulk, setBulk] = useState<{ groups: string[]; model?: string } | null>(null)
+  // Gateway range on the map: radials per gateway, kept while the gateway and settings stay the same
+  const [ranges, setRanges] = useState<Record<string, { radials: Radial[]; sig: string }>>({})
+  const [rangeLoading, setRangeLoading] = useState<Set<string>>(new Set())
+  const dispatch = useCallback((a: HistoryAction) => dispatchRaw(a), [])
 
   // ── persistence: browser (local mode) or cloud with optimistic locking ──
   const [doc, setDoc] = useState<CloudDoc | null>(null)
@@ -211,7 +219,7 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
 
   const openDoc = useCallback((p: Project, d: CloudDoc) => {
     savedRef.current = p
-    dispatch({ type: 'load', project: p })
+    dispatch({ type: 'open', project: p })
     setDoc(d)
     setSaveState('saved')
     setSelection(null)
@@ -401,12 +409,54 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
     setMode('select')
   }
 
+  // Test sensor for the range: the LoRa model most used in the project (SE0X-LB if none), SF10
+  const rangeModel = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const n of project.nodes) if (!cellular.has(n.name)) counts.set(n.model, (counts.get(n.model) ?? 0) + 1)
+    return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'dragino_se0x_lb'
+  }, [project.nodes, cellular])
+  const rangeSig = (g: Gateway) => JSON.stringify([g.lat, g.lon, g.height, g.tx_power, g.gain, g.cable_loss, g.model, rf, rangeModel])
+  // A range drawn for a gateway that has since moved or changed is dropped
+  useEffect(() => {
+    setRanges((r) => {
+      const keep = Object.fromEntries(Object.entries(r).filter(([name, v]) => {
+        const g = project.gateways.find((x) => x.name === name)
+        return g && rangeSig(g) === v.sig
+      }))
+      return Object.keys(keep).length === Object.keys(r).length ? r : keep
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.gateways, rf, rangeModel])
+  const showRange = async (names: string[]) => {
+    const todo = project.gateways.filter((g) => names.includes(g.name))
+    setRangeLoading((s) => new Set([...s, ...todo.map((g) => g.name)]))
+    setStatus(`Calculando el alcance de ${todo.length === 1 ? todo[0].name : `${todo.length} gateways`}…`)
+    try {
+      await Promise.all(todo.map(async (g) => {
+        const r = await api.coverage(g, project.settings, { node_model: rangeModel, sf: 10, radius_km: 10, radials: 24 })
+        setRanges((x) => ({ ...x, [g.name]: { radials: r.radials, sig: rangeSig(g) } }))
+      }))
+      setStatus(`Alcance con un sensor ${catalog.node_profiles[rangeModel]?.label ?? rangeModel} a SF10: verde = enlace viable`)
+    } catch (e) {
+      setStatus(apiError(e))
+    } finally {
+      setRangeLoading((s) => new Set([...s].filter((n) => !names.includes(n))))
+    }
+  }
+  const hideRange = (names: string[]) => setRanges((r) => Object.fromEntries(Object.entries(r).filter(([n]) => !names.includes(n))))
+
+  const undoRedo = (a: 'undo' | 'redo') => {
+    if (!(a === 'undo' ? history.past : history.future).length) return
+    dispatch({ type: a })
+    setStatus(a === 'undo' ? 'Deshecho' : 'Rehecho')
+  }
+
   // ── keyboard shortcuts ──
   const keyHandler = useRef<(e: KeyboardEvent) => void>(() => {})
   keyHandler.current = (e: KeyboardEvent) => {
     const action = shortcutFor(e)
-    if (!action || showReport || showProjects || showImport) return
-    if (action === 'save' || (action === 'addGateway' && (e.ctrlKey || e.metaKey))) e.preventDefault()
+    if (!action || showReport || showProjects || showImport || bulk || suggest) return
+    if (action === 'save' || action === 'undo' || action === 'redo' || (action === 'addGateway' && (e.ctrlKey || e.metaKey))) e.preventDefault()
     switch (action) {
       case 'addGateway':
         setMode('addGateway')
@@ -421,6 +471,10 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
         break
       case 'cancel':
         setMode('select')
+        break
+      case 'undo':
+      case 'redo':
+        undoRedo(action)
         break
       case 'save':
         if (cloudMode) {
@@ -447,7 +501,7 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
       if (cloudMode) {
         await createCloud(p)             // an imported file becomes a new cloud project
       } else {
-        dispatch({ type: 'load', project: p })
+        dispatch({ type: 'open', project: p })
         setSelection(null)
         showAll(p)
       }
@@ -457,7 +511,8 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
     }
   }
 
-  const mapLegend = (): LegendItem[] => buildLegend({ project, links, cells, cellular, stations }, showCoverage)
+  const mapLegend = (): LegendItem[] => buildLegend({ project, links, cells, cellular, stations,
+    ranges: Object.fromEntries(Object.entries(ranges).map(([k, v]) => [k, v.radials])) }, showCoverage)
 
   const exportMap = async () => {
     const map = mapRef.current
@@ -509,14 +564,19 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
       onMeta={(meta) => dispatch({ type: 'meta', ...meta })}
       onSelect={select}
       showLabels={showLabels} onShowLabels={setShowLabels}
-      onImport={importFile} onExport={exportFile} onReport={() => setShowReport(true)} onImportPlots={() => setShowImport(true)}
+      onImport={importFile} onExport={exportFile} onReport={() => setShowReport(true)} onImportPlots={() => setShowImport(true)} onBulk={(preset) => setBulk(preset ?? { groups: [] })} onSuggest={() => setSuggest(true)}
+      ranges={{ any: Object.keys(ranges).length > 0, loading: rangeLoading.size > 0,
+        onAll: () => showRange(project.gateways.filter((g) => g.online).map((g) => g.name)),
+        onHide: () => setRanges({}) }}
+      history={{ canUndo: history.past.length > 0, canRedo: history.future.length > 0,
+        onUndo: () => undoRedo('undo'), onRedo: () => undoRedo('redo') }}
       onNew={() => {
         if (cloudMode) {
           createCloud(emptyProject(catalog.defaults)).catch((e) => setStatus(`⚠ ${e.message}`))
           return
         }
         if (!confirm('¿Empezar un proyecto vacío? Guarda antes el actual en un archivo si lo necesitas.')) return
-        dispatch({ type: 'load', project: emptyProject(catalog.defaults) })
+        dispatch({ type: 'open', project: emptyProject(catalog.defaults) })
         setSelection(null)
       }} />
   )
@@ -524,6 +584,7 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
   const mapArea = (
     <main className="map-area">
       <MapView project={project} selection={selection} links={links} cells={cells} cellular={cellular} stations={stations}
+        ranges={Object.fromEntries(Object.entries(ranges).map(([k, v]) => [k, v.radials]))}
         mode={mode} showCoverage={showCoverage} showLabels={showLabels} pin={pin} focus={focus}
         cursor={cursorIdx !== null ? coordAt(cursorIdx) ?? null : null}
         profilePins={pins.map((i) => coordAt(i)).filter((c): c is [number, number] => !!c)}
@@ -582,6 +643,10 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
   const devicePanel = dev && selection ? (
     <DevicePanel key={`${selection.kind}:${selection.name}`} catalog={catalog} project={project}
       kind={selection.kind} device={dev} link={links[dev.name]} cell={cells[dev.name]} served={served}
+      range={selection.kind === 'gateway' ? {
+        shown: !!ranges[dev.name], loading: rangeLoading.has(dev.name),
+        onToggle: () => (ranges[dev.name] ? hideRange([dev.name]) : showRange([dev.name])),
+      } : undefined}
       onRename={(next) => {
         dispatch({ type: 'load', project: rename(project, selection.kind, dev.name, next) })
         setSelection({ kind: selection.kind, name: next.trim() })
@@ -606,6 +671,24 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
             }
           }}
           onClose={() => setShowProjects(false)} />
+      )}
+      {suggest && (
+        <SuggestGatewaysDialog catalog={catalog} project={project} links={links} cellular={cellular}
+          onClose={() => setSuggest(false)}
+          onApply={(points, model, height) => {
+            dispatch({ type: 'addGateways', points, model, height, catalog })
+            setSuggest(false)
+            setStatus(`${points.length} gateways 4G agregados: muévelos si hace falta (Ctrl+Z para deshacer)`)
+          }} />
+      )}
+      {bulk && (
+        <BulkModelDialog catalog={catalog} project={project} links={links} cells={cells} cellular={cellular} preset={bulk}
+          onClose={() => setBulk(null)}
+          onApply={(names, model) => {
+            dispatch({ type: 'bulkModel', names, model, catalog })
+            setBulk(null)
+            setStatus(`${names.length} sensores cambiados a ${catalog.node_profiles[model]?.label ?? model} (Ctrl+Z para deshacer)`)
+          }} />
       )}
       {showImport && (
         <ImportDialog catalog={catalog} project={project} onClose={() => setShowImport(false)}

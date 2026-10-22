@@ -34,10 +34,11 @@ sys.path.insert(0, str(ROOT))
 import core.network as net  # noqa: E402
 from backend.auth import require_user  # noqa: E402
 from backend.schemas import (  # noqa: E402
-    CellRequest, CoverageRequest, LinkRequest, LinksRequest, ProjectBody, RadialRequest,
+    CellRequest, CoverageRequest, LinkRequest, LinksRequest, ProjectBody, RadialRequest, SuggestGatewaysRequest,
 )
 from config import ENVIRONMENT_PROFILES, US915_UPLINK_SF  # noqa: E402
 from core.cellular import find_sources  # noqa: E402
+from core import gateway_siting as siting  # noqa: E402
 from core.coverage import compute_coverage, compute_radial, viable_segments  # noqa: E402
 from core.dem import LocalDEM  # noqa: E402
 from core.profiles import GATEWAY_PROFILES, NODE_PROFILES, is_cellular  # noqa: E402
@@ -218,6 +219,27 @@ def coverage(req: CoverageRequest, user=Depends(require_user)):
                                req.radius_km * 1000, n_radials=req.radials,
                                n_points=MAX_RADIAL_POINTS, api=ELEVATIONS, **net.budget_kwargs(rf))
     return {"radials": [_radial_dict(r) for r in radials]}
+
+
+@app.post("/api/suggest-gateways")
+def suggest_gateways(req: SuggestGatewaysRequest, user=Depends(require_user)):
+    """Where to put 4G gateways for these LoRa nodes (high points with 4G, link budget, greedy)."""
+    rf = net.RFSettings.from_project(req.settings.model_dump())
+    srcs = coverage_sources().get(req.operator) if req.operator else None
+    guaranteed = srcs.get("guaranteed") if srcs else None
+
+    def has_4g(points):
+        with _SOURCES_LOCK:
+            out = []
+            for lat, lon in points:
+                hit = guaranteed.status_at(lat, lon)
+                out.append("ok" if hit.covered and hit.margin_ok else "edge" if hit.covered else "none")
+            return out
+
+    gw = {**req.gateway.model_dump(), "backhaul": "4g"}
+    return siting.suggest_gateways([n.model_dump() for n in req.nodes], gw, rf, ELEVATIONS,
+                                   has_4g=has_4g if guaranteed else None,
+                                   max_gateways=req.max_gateways, max_link_m=req.max_link_km * 1000)
 
 
 @app.post("/api/cell-status")

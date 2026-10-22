@@ -13,6 +13,7 @@ from config import SX1302_SENSITIVITY
 GATEWAY_PROFILES = {
     "sensecap_m2": {
         "label": "SenseCAP M2 (US915)",
+        "backhaul": "red",                # WiFi / Ethernet
         "tx_power": 26,
         "gain": 3.0,
         "cable_loss": 0.5,
@@ -24,6 +25,7 @@ GATEWAY_PROFILES = {
     },
     "milesight_ug63": {
         "label": "Milesight UG63-L08GL-915M",
+        "backhaul": "4g",                # LTE (4G) version
         "tx_power": 27,
         "gain": 3.0,
         "cable_loss": 0.3,
@@ -35,6 +37,7 @@ GATEWAY_PROFILES = {
     },
     "milesight_sg50": {
         "label": "Milesight SG50 (solar)",
+        "backhaul": "4g",                # solar, 4G
         "tx_power": 27,
         "gain": 5.0,
         "cable_loss": 0.5,
@@ -46,6 +49,7 @@ GATEWAY_PROFILES = {
     },
     "custom": {
         "label": "Personalizado",
+        "backhaul": "red",
         "tx_power": 27,
         "gain": 6.0,
         "cable_loss": 1.5,
@@ -149,7 +153,7 @@ def new_gateway(name: str, lat: float, lon: float, model: str) -> dict:
     return {
         "name": name, "lat": lat, "lon": lon, "model": model,
         "height": p["height"], "tx_power": p["tx_power"], "gain": p["gain"],
-        "cable_loss": p["cable_loss"], "online": True,
+        "cable_loss": p["cable_loss"], "online": True, "backhaul": p.get("backhaul", "red"),
     }
 
 

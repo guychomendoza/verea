@@ -1,6 +1,15 @@
 import type {
-  Catalog, CellStatus, Gateway, LinkDetail, LinkResult, NodeDevice, Place, Project, Settings,
+  Catalog, CellStatus, Gateway, LinkDetail, LinkResult, NodeDevice, Place, Project, Radial, Settings,
 } from './types'
+
+export interface GatewaySuggestion {
+  proposals: { lat: number; lon: number; elevation_m: number; cell_state: string | null; min_margin_db: number;
+    nodes: { name: string; margin_db: number }[] }[]
+  unreachable: string[]
+  over_limit: string[]
+  candidates_without_4g: number
+  links_evaluated: number
+}
 
 const BASE = import.meta.env.VITE_API_URL ?? ''
 
@@ -53,5 +62,9 @@ export const api = {
     call<{ points: CellStatus[]; sources: string[] }>('/api/cell-status', { operator, points }, signal),
   geocode: (q: string, signal?: AbortSignal) =>
     call<{ results: Place[] }>(`/api/geocode?q=${encodeURIComponent(q)}`, undefined, signal),
+  coverage: (gateway: Gateway, settings: Settings, opts: { node_model: string; sf: number; radius_km: number; radials: number },
+    signal?: AbortSignal) => call<{ radials: Radial[] }>('/api/coverage', { gateway, settings, ...opts }, signal),
+  suggestGateways: (body: { nodes: NodeDevice[]; gateway: Gateway; settings: Settings; operator?: string;
+    max_gateways: number; max_link_km: number }, signal?: AbortSignal) => call<GatewaySuggestion>('/api/suggest-gateways', body, signal),
   normalize: (project: unknown) => call<Omit<Project, 'version'>>('/api/project/normalize', { project }),
 }

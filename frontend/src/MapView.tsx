@@ -4,8 +4,8 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { COLORS, DEFAULT_CENTER } from './colors'
 import { distance, haversine } from './geo'
 import { registerDeviceIcons } from './deviceIcons'
-import { MAP_LOCALE, buildStyle, devicesGeoJSON, ensurePmtiles, linksGeoJSON, plotsGeoJSON } from './mapStyle'
-import type { CellStatus, LinkResult, Project, Selection } from './types'
+import { MAP_LOCALE, buildStyle, devicesGeoJSON, ensurePmtiles, linksGeoJSON, plotsGeoJSON, rangeGeoJSON } from './mapStyle'
+import type { CellStatus, LinkResult, Project, Radial, Selection } from './types'
 
 /** Where to move the view: a point (and zoom), or a box to fit (every device of a project). */
 export interface Focus { lat: number; lon: number; zoom?: number; bounds?: [[number, number], [number, number]]; key: number }
@@ -20,6 +20,7 @@ interface Props {
   cells: Record<string, CellStatus>
   cellular: Set<string>
   stations: Set<string>
+  ranges?: Record<string, Radial[]>
   mode: MapMode
   showCoverage: boolean
   showLabels: boolean
@@ -131,6 +132,7 @@ function applyProps(map: maplibregl.Map, props: Props, dragging: boolean) {
     ;(map.getSource('devices') as GeoJSONSource).setData(devicesGeoJSON(props))
     ;(map.getSource('links') as GeoJSONSource).setData(linksGeoJSON(props))
     ;(map.getSource('plots') as GeoJSONSource).setData(plotsGeoJSON(props))
+    ;(map.getSource('range') as GeoJSONSource).setData(rangeGeoJSON(props))
   }
   ;(map.getSource('ruler') as GeoJSONSource).setData(rulerGeoJSON(props.ruler))
   ;(map.getSource('profile-pins') as GeoJSONSource).setData(pointsGeoJSON(props.profilePins, true))
@@ -197,6 +199,12 @@ export default function MapView(props: Props) {
       map.getCanvas().style.cursor = 'grabbing'
     }
     const moveDrag = (e: MapMouseEvent | MapTouchEvent) => {
+      // A press whose release happened off the map (e.g. over the panel that the selection
+      // opened) must not keep dragging: no button held means the drag is over
+      if (drag.current && 'buttons' in e.originalEvent && (e.originalEvent as MouseEvent).buttons === 0) {
+        drag.current = null
+        devicesDirty()
+      }
       const d = drag.current
       if (!d) {
         map.getCanvas().style.cursor = propsRef.current.mode !== 'select' ? 'crosshair'
@@ -225,6 +233,16 @@ export default function MapView(props: Props) {
     map.on('mousemove', moveDrag)
     map.on('touchmove', moveDrag)
     map.on('mouseup', endDrag)
+    // Released outside the map: drop the drag (the node goes back to its place)
+    const cancelDrag = () => {
+      if (!drag.current) return
+      drag.current = null
+      map.getCanvas().style.cursor = ''
+      devicesDirty()
+    }
+    const devicesDirty = () => (map.getSource('devices') as GeoJSONSource | undefined)?.setData(devicesGeoJSON(propsRef.current))
+    const onWindowUp = (ev: MouseEvent) => { if (!map.getCanvas().contains(ev.target as Node)) cancelDrag() }
+    window.addEventListener('mouseup', onWindowUp)
     map.on('touchend', endDrag)
     map.on('click', (e) => {
       const p = propsRef.current
@@ -241,7 +259,10 @@ export default function MapView(props: Props) {
       loaded.current = true
       applyProps(map, propsRef.current, !!drag.current)
     })
-    return () => map.remove()
+    return () => {
+      window.removeEventListener('mouseup', onWindowUp)
+      map.remove()
+    }
   }, [])
 
   // Data and visibility follow the props

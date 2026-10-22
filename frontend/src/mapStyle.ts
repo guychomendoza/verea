@@ -8,7 +8,7 @@ import { BRAND } from './brand'
 import { COLORS, COVERAGE_URL } from './colors'
 import { iconImageId, type DeviceKind } from './deviceIcons'
 import { db, distance } from './geo'
-import type { CellStatus, LinkResult, Project, Selection } from './types'
+import type { CellStatus, LinkResult, Project, Radial, Selection } from './types'
 
 const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services'
 const ESRI_IMAGERY = `${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`
@@ -44,6 +44,7 @@ export interface MapData {
   stations: Set<string>                           // weather stations (own symbol)
   selection?: Selection
   highlight?: { gateway?: string; node: string }  // report: one link (or one 4G sensor)
+  ranges?: Record<string, Radial[]>               // gateway signal range shown on the map
 }
 
 export function linkColor(r?: LinkResult): string {
@@ -125,6 +126,29 @@ export function plotsGeoJSON(d: MapData): GeoJSON.FeatureCollection {
   }
 }
 
+/** Gateway range: area reached without interruption (fill) and every direction, green where a
+ *  test sensor would have a viable link and red where not. */
+export function rangeGeoJSON(d: MapData): GeoJSON.FeatureCollection {
+  const features: GeoJSON.Feature[] = []
+  for (const [name, radials] of Object.entries(d.ranges ?? {})) {
+    const gw = d.project.gateways.find((g) => g.name === name)
+    if (!gw || !radials.length) continue
+    const ring = radials.map((r) => {
+      let k = 0
+      r.distances_m.forEach((dist, i) => { if (dist != null && dist <= r.continuous_range_m) k = i })
+      const [lat, lon] = r.continuous_range_m > 0 ? r.coordinates[k] : [gw.lat, gw.lon]
+      return [lon, lat]
+    })
+    features.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [[...ring, ring[0]]] }, properties: { kind: 'area' } })
+    for (const r of radials) for (const s of r.segments) {
+      if (s.points.length < 2) continue
+      features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: s.points.map(([la, lo]) => [lo, la]) },
+        properties: { kind: 'ray', viable: s.viable } })
+    }
+  }
+  return { type: 'FeatureCollection', features }
+}
+
 export function linksGeoJSON(d: MapData): GeoJSON.FeatureCollection {
   const gws = new Map(d.project.gateways.map((g) => [g.name, g]))
   const features: GeoJSON.Feature[] = []
@@ -159,6 +183,7 @@ export function buildStyle(): StyleSpecification {
         attribution: 'Cobertura 4G: CRT / datos.gob.mx (CC BY 4.0)',
       },
       plots: { type: 'geojson', data: EMPTY },
+      range: { type: 'geojson', data: EMPTY },
       devices: { type: 'geojson', data: EMPTY },
       links: { type: 'geojson', data: EMPTY },
       ruler: { type: 'geojson', data: EMPTY },
@@ -170,6 +195,18 @@ export function buildStyle(): StyleSpecification {
       { id: 'coverage', type: 'raster', source: 'coverage', layout: { visibility: 'none' }, paint: { 'raster-resampling': 'nearest' } },
       { id: 'roads', type: 'raster', source: 'roads' },
       { id: 'places', type: 'raster', source: 'places' },
+      {
+        id: 'range-fill', type: 'fill', source: 'range', filter: ['==', ['get', 'kind'], 'area'],
+        paint: { 'fill-color': BRAND.teal, 'fill-opacity': 0.16 },
+      },
+      {
+        id: 'range-rays', type: 'line', source: 'range', filter: ['==', ['get', 'kind'], 'ray'],
+        paint: { 'line-color': ['case', ['get', 'viable'], COLORS.viable, COLORS.fail], 'line-width': 2, 'line-opacity': 0.7 } as never,
+      },
+      {
+        id: 'range-outline', type: 'line', source: 'range', filter: ['==', ['get', 'kind'], 'area'],
+        paint: { 'line-color': BRAND.tealLight, 'line-width': 2, 'line-dasharray': [2, 1] },
+      },
       {
         id: 'plots-fill', type: 'fill', source: 'plots',
         paint: { 'fill-color': ['case', isFocus, BRAND.teal, '#ffffff'], 'fill-opacity': ['case', isFocus, 0.22, isDim, 0.04, 0.1] } as never,

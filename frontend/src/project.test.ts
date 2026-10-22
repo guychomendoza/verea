@@ -65,3 +65,22 @@ describe('project', () => {
     expect(p.nodes.map((n) => n.name)).toEqual(['Node-2'])
   })
 })
+
+describe('bulk model and undo', () => {
+  it('changes the model of several nodes keeping name, position and owner', async () => {
+    const { reduceHistory } = await import('./project')
+    let p = emptyProject(settings)
+    p = reduce(p, { type: 'addNode', lat: 19.6, lon: -103.3, model: 'dragino_se0x_cs', catalog })
+    p = reduce(p, { type: 'updateNode', name: p.nodes[0].name, patch: { owner: 'Ana' } })
+    const name = p.nodes[0].name
+    let h = reduceHistory({ present: p, past: [], future: [] }, { type: 'bulkModel', names: [name], model: 'dragino_se0x_lb', catalog })
+    expect(h.present.nodes[0]).toMatchObject({ name, model: 'dragino_se0x_lb', type: 'sensor', owner: 'Ana', lat: 19.6 })
+    h = reduceHistory(h, { type: 'undo' })
+    expect(h.present.nodes[0].model).toBe('dragino_se0x_cs')
+    h = reduceHistory(h, { type: 'redo' })
+    expect(h.present.nodes[0].model).toBe('dragino_se0x_lb')
+    h = reduceHistory(h, { type: 'open', project: emptyProject(settings) })
+    expect(h.past).toEqual([])
+    expect(reduceHistory(h, { type: 'undo' })).toBe(h)
+  })
+})

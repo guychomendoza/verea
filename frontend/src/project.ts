@@ -56,6 +56,8 @@ export type Action =
   | { type: 'settings'; patch: Partial<Settings> }
   | { type: 'meta'; name?: string; description?: string }
   | { type: 'removePlot'; id: string }
+  | { type: 'bulkModel'; names: string[]; model: string; catalog: Catalog }
+  | { type: 'addGateways'; points: { lat: number; lon: number }[]; model: string; height: number; catalog: Catalog }
 
 export function reduce(p: Project, a: Action): Project {
   switch (a.type) {
@@ -67,9 +69,19 @@ export function reduce(p: Project, a: Action): Project {
       const [name, counters] = nextName(p, 'GW')
       const gw: Gateway = {
         name, lat: a.lat, lon: a.lon, model, height: prof.height, tx_power: prof.tx_power,
-        gain: prof.gain, cable_loss: prof.cable_loss, online: true,
+        gain: prof.gain, cable_loss: prof.cable_loss, online: true, backhaul: prof.backhaul ?? 'red',
       }
       return { ...p, gateways: [...p.gateways, gw], name_counters: counters }
+    }
+    case 'addGateways': {
+      // Several at once (accepted suggestions): one undo step
+      let q = p
+      for (const pt of a.points) {
+        q = reduce(q, { type: 'addGateway', lat: pt.lat, lon: pt.lon, model: a.model, catalog: a.catalog })
+        const last = q.gateways[q.gateways.length - 1]
+        q = { ...q, gateways: [...q.gateways.slice(0, -1), { ...last, height: a.height, backhaul: '4g' }] }
+      }
+      return q
     }
     case 'addNode': {
       const model = a.model ?? DEFAULT_NODE_MODEL
@@ -98,6 +110,16 @@ export function reduce(p: Project, a: Action): Project {
       return { ...p, settings: { ...p.settings, ...a.patch } }
     case 'meta':
       return { ...p, name: a.name ?? p.name, description: a.description ?? p.description }
+    case 'bulkModel': {
+      // New model's radio values; name, position, owner, area, plot and environment are kept
+      const prof = a.catalog.node_profiles[a.model]
+      if (!prof) return p
+      const names = new Set(a.names)
+      return { ...p, nodes: p.nodes.map((n) => (names.has(n.name)
+        ? { ...n, model: a.model, type: prof.type, sf: prof.sf, tx_power: prof.tx_power, height: prof.height,
+          gain: prof.gain, cable_loss: prof.cable_loss }
+        : n)) }
+    }
     case 'removePlot':
       return { ...p, plots: (p.plots ?? []).filter((pl) => pl.id !== a.id),
         nodes: p.nodes.map((n) => (n.plot === a.id ? { ...n, plot: undefined } : n)) }
@@ -124,4 +146,26 @@ export function rename(p: Project, kind: 'gateway' | 'node', current: string, ne
 export function selected(p: Project, s: Selection): Gateway | NodeDevice | undefined {
   if (!s) return undefined
   return s.kind === 'gateway' ? p.gateways.find((g) => g.name === s.name) : p.nodes.find((n) => n.name === s.name)
+}
+
+// ── undo / redo ──
+export interface History { present: Project; past: Project[]; future: Project[] }
+export type HistoryAction = Action | { type: 'undo' } | { type: 'redo' } | { type: 'open'; project: Project }
+const MAX_HISTORY = 50
+
+/** The project with its undo history; 'open' (another project) starts a new history. */
+export function reduceHistory(h: History, a: HistoryAction): History {
+  switch (a.type) {
+    case 'undo':
+      return h.past.length ? { present: h.past[h.past.length - 1], past: h.past.slice(0, -1), future: [h.present, ...h.future] } : h
+    case 'redo':
+      return h.future.length ? { present: h.future[0], past: [...h.past, h.present], future: h.future.slice(1) } : h
+    case 'open':
+      return { present: a.project, past: [], future: [] }
+    default: {
+      const next = reduce(h.present, a)
+      if (next === h.present) return h
+      return { present: next, past: [...h.past, h.present].slice(-MAX_HISTORY), future: [] }
+    }
+  }
 }

@@ -11,6 +11,7 @@ interface Props {
   link?: LinkResult
   cell?: CellStatus
   served: number                       // nodes whose best link is this gateway
+  range?: { shown: boolean; loading: boolean; onToggle: () => void }
   onRename: (next: string) => void
   onPatch: (patch: Partial<Gateway & NodeDevice>) => void
   onRemove: () => void
@@ -102,7 +103,7 @@ export default function DevicePanel(p: Props) {
     const pr = profiles[model]
     p.onPatch({
       model, height: pr.height, tx_power: pr.tx_power, gain: pr.gain, cable_loss: pr.cable_loss,
-      ...(node ? { type: pr.type, sf: pr.sf } : {}),
+      ...(node ? { type: pr.type, sf: pr.sf } : { backhaul: pr.backhaul ?? 'red' }),
     })
   }
 
@@ -177,6 +178,11 @@ export default function DevicePanel(p: Props) {
           <small className="hint">Envía datos por la red celular (NB-IoT / LTE-M), no por un gateway LoRaWAN.</small>
         </section>
       )}
+      {gw && p.range && (
+        <button className={`btn ${p.range.shown ? 'btn-active' : ''}`} onClick={p.range.onToggle} disabled={p.range.loading}>
+          {p.range.loading ? 'Calculando alcance…' : p.range.shown ? 'Ocultar alcance' : '📡 Ver alcance de la señal'}
+        </button>
+      )}
       {gw && <p className="hint">{p.served ? `Mejor gateway para ${p.served} nodo${p.served === 1 ? '' : 's'}.` : 'Todavía no es el mejor gateway de ningún nodo.'}</p>}
 
       {/* ── properties ── */}
@@ -205,6 +211,14 @@ export default function DevicePanel(p: Props) {
             </select>
           </label>
         </div>
+      )}
+      {gw && (
+        <label className="field"><span>Conexión a internet</span>
+          <select value={gw.backhaul ?? 'red'} onChange={(e) => p.onPatch({ backhaul: e.target.value as '4g' | 'red' })}>
+            <option value="4g">4G propio (solo necesita energía, p. ej. solar)</option>
+            <option value="red">WiFi / Ethernet (necesita corriente y red)</option>
+          </select>
+        </label>
       )}
       {gw && (
         <label className="flex items-center gap-2 text-sm">

@@ -1,10 +1,11 @@
-import { useRef } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { MapMode } from './MapView'
 import { COLORS } from './colors'
 import { cellColor } from './mapStyle'
 import { KIND_LABELS, type DeviceKind } from './deviceIcons'
-import { DeviceIcon, Logo } from './Logo'
+import { DeviceIcon, Logo, ThemeButton } from './Logo'
 import { db } from './geo'
+import { STATE_GROUPS, nodeState } from './nodeStatus'
 import { isCellular, isStation } from './project'
 import { SHORTCUT_HELP } from './shortcuts'
 import type { Catalog, CellStatus, LinkResult, Project, Selection, Settings } from './types'
@@ -31,6 +32,10 @@ interface Props {
   onNew: () => void
   onReport: () => void
   onImportPlots: () => void
+  onSuggest: () => void
+  onBulk: (preset?: { groups: string[]; model?: string }) => void
+  ranges: { any: boolean; loading: boolean; onAll: () => void; onHide: () => void }
+  history: { canUndo: boolean; canRedo: boolean; onUndo: () => void; onRedo: () => void }
 }
 
 const MODEL_LABELS: Record<string, string> = { itm: 'Longley-Rice (ITM)', simple: 'Simple (espacio libre + difracción)' }
@@ -51,10 +56,23 @@ export default function Sidebar(p: Props) {
     return !l ? COLORS.none : l.viable ? COLORS.viable : l.margin_db > -5 ? COLORS.marginal : COLORS.fail
   }
 
+  // ── node list filters ──
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState('')
+  const stateOf = useMemo(() => new Map(p.project.nodes.map((n) =>
+    [n.name, nodeState(n, isCellular(p.catalog, n), p.links, p.cells)])), [p.project.nodes, p.catalog, p.links, p.cells])
+  const inGroup = (name: string, key: string) => STATE_GROUPS.find((g) => g.key === key)!.states.includes(stateOf.get(name)!)
+  const groupCount = (key: string) => p.project.nodes.filter((n) => inGroup(n.name, key)).length
+  const q = query.trim().toLowerCase()
+  const shown = p.project.nodes.filter((n) => (!filter || inGroup(n.name, filter))
+    && (!q || `${n.name} ${n.owner ?? ''}`.toLowerCase().includes(q)))
+  const noCell = groupCount('cell-none')
+
   return (
     <aside className="panel side-panel" aria-label="Proyecto">
       <div className="brand-bar">
         <Logo width={112} />
+        <ThemeButton className="ml-auto" />
         {p.user && (
           <div className="flex flex-col items-end text-xs min-w-0">
             <span className="truncate max-w-full" title={p.user.name}>{p.user.name}</span>
@@ -74,6 +92,10 @@ export default function Sidebar(p: Props) {
         <button className="btn" onClick={p.onExport}>Guardar archivo</button>
         <button className="btn" onClick={p.onImportPlots} title="KML, KMZ, Excel o CSV con pines y parcelas">Importar parcelas…</button>
         <button className="btn btn-active" onClick={p.onReport}>📄 Reporte</button>
+        <span className="history-btns flex gap-1 ml-auto">
+          <button className="btn" onClick={p.history.onUndo} disabled={!p.history.canUndo} title="Deshacer (Ctrl+Z)" aria-label="Deshacer">↶</button>
+          <button className="btn" onClick={p.history.onRedo} disabled={!p.history.canRedo} title="Rehacer (Ctrl+Y)" aria-label="Rehacer">↷</button>
+        </span>
         <input ref={file} type="file" accept=".json,application/json" hidden
           onChange={(e) => { const f = e.target.files?.[0]; if (f) p.onImport(f); e.target.value = '' }} />
       </div>
@@ -85,6 +107,10 @@ export default function Sidebar(p: Props) {
         <div className="flex flex-wrap gap-1.5">
           <button className={`btn ${p.mode === 'addGateway' ? 'btn-active' : ''}`} title="G"
             onClick={() => p.onMode(p.mode === 'addGateway' ? 'select' : 'addGateway')}>+ Gateway</button>
+          {p.project.nodes.some((n) => !isCellular(p.catalog, n)) && (
+            <button className="btn" onClick={p.onSuggest} title="Ubicaciones para gateways con 4G propio, según el relieve">
+              Sugerir gateways 4G…</button>
+          )}
           <select className="btn" value={p.mode === 'addNode' ? p.addModel : ''}
             onChange={(e) => p.onMode(e.target.value ? 'addNode' : 'select', e.target.value)}
             aria-label="Agregar nodo">
@@ -102,7 +128,15 @@ export default function Sidebar(p: Props) {
 
       {/* ── devices ── */}
       <section>
-        <h3>Gateways ({p.project.gateways.length})</h3>
+        <div className="flex items-center justify-between gap-2">
+          <h3>Gateways ({p.project.gateways.length})</h3>
+          {p.project.gateways.length > 0 && (
+            <button className="btn-ghost underline text-xs" disabled={p.ranges.loading}
+              onClick={p.ranges.any ? p.ranges.onHide : p.ranges.onAll}>
+              {p.ranges.loading ? 'Calculando…' : p.ranges.any ? 'Ocultar alcance' : 'Alcance de todos'}
+            </button>
+          )}
+        </div>
         <ul className="device-list">
           {p.project.gateways.map((g) => (
             <li key={g.name}>
@@ -114,9 +148,24 @@ export default function Sidebar(p: Props) {
             </li>
           ))}
         </ul>
-        <h3>Nodos ({p.project.nodes.length})</h3>
+        <div className="flex items-center justify-between gap-2">
+          <h3>Nodos ({shown.length === p.project.nodes.length ? p.project.nodes.length : `${shown.length} de ${p.project.nodes.length}`})</h3>
+          {p.project.nodes.length > 0 && <button className="btn-ghost underline text-xs" onClick={() => p.onBulk()}>Cambiar modelo…</button>}
+        </div>
+        {p.project.nodes.length > 3 && (
+          <>
+            <input type="search" placeholder="Buscar nodo, titular o folio" value={query} aria-label="Buscar nodo"
+              onChange={(e) => setQuery(e.target.value)} />
+            <div className="node-filters" role="group" aria-label="Filtrar por estado">
+              {[{ key: '', label: 'Todos' }, ...STATE_GROUPS.filter((g) => groupCount(g.key))].map((g) => (
+                <button key={g.key} className={`chip ${filter === g.key ? 'active' : ''}`} aria-pressed={filter === g.key}
+                  onClick={() => setFilter(g.key)}>{g.label}{g.key ? ` (${groupCount(g.key)})` : ''}</button>
+              ))}
+            </div>
+          </>
+        )}
         <ul className="device-list">
-          {p.project.nodes.map((n) => {
+          {shown.map((n) => {
             const cell = isCellular(p.catalog, n)
             const kind: DeviceKind = cell ? 'cellular' : isStation(p.catalog, n) ? 'station' : 'lora'
             const l = p.links[n.name]?.link
@@ -189,6 +238,11 @@ export default function Sidebar(p: Props) {
                 {p.catalog.cell_operators.map((o) => <option key={o}>{o}</option>)}
               </select>
             </label>
+            {noCell > 0 && (
+              <button className="btn" onClick={() => p.onBulk({ groups: ['cell-none'], model: 'dragino_se0x_lb' })}>
+                Cambiar los {noCell} sensores sin 4G a LoRa…
+              </button>
+            )}
             <p className="hint">
               Muéstrala u ocúltala con el botón «Cobertura 4G» del mapa (abajo a la derecha).{' '}
               {dot(COLORS.cellOk)} garantizada · {dot(COLORS.cellEdge)} incierta: cerca del borde (125–250 m según el terreno) ·{' '}

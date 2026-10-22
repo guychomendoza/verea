@@ -23,6 +23,7 @@ class GatewayIn(BaseModel):
     gain: Optional[float] = Field(None, ge=-10, le=20)
     cable_loss: Optional[float] = Field(None, ge=0, le=20)
     online: bool = True
+    backhaul: Optional[str] = Field(None, pattern="^(4g|red)$")
 
     def model_dump(self, **kw):
         return super().model_dump(exclude_none=True, **kw)
@@ -96,3 +97,13 @@ class CellRequest(BaseModel):
 
 class ProjectBody(BaseModel):
     project: dict
+
+
+class SuggestGatewaysRequest(BaseModel):
+    """Nodes to serve and the 4G gateway to place (its model and mast height)."""
+    nodes: list[NodeIn] = Field(min_length=1, max_length=MAX_NODES)
+    gateway: GatewayIn
+    settings: SettingsIn = SettingsIn()
+    operator: Optional[str] = Field(None, max_length=40)
+    max_gateways: int = Field(5, ge=1, le=20)
+    max_link_km: float = Field(8, ge=1, le=15)

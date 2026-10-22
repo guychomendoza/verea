@@ -11,7 +11,7 @@ from core.profiles import GATEWAY_PROFILES, NODE_PROFILES, LEGACY_NODE_PROFILE
 
 PROJECT_VERSION = 1
 
-_GW_KEYS = ("name", "lat", "lon", "model", "height", "tx_power", "gain", "cable_loss", "online")
+_GW_KEYS = ("name", "lat", "lon", "model", "height", "tx_power", "gain", "cable_loss", "online", "backhaul")
 _NODE_KEYS = ("name", "lat", "lon", "model", "type", "sf", "tx_power", "height", "gain",
               "cable_loss", "environment", "owner", "area_ha", "plot")
 MAX_OWNER_LEN = 80
@@ -107,6 +107,8 @@ def project_from_dict(data: dict) -> dict:
         if g.get("model") not in GATEWAY_PROFILES:
             g["model"] = "custom"
         g["online"] = bool(g.get("online", True))
+        if g.get("backhaul") not in ("4g", "red"):
+            g["backhaul"] = GATEWAY_PROFILES[g["model"]].get("backhaul", "red")
         gateways.append(g)
         names.add(g["name"])
     for n in data["nodes"]:

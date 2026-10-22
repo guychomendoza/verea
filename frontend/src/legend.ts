@@ -42,6 +42,9 @@ export function mapLegend(d: MapData, showCoverage: boolean): LegendItem[] {
       { color: COLORS.cellNone, label: 'Sin 4G declarado' })
   }
   if (state.length) out.push({ heading: true, color: '', label: 'Estado (color):' }, ...state)
+  if (d.ranges && Object.keys(d.ranges).length) {
+    out.push({ color: '#3da3bc', label: 'Alcance del gateway (sensor SF10)' })
+  }
   if (d.project.plots?.length) out.push({ line: true, color: '#9fb0c3', label: 'Parcela (contorno)' })
   return out
 }

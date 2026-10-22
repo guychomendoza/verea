@@ -227,3 +227,14 @@ def test_project_keeps_plots(client):
     bad = dict(plots[0], geometry={"type": "Point", "coordinates": [0, 0]})
     assert client.post("/api/project/normalize",
                        json={"project": {"gateways": [], "nodes": [], "plots": [bad]}}).status_code == 422
+
+
+def test_suggest_gateways(client):
+    nodes = [dict(NODE, name="A"), dict(NODE, name="B", lat=NODE["lat"] + 0.01)]
+    r = client.post("/api/suggest-gateways", json={"nodes": nodes, "gateway": {**GW, "model": "milesight_sg50"},
+                                                   "max_gateways": 2})
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert {"proposals", "unreachable", "over_limit"} <= out.keys()
+    served = {n["name"] for p in out["proposals"] for n in p["nodes"]}
+    assert served | set(out["unreachable"]) | set(out["over_limit"]) == {"A", "B"}

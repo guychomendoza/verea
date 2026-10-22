@@ -10,6 +10,7 @@ export interface Gateway {
   gain?: number
   cable_loss?: number
   online: boolean
+  backhaul?: '4g' | 'red'   // internet: own 4G modem, or WiFi / Ethernet (needs power and a network)
 }
 
 export interface NodeDevice {
@@ -118,6 +119,7 @@ export interface DeviceProfile {
   label: string
   type?: string
   link?: string
+  backhaul?: '4g' | 'red'
   tx_power: number
   gain: number
   cable_loss: number
@@ -146,4 +148,13 @@ export interface Place {
   lat: number
   lon: number
   kind: string
+}
+
+/** Signal of a test sensor along one direction from a gateway (/api/coverage). */
+export interface Radial {
+  bearing_deg: number
+  distances_m: (number | null)[]
+  coordinates: [number, number][]          // [lat, lon]
+  continuous_range_m: number
+  segments: { viable: boolean; points: [number, number][] }[]
 }

@@ -201,6 +201,8 @@ def main():
         assert abs(val - expected) / expected < 0.01, (shown, expected)
         page.keyboard.press("Escape")
         print(f"ruler: {shown} (haversine {expected:.0f} m)")
+        n1_now = page.evaluate("async () => (await window.__vereaMap.getSource('devices').getData()).features.find(f => f.properties.name === 'N-1').geometry.coordinates")
+        assert abs(n1_now[0] + 102.2952) < 1e-6 and abs(n1_now[1] - 21.2519) < 1e-6, f"N-1 moved: {n1_now}"   # stale drag bug
         page.get_by_role("region", name="Regla").get_by_role("button", name="Borrar").click()
 
         # ── shortcuts ──
@@ -326,6 +328,94 @@ def main():
         assert not rep_errors, rep_errors
         print("HTML report opens:", charts, "interactive profiles,", snaps.count(), "node maps, no errors")
         rep.close()
+
+        # ── theme: automatic → light → dark, remembered ──
+        theme_btn = side.get_by_role("button", name=re.compile("Cambiar tema"))
+        theme_btn.click()
+        assert page.evaluate("document.documentElement.dataset.theme") == "light"
+        light_bg = page.evaluate("getComputedStyle(document.body).backgroundColor")
+        theme_btn.click()
+        assert page.evaluate("document.documentElement.dataset.theme") == "dark"
+        dark_bg = page.evaluate("getComputedStyle(document.body).backgroundColor")
+        assert light_bg != dark_bg, (light_bg, dark_bg)
+        page.screenshot(path=f"{OUT}/9_dark.png")
+        print(f"theme: light {light_bg} / dark {dark_bg}")
+
+        # ── filters, bulk model change, undo / redo ──
+        side.get_by_label("Buscar nodo").fill("Beto")
+        expect(side.locator(".device-list").nth(1).locator("li")).to_have_count(1)
+        side.get_by_label("Buscar nodo").fill("")
+        side.get_by_role("button", name=re.compile(r"^4G incierto")).click()
+        expect(side.locator(".device-list").nth(1).locator("li")).to_have_count(1)
+        side.get_by_role("button", name=re.compile(r"^Todos")).click()
+        side.get_by_role("button", name="Cambiar modelo…").click()
+        bulk = page.get_by_role("dialog", name="Cambiar modelo de sensores")
+        bulk.get_by_role("checkbox", name=re.compile("4G incierto")).check()
+        bulk.get_by_label("Modelo nuevo").select_option("dragino_se0x_lb")
+        bulk.get_by_role("button", name=re.compile(r"^Cambiar 1 a")).click()
+        icon_of = lambda name: page.evaluate(f"async () => (await window.__vereaMap.getSource('devices').getData()).features.find(f => f.properties.name === {name!r}).properties.icon")
+        page.wait_for_timeout(500)
+        assert icon_of("4G-1") == "icon-lora"
+        page.locator("body").click(position={"x": 5, "y": 880})
+        page.keyboard.press("Control+z")
+        page.wait_for_timeout(400)
+        assert icon_of("4G-1") == "icon-cellular"
+        page.keyboard.press("Control+y")
+        page.wait_for_timeout(400)
+        assert icon_of("4G-1") == "icon-lora"
+        side.get_by_role("button", name="Deshacer").click()
+        page.wait_for_timeout(400)
+        assert icon_of("4G-1") == "icon-cellular"
+        print("filters (search, state chip); bulk 4G → SE0X-LB keeps the name; Ctrl+Z / Ctrl+Y / undo button")
+        # a real drag still moves a node, and Ctrl+Z puts it back
+        page.evaluate("() => window.__vereaMap.jumpTo({center: [-102.294, 21.258], zoom: 15})")
+        page.wait_for_timeout(800)
+        mbox = page.get_by_test_id("map").bounding_box()
+        wx = page.evaluate("() => window.__vereaMap.project([-102.294, 21.258])")
+        page.mouse.move(mbox["x"] + wx["x"], mbox["y"] + wx["y"])
+        page.mouse.down()
+        page.mouse.move(mbox["x"] + wx["x"] + 60, mbox["y"] + wx["y"] + 40, steps=8)
+        page.mouse.up()
+        page.wait_for_timeout(400)
+        pos = lambda: page.evaluate("JSON.parse(localStorage.getItem('verea.project')).nodes.find(n => n.name === 'WX-1')")
+        moved = pos()
+        assert abs(moved["lon"] + 102.294) > 1e-4, moved
+        page.locator("body").click(position={"x": 5, "y": 880})
+        page.keyboard.press("Control+z")
+        page.wait_for_timeout(400)
+        back = pos()
+        assert abs(back["lon"] + 102.294) < 1e-6 and abs(back["lat"] - 21.258) < 1e-6, back
+        print("drag a node: moves; Ctrl+Z puts it back")
+
+        # ── gateway range (one click) ──
+        side.get_by_role("button", name=re.compile(r"GW-1")).click()
+        dev = page.get_by_role("complementary", name="Dispositivo")
+        dev.get_by_role("button", name="📡 Ver alcance de la señal").click()
+        expect(dev.get_by_role("button", name="Ocultar alcance")).to_be_visible(timeout=60000)
+        n_range = page.evaluate("async () => (await window.__vereaMap.getSource('range').getData()).features.length")
+        assert n_range > 24, n_range
+        page.wait_for_timeout(1500)
+        page.screenshot(path=f"{OUT}/10_range.png")
+        dev.get_by_role("button", name="Ocultar alcance").click()
+        print(f"gateway range: {n_range} features (area + rays)")
+
+        # ── suggest 4G gateways ──
+        side.get_by_role("button", name="Sugerir gateways 4G…").click()
+        sug = page.get_by_role("dialog", name="Sugerir gateways 4G")
+        sug.get_by_label("Nodos a cubrir").select_option("all")
+        sug.get_by_role("button", name="Buscar ubicaciones").click()
+        expect(sug.get_by_role("status")).to_contain_text("gateways propuestos", timeout=120000)
+        print("suggestion:", sug.get_by_role("status").inner_text())
+        sug.screenshot(path=f"{OUT}/11_suggest.png")
+        n_gw = len(page.evaluate("async () => (await window.__vereaMap.getSource('devices').getData()).features.filter(f => f.properties.kind === 'gateway')"))
+        sug.get_by_role("button", name=re.compile(r"^Agregar \d+ gateways")).click()
+        page.wait_for_timeout(600)
+        n_gw2 = len(page.evaluate("async () => (await window.__vereaMap.getSource('devices').getData()).features.filter(f => f.properties.kind === 'gateway')"))
+        assert n_gw2 > n_gw, (n_gw, n_gw2)
+        page.locator("body").click(position={"x": 5, "y": 880})
+        page.keyboard.press("Control+z")
+        page.wait_for_timeout(500)
+        print(f"suggested gateways added ({n_gw} → {n_gw2}) and undone")
 
         # ── import plots: KML (pins + polygons) then a CSV that updates one and adds one ──
         page.bring_to_front()

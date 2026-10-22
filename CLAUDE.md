@@ -45,6 +45,12 @@ frontend, DB with users) is planned.
   no AI) → reviewed in `ImportDialog.tsx` → `apply.ts` (adds, or updates by name / plot);
   projects may carry `plots` (GeoJSON polygons, validated in `core/project.py`), drawn on the map
   and in the reports; nodes link to theirs with `plot`, panel borders (`Edge` in `App.tsx`) show an open/close arrow on hover,
+  theme light / dark / automatic (`theme.ts`, button in `Logo.tsx`), undo / redo of the project
+  (`reduceHistory` in `project.ts`: 'open' starts a new history; Ctrl+Z / Ctrl+Y), node list
+  filters and "Cambiar modelo…" in bulk (`nodeStatus.ts`, `BulkModelDialog.tsx`), gateway range on
+  the map with one click (`/api/coverage`, layers `range-*`), "Sugerir gateways 4G"
+  (`SuggestGatewaysDialog.tsx` → `/api/suggest-gateways` → `core/gateway_siting.py`: high points of
+  the local DEM with 4G, link budget per pair, greedy; only for gateways with `backhaul: '4g'`),
   ruler is a map control (and R), 4G coverage on/off is a map control beside the attribution
   (`CoverageControl`, also in the HTML report, which reads the PMTiles from the app's server — the
   dev server sends CORS headers for that), `shortcuts.ts` (G/Ctrl+G, N = LSE01, R, Ctrl+S;
