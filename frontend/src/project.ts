@@ -23,6 +23,10 @@ export function isCellular(catalog: Catalog, n: NodeDevice): boolean {
   return catalog.node_profiles[n.model]?.link === 'cellular'
 }
 
+export function isStation(catalog: Catalog, n: NodeDevice): boolean {
+  return catalog.node_profiles[n.model]?.type === 'weather'
+}
+
 function allNames(p: Project): Set<string> {
   return new Set([...p.gateways.map((g) => g.name), ...p.nodes.map((n) => n.name)])
 }

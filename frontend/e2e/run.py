@@ -77,6 +77,18 @@ def main():
         assert re.search(r"1\.23 km · 28\.8 dB", n1), labels
         print("map labels:", [l.replace("\n", " | ") for l in labels])
 
+        # ── brand and symbology: logo on the page, one symbol per device type ──
+        expect(side.locator(".brand-bar .logo svg")).to_be_visible()
+        icons = page.evaluate("async () => Object.fromEntries((await window.__vereaMap.getSource('devices').getData())"
+                              ".features.map(f => [f.properties.name, f.properties.icon]))")
+        assert icons == {"GW-1": "icon-gateway", "N-1": "icon-lora", "N-2": "icon-lora", "4G-1": "icon-cellular",
+                         "WX-1": "icon-station"}, icons
+        page.wait_for_timeout(800)
+        missing = page.evaluate("() => ['gateway','lora','cellular','station'].filter(k => !window.__vereaMap.hasImage('icon-' + k))")
+        assert not missing, missing
+        assert side.locator(".device-list .device-icon").count() == 5
+        print("logo in the side panel; map symbols:", icons)
+
         # ── bug: a click on a node in the map opens the device panel and keeps it open ──
         pt = page.evaluate("() => window.__vereaMap.project([-102.2952, 21.2519])")
         box = page.get_by_test_id("map").bounding_box()
@@ -219,7 +231,7 @@ def main():
             page.get_by_role("button", name="📷 Imagen del mapa").click()
         img = png(Path(dl.value.path()))
         bg = img.getpixel((3, 3))
-        assert bg == (14, 17, 23), bg
+        assert bg == (15, 34, 54), bg      # brand navy
         print("map image:", img.size, "frame", bg, dl.value.suggested_filename)
 
         # ── Spanish ──
@@ -259,6 +271,11 @@ def main():
         charts = rep.locator(".chart").count()
         snaps = rep.locator("img.snap")
         assert snaps.count() == n_nodes, snaps.count()
+        expect(rep.locator("header .logo svg")).to_be_visible()
+        legend = rep.locator("main > .symbology").inner_text()
+        for k in ("Gateway", "Sensor LoRa", "Sensor 4G", "Estación meteorológica", "Enlace viable", "4G garantizado"):
+            assert k in legend, (k, legend)
+        assert rep.locator(".card .symbology").count() == n_nodes
         first = Image.open(io.BytesIO(__import__("base64").b64decode(snaps.first.get_attribute("src").split(",", 1)[1]))).convert("RGB")
         white = sum(1 for px in first.getdata() if min(px) > 235)
         assert white > 400, f"highlighted link (white rings and casing) not visible: {white}"

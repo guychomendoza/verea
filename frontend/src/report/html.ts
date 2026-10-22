@@ -1,6 +1,10 @@
 // Interactive HTML report: one self-contained file (data embedded), map and elevation
 // profiles navigable in any browser; MapLibre and Plotly load from a CDN when it is opened.
+import { BRAND, logoSvg } from '../brand'
 import { COLORS } from '../colors'
+import { deviceIconSvg, glyphPngs, iconImageId } from '../deviceIcons'
+import type { LegendItem } from '../legend'
+import { nodeKindOf } from '../mapStyle'
 import { PLOTLY_CONFIG, PLOTLY_LOCALE } from '../profilePlot'
 import type { ReportData } from './collect'
 import { GLOSSARY, SOURCES, nodeFacts, overviewTable, settingsLine, summary } from './content'
@@ -17,6 +21,17 @@ function tableHtml(head: string[], rows: string[][]): string {
     + `<tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
 }
 
+/** Symbology under a map: device symbols, line samples, dots and group titles. */
+function legendHtml(items: LegendItem[]): string {
+  if (!items.length) return ''
+  return `<div class="symbology">${items.map((it) => {
+    if (it.heading) return `<b>${esc(it.label)}</b>`
+    const sample = it.icon ? deviceIconSvg(it.icon, it.color, 18)
+      : it.line ? `<i class="ln" style="background:${it.color}"></i>` : `<i class="dt" style="background:${it.color}"></i>`
+    return `<span>${sample}${esc(it.label)}</span>`
+  }).join('')}</div>`
+}
+
 export function buildHtml(d: ReportData): string {
   const title = d.project.name.trim() || 'Proyecto Verea'
   const nodeColor = (name: string) => {
@@ -29,14 +44,17 @@ export function buildHtml(d: ReportData): string {
   }
   const data = {
     devices: [
-      ...d.project.gateways.map((g) => ({ kind: 'gateway', name: g.name, lat: g.lat, lon: g.lon, color: COLORS.gateway })),
-      ...d.project.nodes.map((n) => ({ kind: 'node', name: n.name, lat: n.lat, lon: n.lon, color: nodeColor(n.name) })),
+      ...d.project.gateways.map((g) => ({ kind: 'gateway', name: g.name, lat: g.lat, lon: g.lon,
+        color: g.online ? COLORS.gateway : COLORS.none, icon: iconImageId('gateway') })),
+      ...d.project.nodes.map((n) => ({ kind: 'node', name: n.name, lat: n.lat, lon: n.lon, color: nodeColor(n.name),
+        icon: iconImageId(nodeKindOf(d, n.name)) })),
     ],
     links: d.nodes.filter((s) => s.gateway).map((s) => ({
       from: [s.gateway!.lon, s.gateway!.lat], to: [s.node.lon, s.node.lat], color: nodeColor(s.node.name),
     })),
     sections: d.nodes.map((s, i) => ({ id: `p${i}`, figure: s.figure, coords: s.detail?.profile.coordinates }))
       .filter((s) => s.figure),
+    icons: glyphPngs(),
     locale: PLOTLY_LOCALE,
     config: { ...PLOTLY_CONFIG, responsive: true },
   }
@@ -58,6 +76,7 @@ export function buildHtml(d: ReportData): string {
   <h3>${esc(s.node.name)} <small>${esc(s.cellular ? 'Sensor 4G' : l ? `Nodo LoRa · enlace con ${l.gateway}` : 'Nodo LoRa')}</small></h3>
   <p class="verdict ${cls}">${esc(text)}</p>
   <img class="snap" alt="${esc(s.node.name)} en el mapa" src="${s.mapJpg}">
+  ${legendHtml(s.legend)}
   ${s.figure ? `<div class="chart" id="p${i}"></div>` : ''}
   ${tableHtml(['Dato', 'Valor'], nodeFacts(d, s))}
   ${l && !l.viable && l.reasons.length ? `<p class="muted"><b>Por qué no es viable:</b> ${l.reasons.map(esc).join(' · ')}</p>` : ''}
@@ -73,21 +92,29 @@ export function buildHtml(d: ReportData): string {
 <title>${esc(title)} · Reporte Verea</title>
 <link rel="stylesheet" href="${MAPLIBRE}/maplibre-gl.css">
 <style>
-  :root { --ink:#1d2433; --muted:#5b6475; --line:#e3e6eb; }
-  body { margin:0; font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color:var(--ink); background:#f6f7f9; }
-  header { background:#0e1117; color:#e9ecef; padding:22px 24px; }
-  header h1 { margin:0 0 4px; font-size:24px; } header p { margin:0; color:#adb5bd; }
+  :root { --ink:#162a40; --muted:#5a6b80; --line:#dce3eb; --navy:${BRAND.navy}; --teal:${BRAND.teal}; }
+  body { margin:0; font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color:var(--ink); background:#f4f7fa; }
+  header { background:var(--navy); color:#e6edf4; padding:20px 24px; border-bottom:4px solid var(--teal);
+    display:flex; align-items:center; gap:24px; flex-wrap:wrap; }
+  header .logo { width:150px; flex-shrink:0; } header .logo svg { display:block; width:100%; height:auto; }
+  header h1 { margin:0 0 4px; font-size:24px; } header p { margin:0; color:#9fb0c3; }
+  h2 { color:var(--navy); }
+  .symbology { display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; font-size:12px; color:var(--muted); margin:8px 0 12px; }
+  .symbology span { display:inline-flex; align-items:center; gap:5px; } .symbology b { color:var(--ink); }
+  .symbology .dt { width:10px; height:10px; border-radius:50%; display:inline-block; }
+  .symbology .ln { width:18px; height:4px; border-radius:2px; display:inline-block; }
   main { max-width:1150px; margin:0 auto; padding:16px 16px 48px; }
   h2 { font-size:18px; border-bottom:1px solid var(--line); padding-bottom:6px; margin:28px 0 10px; }
   h3 { font-size:16px; margin:0 0 8px; } h3 span { font-size:12px; padding:2px 8px; border-radius:99px; color:#fff; }
   .verdict { display:inline-block; margin:0 0 10px; padding:3px 10px; border-radius:99px; color:#fff; font-weight:600; font-size:13px; }
   .ok { background:#06a77d; } .warn { background:#c98a00; } .bad { background:#d64161; } .muted.verdict { background:#6c757d; }
+  dt { color:${BRAND.tealDark}; }
   h3 small { font-weight:400; color:var(--muted); font-size:13px; }
   .card { background:#fff; border:1px solid var(--line); border-radius:10px; padding:16px; margin:18px 0; }
   .snap { width:100%; border-radius:8px; display:block; margin-bottom:10px; }
   #map { height:520px; border-radius:10px; overflow:hidden; border:1px solid var(--line); }
   .tbl { overflow-x:auto; } table { border-collapse:collapse; width:100%; background:#fff; font-size:13px; }
-  th { background:#0e1117; color:#e9ecef; text-align:left; } th, td { padding:6px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { background:var(--navy); color:#e6edf4; text-align:left; } tbody tr:nth-child(even) td { background:${BRAND.rowAlt}; } th, td { padding:6px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
   .chart { height:460px; border-radius:8px; overflow:hidden; }
   .cols { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; margin-top:10px; }
   dt { font-weight:600; margin-top:8px; } dd { margin:0; color:var(--muted); }
@@ -97,12 +124,13 @@ export function buildHtml(d: ReportData): string {
 </style>
 </head>
 <body>
-<header><h1>${esc(title)}</h1><p>Reporte de red · ${esc(d.generatedAt.toLocaleString('es-MX'))}${d.author ? ` · ${esc(d.author)}` : ''}</p></header>
+<header><div class="logo">${logoSvg('#ffffff', BRAND.teal, ' role="img" aria-label="Verea"')}</div><div><h1>${esc(title)}</h1><p>Reporte de red · ${esc(d.generatedAt.toLocaleString('es-MX'))}${d.author ? ` · ${esc(d.author)}` : ''}</p></div></header>
 <main>
 ${d.project.description.trim() ? `<p>${esc(d.project.description)}</p>` : ''}
 <h2>Resumen</h2>${tableHtml(['Concepto', 'Valor'], summary(d))}
 <p class="muted">${esc(settingsLine(d))}</p>
 <h2>Mapa</h2><div id="map"></div>
+${legendHtml(d.legend)}
 <p class="muted">Pasa el mouse sobre un Perfil de Elevación para ver el punto en este mapa.</p>
 <h2>${esc(ov.title)}</h2>${tableHtml(ov.head, ov.rows)}
 ${d.nodes.length ? '<h2>Nodos</h2>' : ''}
@@ -115,6 +143,9 @@ ${cards}
 <script src="${PLOTLY}"></script>
 <script>
 const D = JSON.parse(document.getElementById('verea-data').textContent);
+(async () => {
+const icons = {};
+await Promise.all(Object.entries(D.icons).map(([id, src]) => { const im = new Image(); im.src = src; icons[id] = im; return im.decode(); }));
 const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services';
 const map = new maplibregl.Map({
   container: 'map', attributionControl: { compact: true },
@@ -135,15 +166,18 @@ const map = new maplibregl.Map({
       { id: 'imagery', type: 'raster', source: 'imagery' },
       { id: 'places', type: 'raster', source: 'places' },
       { id: 'links', type: 'line', source: 'links', paint: { 'line-color': ['get', 'color'], 'line-width': 3 } },
-      { id: 'devices', type: 'circle', source: 'devices', paint: { 'circle-radius': ['match', ['get', 'kind'], 'gateway', 9, 7],
+      { id: 'devices', type: 'circle', source: 'devices', paint: { 'circle-radius': ['match', ['get', 'kind'], 'gateway', 13, 11],
         'circle-color': ['get', 'color'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } },
+      { id: 'device-icons', type: 'symbol', source: 'devices', layout: { 'icon-image': ['get', 'icon'],
+        'icon-size': ['match', ['get', 'kind'], 'gateway', 0.8, 0.68], 'icon-allow-overlap': true, 'icon-ignore-placement': true } },
       { id: 'labels', type: 'symbol', source: 'devices', layout: { 'text-field': ['get', 'name'], 'text-font': ['Open Sans Semibold'],
-        'text-size': 12, 'text-offset': [0, 1.2], 'text-anchor': 'top', 'text-optional': true },
+        'text-size': 12, 'text-offset': [0, 1.6], 'text-anchor': 'top', 'text-optional': true },
         paint: { 'text-color': '#fff', 'text-halo-color': '#000', 'text-halo-width': 1.5 } },
       { id: 'cursor', type: 'circle', source: 'cursor', paint: { 'circle-radius': 7, 'circle-color': '#ffd166',
         'circle-stroke-color': '#000', 'circle-stroke-width': 2 } },
     ] },
 });
+map.on('styleimagemissing', e => { if (icons[e.id] && !map.hasImage(e.id)) map.addImage(e.id, icons[e.id], { pixelRatio: 2 }); });
 map.addControl(new maplibregl.NavigationControl(), 'top-right');
 map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
 if (D.devices.length) {
@@ -161,6 +195,7 @@ for (const s of D.sections) {
       geometry: { type: 'Point', coordinates: [c[1], c[0]] }, properties: {} }] });
   });
 }
+})();
 </script>
 </body>
 </html>

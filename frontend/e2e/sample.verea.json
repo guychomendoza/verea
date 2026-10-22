@@ -54,6 +54,19 @@
    "gain": 0.0,
    "cable_loss": 0.0,
    "environment": "Rural / Open"
+  },
+  {
+   "name": "WX-1",
+   "lat": 21.258,
+   "lon": -102.294,
+   "model": "sensecap_s2120",
+   "type": "weather",
+   "sf": 10,
+   "tx_power": 19,
+   "height": 3.0,
+   "gain": 2.0,
+   "cable_loss": 0.0,
+   "environment": "Cultivo bajo"
   }
  ],
  "name_counters": {

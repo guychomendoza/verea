@@ -4,15 +4,15 @@ import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from
 import type { Session } from '@supabase/supabase-js'
 import { api, ApiError, setToken } from './api'
 import * as cloud from './cloud'
-import { COLORS } from './colors'
 import DevicePanel from './DevicePanel'
 import { downloadBlob, mapToPng, safeName, type LegendItem } from './exportImage'
 import { distance, haversine } from './geo'
+import { mapLegend as buildLegend } from './legend'
 import { Login, Notice, SetPassword } from './Login'
 import MapView, { type MapMode } from './MapView'
 import ProfilePanel from './ProfilePanel'
 import { profileTitle } from './profilePlot'
-import { emptyProject, isCellular, PROJECT_VERSION, reduce, rename, selected, type Action } from './project'
+import { emptyProject, isCellular, isStation, PROJECT_VERSION, reduce, rename, selected, type Action } from './project'
 import ProjectsDialog from './ProjectsDialog'
 import ReportDialog from './report/ReportDialog'
 import SearchBox from './SearchBox'
@@ -290,6 +290,9 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
   const cellular = useMemo(
     () => new Set(project.nodes.filter((n) => isCellular(catalog, n)).map((n) => n.name)),
     [project.nodes, catalog])
+  const stations = useMemo(
+    () => new Set(project.nodes.filter((n) => isStation(catalog, n)).map((n) => n.name)),
+    [project.nodes, catalog])
 
   // ── LoRa links: recalculated shortly after any change that affects them ──
   const loraNodes = useMemo(() => project.nodes.filter((n) => !cellular.has(n.name)), [project.nodes, cellular])
@@ -444,21 +447,7 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
     }
   }
 
-  const mapLegend = (): LegendItem[] => {
-    const legend: LegendItem[] = []
-    if (project.gateways.length) legend.push({ color: COLORS.gateway, label: 'Gateway' })
-    if (Object.keys(links).length) {
-      legend.push({ color: COLORS.viable, label: 'Enlace viable', line: true },
-        { color: COLORS.marginal, label: 'Marginal', line: true },
-        { color: COLORS.fail, label: 'No viable', line: true })
-    }
-    if (showCoverage) {
-      legend.push({ color: COLORS.cellOk, label: '4G garantizado' },
-        { color: COLORS.cellEdge, label: '4G incierto (cerca de una zona sin señal)' },
-        { color: COLORS.cellNone, label: 'Sin 4G declarado' })
-    }
-    return legend
-  }
+  const mapLegend = (): LegendItem[] => buildLegend({ project, links, cells, cellular, stations }, showCoverage)
 
   const exportMap = async () => {
     const map = mapRef.current
@@ -524,7 +513,7 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
 
   const mapArea = (
     <main className="map-area">
-      <MapView project={project} selection={selection} links={links} cells={cells} cellular={cellular}
+      <MapView project={project} selection={selection} links={links} cells={cells} cellular={cellular} stations={stations}
         mode={mode} showCoverage={showCoverage} showLabels={showLabels} pin={pin} focus={focus}
         cursor={cursorIdx !== null ? coordAt(cursorIdx) ?? null : null}
         profilePins={pins.map((i) => coordAt(i)).filter((c): c is [number, number] => !!c)}
@@ -608,7 +597,7 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
           onClose={() => setShowProjects(false)} />
       )}
       {showReport && (
-        <ReportDialog catalog={catalog} project={project} links={links} cells={cells} cellular={cellular}
+        <ReportDialog catalog={catalog} project={project} links={links} cells={cells} cellular={cellular} stations={stations}
           author={user ? user.me.full_name || user.me.email : ''}
           legend={mapLegend()} showCoverage={showCoverage} onClose={() => setShowReport(false)} />
       )}

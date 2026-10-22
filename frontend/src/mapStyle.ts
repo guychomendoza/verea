@@ -5,6 +5,7 @@ import maplibregl from 'maplibre-gl'
 import type { StyleSpecification } from 'maplibre-gl'
 import { Protocol } from 'pmtiles'
 import { COLORS, COVERAGE_URL } from './colors'
+import { iconImageId, type DeviceKind } from './deviceIcons'
 import { db, distance } from './geo'
 import type { CellStatus, LinkResult, Project, Selection } from './types'
 
@@ -39,6 +40,7 @@ export interface MapData {
   links: Record<string, LinkResult>
   cells: Record<string, CellStatus>
   cellular: Set<string>
+  stations: Set<string>                           // weather stations (own symbol)
   selection?: Selection
   highlight?: { gateway?: string; node: string }  // report: one link (or one 4G sensor)
 }
@@ -65,6 +67,10 @@ function subLabel(d: MapData, kind: 'gateway' | 'node', name: string): string {
   return l ? `${distance(l.distance_m)} · ${db(l.margin_db)}` : ''
 }
 
+export function nodeKindOf(d: Pick<MapData, 'cellular' | 'stations'>, name: string): DeviceKind {
+  return d.cellular.has(name) ? 'cellular' : d.stations.has(name) ? 'station' : 'lora'
+}
+
 export function devicesGeoJSON(d: MapData): GeoJSON.FeatureCollection {
   const sel = d.selection
   const f = d.highlight
@@ -81,7 +87,7 @@ export function devicesGeoJSON(d: MapData): GeoJSON.FeatureCollection {
         type: 'Feature' as const,
         geometry: { type: 'Point' as const, coordinates: [g.lon, g.lat] },
         properties: {
-          kind: 'gateway', name: g.name, label: label('gateway', g.name),
+          kind: 'gateway', name: g.name, label: label('gateway', g.name), icon: iconImageId('gateway'),
           color: g.online ? COLORS.gateway : COLORS.none,
           selected: sel?.kind === 'gateway' && sel.name === g.name,
           focus: focusOf('gateway', g.name), dim: !!f && !focusOf('gateway', g.name),
@@ -94,6 +100,7 @@ export function devicesGeoJSON(d: MapData): GeoJSON.FeatureCollection {
           geometry: { type: 'Point' as const, coordinates: [n.lon, n.lat] },
           properties: {
             kind: 'node', name: n.name, cellular: cell, label: label('node', n.name),
+            icon: iconImageId(nodeKindOf(d, n.name)),
             color: cell ? cellColor(d.cells[n.name]) : linkColor(d.links[n.name]),
             selected: sel?.kind === 'node' && sel.name === n.name,
             focus: focusOf('node', n.name), dim: !!f && !focusOf('node', n.name),
@@ -163,12 +170,12 @@ export function buildStyle(): StyleSpecification {
       {
         id: 'device-halo', type: 'circle', source: 'devices',
         filter: ['any', ['==', ['get', 'selected'], true], isFocus] as never,
-        paint: { 'circle-radius': ['case', isFocus, 18, 15], 'circle-color': '#ffffff', 'circle-opacity': 0.95 } as never,
+        paint: { 'circle-radius': ['case', isFocus, 21, 17], 'circle-color': '#ffffff', 'circle-opacity': 0.95 } as never,
       },
       {
         id: 'devices', type: 'circle', source: 'devices',
         paint: {
-          'circle-radius': ['case', isFocus, 12, ['match', ['get', 'kind'], 'gateway', 10, 8]],
+          'circle-radius': ['case', isFocus, 15, ['match', ['get', 'kind'], 'gateway', 13, 11]],
           'circle-color': ['get', 'color'],
           'circle-opacity': ['case', isDim, 0.35, 1],
           'circle-stroke-color': '#ffffff',
@@ -177,13 +184,23 @@ export function buildStyle(): StyleSpecification {
         } as never,
       },
       {
+        // white glyph of the device type inside its circle (images from deviceIcons.ts)
+        id: 'device-icons', type: 'symbol', source: 'devices',
+        layout: {
+          'icon-image': ['get', 'icon'],
+          'icon-size': ['case', isFocus, 0.9, ['match', ['get', 'kind'], 'gateway', 0.8, 0.68]],
+          'icon-allow-overlap': true, 'icon-ignore-placement': true,
+        } as never,
+        paint: { 'icon-opacity': ['case', isDim, 0.35, 1] } as never,
+      },
+      {
         id: 'labels', type: 'symbol', source: 'devices', filter: ['!', isDim] as never,
         layout: {
           'text-field': ['get', 'label'],
           'text-font': ['Open Sans Semibold'],
           'text-size': ['case', isFocus, 14, 12],
           'text-line-height': 1.25,
-          'text-offset': [0, 1.3],
+          'text-offset': ['case', isFocus, ['literal', [0, 2.1]], ['literal', [0, 1.6]]],
           'text-anchor': 'top',
           'text-optional': true,           // hide a label rather than overlap it
         } as never,

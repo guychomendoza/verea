@@ -1,11 +1,11 @@
 // PNG download of the map inside a dark frame with title, legend and attribution, in the
 // same style as the elevation profile (Plotly, profilePlot.ts).
 
-export interface LegendItem {
-  color: string
-  label: string
-  line?: boolean          // a line sample instead of a dot
-}
+import { BRAND } from './brand'
+import { deviceIconCanvas } from './deviceIcons'
+import type { LegendItem } from './legend'
+
+export type { LegendItem }
 
 interface Frame {
   title: string
@@ -16,10 +16,10 @@ interface Frame {
 
 const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'
 const PAD = 16
-const BG = '#0e1117'
-const INK = '#e9ecef'
-const MUTED = '#adb5bd'
-const FAINT = '#868e96'
+const BG = BRAND.navyDeep
+const INK = '#e6edf4'
+const MUTED = '#9fb0c3'
+const FAINT = '#7d90a6'
 
 export function downloadBlob(blob: Blob, filename: string) {
   const a = document.createElement('a')
@@ -42,7 +42,7 @@ function legendRows(items: LegendItem[], width: number): LegendItem[][] {
   const rows: LegendItem[][] = [[]]
   let x = 0
   for (const item of items) {
-    const w = 21 + g.measureText(item.label).width + 16
+    const w = (item.heading ? 0 : 21) + g.measureText(item.label).width + (item.heading ? 8 : 16)
     if (x + w > width && rows[rows.length - 1].length) {
       rows.push([])
       x = 0
@@ -85,9 +85,19 @@ function framed(content: CanvasImageSource, w: number, h: number, f: Frame, scal
   for (const row of rows) {
     let x = PAD
     for (const item of row) {
+      if (item.heading) {
+        g.fillStyle = MUTED
+        g.font = `600 12px ${FONT}`
+        g.fillText(item.label, x, y + 19)
+        x += g.measureText(item.label).width + 8
+        g.font = `12px ${FONT}`
+        continue
+      }
       g.fillStyle = item.color
       g.strokeStyle = item.color
-      if (item.line) {
+      if (item.icon) {
+        g.drawImage(deviceIconCanvas(item.icon, item.color, 64), x - 2, y + 6, 18, 18)
+      } else if (item.line) {
         g.lineWidth = 3
         g.beginPath()
         g.moveTo(x, y + 15)

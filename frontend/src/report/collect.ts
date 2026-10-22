@@ -3,6 +3,7 @@
 // LoRa nodes with a link. Maps come from a hidden map (snapshots.ts): the user's view stays put.
 import { api } from '../api'
 import { mapToPng, type LegendItem } from '../exportImage'
+import { cardLegend } from '../legend'
 import { loadPlotly } from '../plotly'
 import { PLOTLY_CONFIG, profileFigure, profileTitle } from '../profilePlot'
 import { isCellular } from '../project'
@@ -18,6 +19,7 @@ export interface NodeSection {
   figure?: ReturnType<typeof profileFigure>
   profileJpg?: string           // elevation profile (JPEG data URL)
   mapJpg: string                // the node / its link on the map
+  legend: LegendItem[]          // symbols in mapJpg
 }
 
 export interface ReportData {
@@ -30,6 +32,8 @@ export interface ReportData {
   links: Record<string, LinkResult>
   cells: Record<string, CellStatus>
   cellular: Set<string>
+  stations: Set<string>
+  legend: LegendItem[]          // general map symbology
   nodes: NodeSection[]
   showCoverage: boolean
 }
@@ -47,11 +51,11 @@ function blobToDataUrl(b: Blob): Promise<string> {
 
 export async function collectReport(args: {
   project: Project; catalog: Catalog; author: string
-  links: Record<string, LinkResult>; cells: Record<string, CellStatus>; cellular: Set<string>
+  links: Record<string, LinkResult>; cells: Record<string, CellStatus>; cellular: Set<string>; stations: Set<string>
   legend: LegendItem[]; showCoverage: boolean; onProgress: (text: string, fraction: number) => void
 }): Promise<ReportData> {
   const { project, onProgress } = args
-  const base = { project, links: args.links, cells: args.cells, cellular: args.cellular }
+  const base = { project, links: args.links, cells: args.cells, cellular: args.cellular, stations: args.stations }
   onProgress('Preparando el mapa…', 0.02)
   const snap = await SnapshotMap.create()
   const holder = document.createElement('div')
@@ -68,7 +72,7 @@ export async function collectReport(args: {
       mapImg = await blobToDataUrl(await mapToPng(canvas, {
         title: project.name.trim() || 'Proyecto Verea',
         subtitle: `${project.gateways.length} gateways · ${project.nodes.length} nodos`,
-        legend: args.legend,
+        // the PDF draws the symbology itself (sharper than inside the image)
         attribution: 'Imágenes y nombres © Esri' + (args.showCoverage ? ' · Cobertura 4G: CRT / datos.gob.mx (CC BY 4.0)' : ''),
       }, 'image/jpeg', 0.85))
     }
@@ -79,7 +83,7 @@ export async function collectReport(args: {
       onProgress(`Nodo ${i + 1} de ${project.nodes.length}: ${node.name}`, 0.08 + 0.88 * (i / project.nodes.length))
       const mapJpg = await snap.capture({ ...base, highlight: { node: node.name, gateway: gateway?.name } },
         { coverage: cellular })
-      const section: NodeSection = { node, cellular, mapJpg }
+      const section: NodeSection = { node, cellular, mapJpg, legend: cardLegend(base, node.name, gateway?.name) }
       if (gateway && Plotly) {
         const detail = await api.link(gateway, node, project.settings)
         const title = profileTitle(detail.profile, { gateway: gateway.name, node: node.name, sf: node.sf, freqMhz: project.settings.freq_mhz })
@@ -99,6 +103,6 @@ export async function collectReport(args: {
   onProgress('Armando el documento…', 0.97)
   return {
     ...base, catalog: args.catalog, author: args.author, generatedAt: new Date(),
-    mapImg, mapSize: SNAPSHOT_SIZE, nodes, showCoverage: args.showCoverage,
+    mapImg, mapSize: SNAPSHOT_SIZE, legend: args.legend, nodes, showCoverage: args.showCoverage,
   }
 }

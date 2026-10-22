@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { emptyProject, nameError, reduce, rename } from './project'
+import { emptyProject, isCellular, isStation, nameError, reduce, rename } from './project'
 import type { Catalog, Settings } from './types'
 
 const settings: Settings = {
@@ -17,6 +17,13 @@ const catalog = {
 } as unknown as Catalog
 
 describe('project', () => {
+  it('tells the device type apart for the map symbols', () => {
+    const node = (model: string) => ({ name: 'x', lat: 0, lon: 0, model }) as never
+    expect([isCellular(catalog, node('dragino_se0x_cs')), isStation(catalog, node('dragino_se0x_cs'))]).toEqual([true, false])
+    expect([isCellular(catalog, node('sensecap_s2120')), isStation(catalog, node('sensecap_s2120'))]).toEqual([false, true])
+    expect([isCellular(catalog, node('dragino_se0x_lb')), isStation(catalog, node('dragino_se0x_lb'))]).toEqual([false, false])
+  })
+
   it('names devices like the Streamlit app', () => {
     let p = emptyProject(settings)
     p = reduce(p, { type: 'addGateway', lat: 21, lon: -102, catalog })

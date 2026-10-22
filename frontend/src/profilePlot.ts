@@ -1,10 +1,11 @@
 // Elevation profile figure (Plotly), shared by the app panel and the reports.
 // Same traces and look as ui/profile_interactive.py: gateway at the left, node at the right.
+import { BRAND } from './brand'
 import type { Profile } from './types'
 
-export const PROFILE_BG = '#0e1117'
-export const PROFILE_INK = '#e9ecef'
-export const PROFILE_MUTED = '#adb5bd'
+export const PROFILE_BG = BRAND.navyDeep
+export const PROFILE_INK = '#e6edf4'
+export const PROFILE_MUTED = '#9fb0c3'
 
 /** Plotly in Spanish: toolbar tooltips and number format. */
 export const PLOTLY_LOCALE = {
@@ -90,8 +91,8 @@ export function profileFigure(p: Profile, title: string, pins: number[] = []) {
     },
     {
       x: [x[0], x[0]], y: [elev[0], p.gw_antenna_asl], name: 'Gateway', mode: 'lines+markers+text',
-      line: { color: '#4cc3e8', width: 4 }, marker: { symbol: 'square', size: [0, 12], color: '#4cc3e8' },
-      text: ['', 'GW'], textposition: 'top right', textfont: { color: '#4cc3e8', size: 11 }, hoverinfo: 'skip',
+      line: { color: BRAND.tealLight, width: 4 }, marker: { symbol: 'square', size: [0, 12], color: BRAND.tealLight },
+      text: ['', 'GW'], textposition: 'top right', textfont: { color: BRAND.tealLight, size: 11 }, hoverinfo: 'skip',
     },
     {
       x: [x[last], x[last]], y: [elev[last], p.node_antenna_asl], name: 'Nodo', mode: 'lines+markers+text',
@@ -111,15 +112,15 @@ export function profileFigure(p: Profile, title: string, pins: number[] = []) {
     font: { color: PROFILE_MUTED, family: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif' },
     margin: { l: 64, r: 24, t: 44, b: 64 },
     hovermode: 'x',
-    hoverlabel: { font: { size: 11, color: PROFILE_INK }, bgcolor: '#1a1d24', bordercolor: '#495057' },
+    hoverlabel: { font: { size: 11, color: PROFILE_INK }, bgcolor: '#16304b', bordercolor: BRAND.navyAxis },
     xaxis: {
-      title: { text: 'Distancia (km)' }, range: [x[0], x[last]], gridcolor: '#262b33', zeroline: false, hoverformat: '.2f',
-      showline: true, linecolor: '#495057', ticks: 'outside', tickcolor: '#495057',
+      title: { text: 'Distancia (km)' }, range: [x[0], x[last]], gridcolor: BRAND.navyLine, zeroline: false, hoverformat: '.2f',
+      showline: true, linecolor: BRAND.navyAxis, ticks: 'outside', tickcolor: BRAND.navyAxis,
       showspikes: true, spikemode: 'across', spikecolor: '#ffd166', spikethickness: 1, spikedash: 'solid',
     },
     yaxis: {
-      title: { text: 'Elevación (m s.n.m.)' }, range: [yMin - pad, yMax + pad], gridcolor: '#262b33',
-      zeroline: false, showline: true, linecolor: '#495057', ticks: 'outside', tickcolor: '#495057',
+      title: { text: 'Elevación (m s.n.m.)' }, range: [yMin - pad, yMax + pad], gridcolor: BRAND.navyLine,
+      zeroline: false, showline: true, linecolor: BRAND.navyAxis, ticks: 'outside', tickcolor: BRAND.navyAxis,
     },
     legend: { orientation: 'h', y: -0.2, x: 0.5, xanchor: 'center', yanchor: 'top', font: { size: 10 }, bgcolor: 'rgba(0,0,0,0)' },
   }

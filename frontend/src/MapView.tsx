@@ -3,6 +3,7 @@ import maplibregl, { type GeoJSONSource, type MapMouseEvent, type MapTouchEvent 
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { DEFAULT_CENTER } from './colors'
 import { distance, haversine } from './geo'
+import { registerDeviceIcons } from './deviceIcons'
 import { MAP_LOCALE, buildStyle, devicesGeoJSON, ensurePmtiles, linksGeoJSON } from './mapStyle'
 import type { CellStatus, LinkResult, Project, Selection } from './types'
 
@@ -15,6 +16,7 @@ interface Props {
   links: Record<string, LinkResult>
   cells: Record<string, CellStatus>
   cellular: Set<string>
+  stations: Set<string>
   mode: MapMode
   showCoverage: boolean
   showLabels: boolean
@@ -130,6 +132,7 @@ export default function MapView(props: Props) {
       canvasContextAttributes: { preserveDrawingBuffer: true },   // map image download
       style: buildStyle(),
     })
+    registerDeviceIcons(map)
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right')
     const ruler = new RulerControl(() => propsRef.current.onToggleRuler())
     map.addControl(ruler, 'top-right')

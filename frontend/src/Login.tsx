@@ -1,11 +1,12 @@
 import { useId, useState } from 'react'
 import { supabase } from './cloud'
+import { Logo } from './Logo'
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="login-wrap">
       <div className="login-card">
-        <div className="text-2xl font-semibold">📡 Verea</div>
+        <div className="flex justify-center py-2"><Logo width={210} /></div>
         <h1 className="text-base text-[var(--muted)]">{title}</h1>
         {children}
       </div>

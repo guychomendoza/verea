@@ -1,6 +1,7 @@
 // Map images for the report, one per node, from a hidden map of its own (same style as the
 // main map), so the user's view does not move while the report is made.
 import maplibregl, { type GeoJSONSource } from 'maplibre-gl'
+import { registerDeviceIcons } from '../deviceIcons'
 import { MAP_LOCALE, buildStyle, devicesGeoJSON, ensurePmtiles, linksGeoJSON, type MapData } from '../mapStyle'
 
 export const SNAPSHOT_SIZE: [number, number] = [1000, 620]
@@ -25,6 +26,7 @@ export class SnapshotMap {
       fadeDuration: 0, locale: MAP_LOCALE, pixelRatio: 1,
       canvasContextAttributes: { preserveDrawingBuffer: true },
     })
+    registerDeviceIcons(map)
     await new Promise<void>((resolve) => map.once('load', () => resolve()))
     return new SnapshotMap(map, holder)
   }

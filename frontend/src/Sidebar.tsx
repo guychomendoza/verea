@@ -1,8 +1,10 @@
 import { useRef } from 'react'
 import type { MapMode } from './MapView'
 import { COLORS } from './colors'
+import { KIND_LABELS, type DeviceKind } from './deviceIcons'
+import { DeviceIcon, Logo } from './Logo'
 import { db } from './geo'
-import { isCellular } from './project'
+import { isCellular, isStation } from './project'
 import { SHORTCUT_HELP } from './shortcuts'
 import type { Catalog, CellStatus, LinkResult, Project, Selection, Settings } from './types'
 
@@ -53,12 +55,15 @@ export default function Sidebar(p: Props) {
 
   return (
     <aside className="panel side-panel" aria-label="Proyecto">
-      {p.user && (
-        <div className="flex items-center justify-between gap-2 text-sm">
-          <span className="truncate" title={p.user.name}>👤 {p.user.name}</span>
-          <button className="btn-ghost underline" onClick={p.user.onSignOut}>Cerrar sesión</button>
-        </div>
-      )}
+      <div className="brand-bar">
+        <Logo width={112} />
+        {p.user && (
+          <div className="flex flex-col items-end text-xs min-w-0">
+            <span className="truncate max-w-full" title={p.user.name}>{p.user.name}</span>
+            <button className="btn-ghost underline" onClick={p.user.onSignOut}>Cerrar sesión</button>
+          </div>
+        )}
+      </div>
       <input className="font-semibold" placeholder="Proyecto sin nombre" value={p.project.name}
         maxLength={80} onChange={(e) => p.onMeta(e.target.value)} aria-label="Nombre del proyecto" />
       <div className="flex flex-wrap gap-1.5">
@@ -101,7 +106,7 @@ export default function Sidebar(p: Props) {
             <li key={g.name}>
               <button className={p.selection?.name === g.name ? 'selected' : ''}
                 onClick={() => p.onSelect({ kind: 'gateway', name: g.name }, true)}>
-                {dot(g.online ? COLORS.gateway : COLORS.none)} {g.name}
+                <DeviceIcon kind="gateway" color={g.online ? COLORS.gateway : COLORS.none} /> {g.name}
                 {!g.online && <span className="hint">fuera de línea</span>}
               </button>
             </li>
@@ -111,12 +116,13 @@ export default function Sidebar(p: Props) {
         <ul className="device-list">
           {p.project.nodes.map((n) => {
             const cell = isCellular(p.catalog, n)
+            const kind: DeviceKind = cell ? 'cellular' : isStation(p.catalog, n) ? 'station' : 'lora'
             const l = p.links[n.name]?.link
             return (
               <li key={n.name}>
                 <button className={p.selection?.name === n.name ? 'selected' : ''}
                   onClick={() => p.onSelect({ kind: 'node', name: n.name }, true)}>
-                  {dot(nodeColor(n.name, cell))} {n.name}
+                  <DeviceIcon kind={kind} color={nodeColor(n.name, cell)} /> {n.name}
                   <span className="hint ml-auto">
                     {cell ? (p.cells[n.name]?.short ?? '4G') : l ? db(l.margin_db) : ''}
                   </span>
@@ -156,6 +162,15 @@ export default function Sidebar(p: Props) {
 
       <section>
         <h3>Mapa</h3>
+        <div className="symbology" aria-label="Simbología">
+          {(['gateway', 'lora', 'cellular', 'station'] as DeviceKind[]).map((k) => (
+            <span key={k}><DeviceIcon kind={k} color="#5a6b80" /> {KIND_LABELS[k]}</span>
+          ))}
+        </div>
+        <p className="hint">
+          Color = estado: {dot(COLORS.viable)} viable · {dot(COLORS.marginal)} marginal · {dot(COLORS.fail)} no viable ·{' '}
+          {dot(COLORS.none)} sin resultado
+        </p>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={p.showLabels} onChange={(e) => p.onShowLabels(e.target.checked)} />
           Nombres de lugares, carreteras y límites

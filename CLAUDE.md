@@ -40,6 +40,11 @@ frontend, DB with users) is planned.
   Ctrl+N cannot be captured in Chrome), `project.ts` (pure reducer), `api.ts`.
   maplibre-gl.css forces `.maplibregl-map` to position: relative: size the map container inline.
   Map updates apply after the map's own 'load' (a late `once('load')` never fires).
+  Brand (2026-10-22): `brand.ts` (logo paths from the team's Verea.svg + `BRAND` colours: navy
+  #193352, teal #3da3bc and derived tones; CSS variables in `index.css`), `Logo.tsx` (logo and
+  `DeviceIcon`). Map symbology: `deviceIcons.ts` (white glyph per type — gateway, LoRa sensor,
+  4G sensor, weather station — inside the status-coloured circle; MapLibre images via
+  `registerDeviceIcons`), `legend.ts` (types + status colours, used by exported images, PDF and HTML).
 - `supabase/` — database: `migrations/*.sql` (profiles, projects, RLS: all active members read
   and edit, owner/admin delete, invite-only, optimistic locking on `updated_at`), `tests/` (RLS on a
   real PostgreSQL via pgserver + `supabase_shim.sql`). `scripts/supabase_setup.py` applies it and

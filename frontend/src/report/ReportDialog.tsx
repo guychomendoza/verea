@@ -9,6 +9,7 @@ interface Props {
   links: Record<string, LinkResult>
   cells: Record<string, CellStatus>
   cellular: Set<string>
+  stations: Set<string>
   author: string
   legend: LegendItem[]
   showCoverage: boolean
@@ -40,7 +41,7 @@ export default function ReportDialog(p: Props) {
     try {
       const data = await collectReport({
         project: p.project, catalog: p.catalog, author: p.author, links: p.links,
-        cells: p.cells, cellular: p.cellular, legend: p.legend, showCoverage: p.showCoverage,
+        cells: p.cells, cellular: p.cellular, stations: p.stations, legend: p.legend, showCoverage: p.showCoverage,
         onProgress: (text, fraction) => setProgress({ text, fraction }),
       })
       const stamp = data.generatedAt.toISOString().slice(0, 16).replace(/[-:T]/g, '')
@@ -74,8 +75,8 @@ export default function ReportDialog(p: Props) {
         </div>
         <p className="hint">
           {p.project.gateways.length} gateways · {lora.length} nodos LoRa ({withLink} con enlace) ·{' '}
-          {p.project.nodes.length - lora.length} sensores 4G. Incluye mapa, configuración, tablas, el Perfil
-          de Elevación y el presupuesto de cada enlace, glosario y fuentes.
+          {p.project.nodes.length - lora.length} sensores 4G. Incluye el mapa general con su simbología y una ficha por
+          nodo (su enlace en el mapa, el Perfil de Elevación y los datos clave), glosario y fuentes.
         </p>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={pdf} onChange={(e) => setPdf(e.target.checked)} disabled={busy} />
