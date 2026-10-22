@@ -179,3 +179,17 @@ def test_geocoder_caches_and_waits(monkeypatch):
     g.search("Jesús María")
     assert len(hits) == 2 and "Verea" in hits[0][1]
     assert hits[1][0] - hits[0][0] >= 0.99                      # 1 request per second
+
+
+def test_legacy_shared_secret(monkeypatch, supabase):
+    url = "https://test.supabase.co"
+    monkeypatch.setenv("SUPABASE_JWT_SECRET", "s" * 40)
+    base = {"sub": "u", "aud": "authenticated", "iss": f"{url}/auth/v1", "exp": int(time.time()) + 600}
+    c = TestClient(api.app)
+    good = jwt.encode(base, "s" * 40, algorithm="HS256")
+    assert c.get("/api/catalog", headers={"Authorization": f"Bearer {good}"}).status_code == 200
+    forged = jwt.encode(base, "x" * 40, algorithm="HS256")
+    assert c.get("/api/catalog", headers={"Authorization": f"Bearer {forged}"}).status_code == 401
+    assert c.get("/api/catalog", headers={"Authorization": f"Bearer {supabase()}"}).status_code == 200
+    monkeypatch.delenv("SUPABASE_JWT_SECRET")
+    assert c.get("/api/catalog", headers={"Authorization": f"Bearer {good}"}).status_code == 401

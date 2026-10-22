@@ -3,8 +3,9 @@ Login check for the API: every request carries the Supabase session token
 (Authorization: Bearer <jwt>), verified against the project's public signing keys.
 
 Environment:
-  SUPABASE_URL   https://<project>.supabase.co  (keys: <url>/auth/v1/.well-known/jwks.json)
-  VEREA_DEV=1    no login required (local development only)
+  SUPABASE_URL         https://<project>.supabase.co  (keys: <url>/auth/v1/.well-known/jwks.json)
+  SUPABASE_JWT_SECRET  only for projects still on the legacy shared secret (HS256)
+  VEREA_DEV=1          no login required (local development only)
 Without either, every protected request is refused: the safe default.
 """
 
@@ -33,9 +34,12 @@ def require_user(authorization: str = Header(default="")) -> dict:
     if scheme.lower() != "bearer" or not token:
         raise HTTPException(401, "Not logged in")
     import jwt
+    issuer = f"{url.rstrip('/')}/auth/v1"
+    secret = os.environ.get("SUPABASE_JWT_SECRET")
     try:
+        if secret and jwt.get_unverified_header(token).get("alg") == "HS256":
+            return jwt.decode(token, secret, algorithms=["HS256"], audience=AUDIENCE, issuer=issuer)
         key = _jwks_client(url).get_signing_key_from_jwt(token)
-        return jwt.decode(token, key.key, algorithms=["ES256", "RS256"], audience=AUDIENCE,
-                          issuer=f"{url.rstrip('/')}/auth/v1")
+        return jwt.decode(token, key.key, algorithms=["ES256", "RS256"], audience=AUDIENCE, issuer=issuer)
     except jwt.PyJWTError:
         raise HTTPException(401, "Invalid or expired session")

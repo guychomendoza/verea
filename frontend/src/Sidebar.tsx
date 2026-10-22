@@ -15,6 +15,7 @@ interface Props {
   showCoverage: boolean
   showLabels: boolean
   status: string
+  user?: { name: string; onSignOut: () => void; onProjects: () => void }
   onMode: (m: MapMode, model?: string) => void
   onSettings: (patch: Partial<Settings>) => void
   onMeta: (name: string) => void
@@ -49,13 +50,20 @@ export default function Sidebar(p: Props) {
 
   return (
     <aside className="panel left-panel" aria-label="Project">
+      {p.user && (
+        <div className="flex items-center justify-between gap-2 text-sm">
+          <span className="truncate" title={p.user.name}>👤 {p.user.name}</span>
+          <button className="btn-ghost underline" onClick={p.user.onSignOut}>Sign out</button>
+        </div>
+      )}
       <div className="flex items-center gap-2">
         <input className="grow font-semibold" placeholder="Untitled project" value={p.project.name}
           maxLength={80} onChange={(e) => p.onMeta(e.target.value)} aria-label="Project name" />
       </div>
       <div className="flex flex-wrap gap-1.5">
+        {p.user && <button className="btn" onClick={p.user.onProjects}>Projects…</button>}
         <button className="btn" onClick={p.onNew}>New</button>
-        <button className="btn" onClick={() => file.current?.click()}>Open…</button>
+        <button className="btn" onClick={() => file.current?.click()}>{p.user ? 'Import file…' : 'Open…'}</button>
         <button className="btn" onClick={p.onExport}>Save file</button>
         <input ref={file} type="file" accept=".json,application/json" hidden
           onChange={(e) => { const f = e.target.files?.[0]; if (f) p.onImport(f); e.target.value = '' }} />

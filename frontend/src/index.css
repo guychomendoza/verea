@@ -136,3 +136,24 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
   .map-tools { flex-wrap: wrap; }
   .map-btn { font-size: 12px; }
 }
+
+/* ── login, dialogs, conflicts ── */
+.login-wrap { min-height: 100%; display: grid; place-items: center; padding: 16px; }
+.login-card {
+  width: min(380px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  padding: 24px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 6px 24px rgb(0 0 0 / .08);
+}
+.dialog-backdrop { position: fixed; inset: 0; background: rgb(0 0 0 / .35); display: grid; place-items: center; z-index: 20; padding: 16px; }
+.dialog {
+  width: min(560px, 100%); max-height: 80vh; overflow-y: auto; background: var(--panel); border-radius: 12px;
+  padding: 16px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 10px 40px rgb(0 0 0 / .3);
+}
+.project-list { display: flex; flex-direction: column; gap: 4px; }
+.project-list li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); }
+.project-list li.current { border-color: var(--accent); }
+.project-list li > button:first-child { background: none; border: 0; color: inherit; cursor: pointer; }
+.conflict-banner {
+  position: absolute; top: 56px; left: 50%; transform: translateX(-50%); z-index: 3;
+  width: min(460px, calc(100% - 24px)); background: var(--panel); border: 2px solid var(--warn);
+  border-radius: 10px; padding: 12px; box-shadow: 0 4px 18px rgb(0 0 0 / .3); font-size: 13px;
+}

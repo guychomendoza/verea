@@ -8,7 +8,7 @@ frontend, DB with users) is planned.
 
 ## Run and test
 - App: `.venv/bin/streamlit run app.py` (port 8501). Windows: `python -m streamlit run app.py`.
-- Tests: `.venv/bin/python -m pytest -q` (101 tests).
+- Tests: `.venv/bin/python -m pytest -q` (105 tests; `supabase/tests` needs requirements-dev.txt).
 - Web API: `VEREA_DEV=1 .venv/bin/uvicorn backend.main:app --port 8000` (docs at /docs).
   `pip install -r backend/requirements.txt` first.
 - Web frontend: `cd frontend && npm run dev` (port 5173; proxies /api to 8000, serves the PMTiles).
@@ -31,6 +31,12 @@ frontend, DB with users) is planned.
   `MapView.tsx` (map, drag, add), `Sidebar.tsx`, `DevicePanel.tsx`, `project.ts` (pure reducer,
   device naming like the app), `api.ts`. maplibre-gl.css forces `.maplibregl-map` to
   position: relative: size the map container with an inline style.
+- `supabase/` — database: `migrations/*.sql` (profiles, projects, RLS: all active members read
+  and edit, owner/admin delete, invite-only, optimistic locking on `updated_at`), `tests/` (RLS on a
+  real PostgreSQL via pgserver + `supabase_shim.sql`). `scripts/supabase_setup.py` applies it and
+  configures auth through the Management API. Frontend `cloud.ts` / `Login.tsx` /
+  `ProjectsDialog.tsx`; without `VITE_SUPABASE_*` the app runs in local mode (no login).
+  Cloud-mode browser test with a fake Supabase: `frontend/e2e/cloud.py` (dev server on 5174).
 - `backend/` — FastAPI web API (`main.py`), request limits (`schemas.py`), Supabase JWT check
   (`auth.py`: no `SUPABASE_URL` and no `VEREA_DEV=1` → every protected request is refused).
   Elevations from the local DEM (`core/dem.py`), sampled like Open-Meteo (cell containing the
@@ -118,7 +124,7 @@ are close, real PDF report, cloud projects with users, LoRa calibration with Chi
 React + TypeScript + Vite + MapLibre (PMTiles from Cloudflare R2) on Cloudflare Pages; FastAPI on
 Fly.io with a volume for data; Supabase for Auth + Postgres (projects as the JSON of
 `core/project.py`, Row Level Security). No own domain yet. Phases: 1 API (done) → 2 frontend MVP (done) →
-3 accounts/cloud → 4 deploy → 5 PDF report + parity, retire Streamlit.
+3 accounts/cloud (code done, needs the Supabase project) → 4 deploy → 5 PDF report + parity, retire Streamlit.
 - Deploy note: a cold 4G lookup reads the 1.2 GB GeoPackage (1.36 GB RAM peak, 7–10 s). On the
   server, pre-build the national 0.2° tile cache instead (≈3–5 GB) and skip the GeoPackage.
 - Open-Meteo has an hourly request limit (hit on 2026-10-21): the API must use the local DEM.

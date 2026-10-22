@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import type maplibregl from 'maplibre-gl'
-import { api, ApiError } from './api'
+import type { Session } from '@supabase/supabase-js'
+import { api, ApiError, setToken } from './api'
+import * as cloud from './cloud'
 import { COLORS } from './colors'
 import DevicePanel from './DevicePanel'
+import { Login, Notice, SetPassword } from './Login'
+import ProjectsDialog from './ProjectsDialog'
 import { downloadBlob, mapToPng, safeName, type LegendItem } from './exportImage'
 import MapView, { type MapMode } from './MapView'
 import { emptyProject, isCellular, PROJECT_VERSION, reduce, rename, selected, type Action } from './project'
@@ -10,8 +14,10 @@ import SearchBox from './SearchBox'
 import Sidebar from './Sidebar'
 import type { Catalog, CellStatus, LinkResult, Project, Selection } from './types'
 
-const STORAGE_KEY = 'verea.project'     // local copy until projects live in the cloud (phase 3)
+const STORAGE_KEY = 'verea.project'     // local mode (no Supabase configured)
+const LAST_PROJECT_KEY = 'verea.lastProject'
 const RECALC_DELAY_MS = 400
+const SAVE_DELAY_MS = 1500
 
 function loadLocal(): Project | null {
   try {
@@ -22,11 +28,20 @@ function loadLocal(): Project | null {
   }
 }
 
-function saveLocal(p: Project) {
+function store(key: string, value: string | null) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(p))
+    if (value === null) localStorage.removeItem(key)
+    else localStorage.setItem(key, value)
   } catch {
     /* private mode or full: the project still works in memory */
+  }
+}
+
+function recall(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
   }
 }
 
@@ -46,13 +61,77 @@ export default function App() {
     api.catalog().then(setCatalog).catch((e) =>
       setError(e instanceof ApiError ? `${e.status}: ${e.message}` : 'Cannot reach the Verea server'))
   }, [])
-  if (error) return <div className="p-6 text-red-600">⚠ {error}</div>
-  if (!catalog) return <div className="p-6">Loading…</div>
-  return <Workspace catalog={catalog} />
+  if (!cloud.cloudEnabled) {
+    if (error) return <div className="p-6 text-red-600">⚠ {error}</div>
+    if (!catalog) return <div className="p-6">Loading…</div>
+    return <Workspace catalog={catalog} />
+  }
+  return <CloudGate catalog={catalog} error={error} onSession={() => {
+    setError('')
+    api.catalog().then(setCatalog).catch((e) => setError(e instanceof ApiError ? `${e.status}: ${e.message}` : 'Cannot reach the Verea server'))
+  }} />
 }
 
-function Workspace({ catalog }: { catalog: Catalog }) {
-  const [project, dispatchRaw] = useReducer(reduce, null, () => loadLocal() ?? emptyProject(catalog.defaults))
+/** Login, password setup and membership check before the workspace (cloud mode). */
+function CloudGate({ catalog, error, onSession }: { catalog: Catalog | null; error: string; onSession: () => void }) {
+  const [session, setSession] = useState<Session | null | undefined>(undefined)
+  const [me, setMe] = useState<cloud.Me | null | undefined>(undefined)
+  const [mustSetPassword, setMustSetPassword] = useState(cloud.arrivedToSetPassword)
+
+  useEffect(() => {
+    const sb = cloud.supabase!
+    sb.auth.getSession().then(({ data }) => setSession(data.session))
+    const { data } = sb.auth.onAuthStateChange((event, s) => {
+      if (event === 'PASSWORD_RECOVERY') setMustSetPassword(true)
+      setSession(s)
+    })
+    return () => data.subscription.unsubscribe()
+  }, [])
+
+  // The API takes the same session token
+  const token = session?.access_token ?? null
+  useEffect(() => {
+    setToken(token)
+    if (token) onSession()
+  }, [token]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const uid = session?.user.id
+  useEffect(() => {
+    setMe(undefined)
+    if (session) cloud.me(session).then(setMe).catch(() => setMe(null))
+  }, [uid]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const signOut = () => { cloud.supabase!.auth.signOut(); store(LAST_PROJECT_KEY, null) }
+
+  if (session === undefined) return <div className="p-6">Loading…</div>
+  if (!session) return <Login />
+  if (mustSetPassword) return <SetPassword email={session.user.email ?? ''} onDone={() => setMustSetPassword(false)} />
+  if (me === undefined) return <div className="p-6">Loading…</div>
+  if (me === null) {
+    return (
+      <Notice title="This account is not active">
+        <p className="hint">Ask your team admin to (re)activate {session.user.email}.</p>
+        <button className="btn" onClick={signOut}>Sign out</button>
+      </Notice>
+    )
+  }
+  if (error) return <div className="p-6 text-red-600">⚠ {error}</div>
+  if (!catalog) return <div className="p-6">Loading…</div>
+  return <Workspace catalog={catalog} user={{ me, signOut }} />
+}
+
+interface CloudDoc {
+  id: string
+  updated_at: string
+  owner_id: string
+}
+
+type SaveState = 'saved' | 'saving' | 'pending' | 'conflict' | 'error'
+
+function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me; signOut: () => void } }) {
+  const cloudMode = !!user
+  const [project, dispatchRaw] = useReducer(reduce, null, () =>
+    (cloudMode ? null : loadLocal()) ?? emptyProject(catalog.defaults))
   const [selection, setSelection] = useState<Selection>(null)
   const [mode, setMode] = useState<MapMode>('select')
   const [addModel, setAddModel] = useState('')
@@ -66,7 +145,86 @@ function Workspace({ catalog }: { catalog: Catalog }) {
   const [status, setStatus] = useState('')
   const dispatch = useCallback((a: Action) => dispatchRaw(a), [])
 
-  useEffect(() => saveLocal(project), [project])
+  // ── persistence: browser (local mode) or cloud with optimistic locking ──
+  const [doc, setDoc] = useState<CloudDoc | null>(null)
+  const [saveState, setSaveState] = useState<SaveState>('saved')
+  const [saveError, setSaveError] = useState('')
+  const [showProjects, setShowProjects] = useState(false)
+  const savedRef = useRef<Project | null>(null)       // the project as last loaded / saved
+
+  useEffect(() => { if (!cloudMode) store(STORAGE_KEY, JSON.stringify(project)) }, [project, cloudMode])
+
+  const openDoc = useCallback((p: Project, d: CloudDoc) => {
+    savedRef.current = p
+    dispatch({ type: 'load', project: p })
+    setDoc(d)
+    setSaveState('saved')
+    setSelection(null)
+    store(LAST_PROJECT_KEY, d.id)
+    const first = p.gateways[0] ?? p.nodes[0]
+    if (first) setFocus({ lat: first.lat, lon: first.lon, zoom: 14, key: Date.now() })
+  }, [dispatch])
+
+  const openCloud = useCallback(async (id: string) => {
+    const r = await cloud.loadProject(id)
+    const p = { ...r.project, settings: { ...catalog.defaults, ...r.project.settings } }
+    openDoc(p, { id, updated_at: r.updated_at, owner_id: r.owner_id })
+  }, [catalog, openDoc])
+
+  const createCloud = useCallback(async (p: Project) => {
+    const r = await cloud.createProject(p)
+    openDoc(p, r)
+  }, [openDoc])
+
+  // First open: the last project, else the most recent, else a new one
+  useEffect(() => {
+    if (!cloudMode) return
+    (async () => {
+      const last = recall(LAST_PROJECT_KEY)
+      try {
+        if (last) return await openCloud(last)
+      } catch { /* deleted or not reachable: fall through */ }
+      const rows = await cloud.listProjects()
+      if (rows.length) await openCloud(rows[0].id)
+      else await createCloud(emptyProject(catalog.defaults))
+    })().catch((e) => { setSaveState('error'); setSaveError(e.message) })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Autosave shortly after the last change
+  useEffect(() => {
+    if (!cloudMode || !doc || project === savedRef.current || saveState === 'conflict') return
+    setSaveState('pending')
+    const t = setTimeout(async () => {
+      setSaveState('saving')
+      try {
+        const updated = await cloud.saveProject(doc.id, project, doc.updated_at)
+        if (updated === null) {
+          setSaveState('conflict')
+          return
+        }
+        savedRef.current = project
+        setDoc({ ...doc, updated_at: updated })
+        setSaveState('saved')
+      } catch (e) {
+        setSaveState('error')
+        setSaveError(e instanceof Error ? e.message : String(e))
+      }
+    }, SAVE_DELAY_MS)
+    return () => clearTimeout(t)
+  }, [project, doc, cloudMode]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Warn before leaving with changes not yet in the cloud
+  useEffect(() => {
+    const unsaved = cloudMode && saveState !== 'saved'
+    const onLeave = (e: BeforeUnloadEvent) => { if (unsaved) e.preventDefault() }
+    window.addEventListener('beforeunload', onLeave)
+    return () => window.removeEventListener('beforeunload', onLeave)
+  }, [cloudMode, saveState])
+
+  const saveText = !cloudMode ? '' : {
+    saved: '☁ Saved', saving: '☁ Saving…', pending: '☁ Unsaved changes…',
+    conflict: '⚠ Not saved: changed by someone else', error: `⚠ Not saved: ${saveError}`,
+  }[saveState]
 
   const cellular = useMemo(
     () => new Set(project.nodes.filter((n) => isCellular(catalog, n)).map((n) => n.name)),
@@ -139,11 +297,16 @@ function Workspace({ catalog }: { catalog: Catalog }) {
   const importFile = async (file: File) => {
     try {
       const raw = JSON.parse(await file.text())
-      const p = await api.normalize(raw)
-      dispatch({ type: 'load', project: { ...p, version: PROJECT_VERSION, settings: { ...catalog.defaults, ...p.settings } } })
-      setSelection(null)
-      const first = p.gateways[0] ?? p.nodes[0]
-      if (first) setFocus({ lat: first.lat, lon: first.lon, zoom: 14, key: Date.now() })
+      const n = await api.normalize(raw)
+      const p: Project = { ...n, version: PROJECT_VERSION, settings: { ...catalog.defaults, ...n.settings } }
+      if (cloudMode) {
+        await createCloud(p)             // an imported file becomes a new cloud project
+      } else {
+        dispatch({ type: 'load', project: p })
+        setSelection(null)
+        const first = p.gateways[0] ?? p.nodes[0]
+        if (first) setFocus({ lat: first.lat, lon: first.lon, zoom: 14, key: Date.now() })
+      }
       setStatus(`Opened ${file.name}`)
     } catch (e) {
       setStatus(`⚠ Could not open ${file.name}: ${e instanceof Error ? e.message : e}`)
@@ -193,7 +356,10 @@ function Workspace({ catalog }: { catalog: Catalog }) {
   return (
     <div className="app">
       <Sidebar catalog={catalog} project={project} selection={selection} links={links} cells={cells}
-        mode={mode} addModel={addModel} showCoverage={showCoverage} status={status}
+        mode={mode} addModel={addModel} showCoverage={showCoverage}
+        status={[saveText, status].filter(Boolean).join(' · ')}
+        user={user ? { name: user.me.full_name || user.me.email, onSignOut: user.signOut,
+          onProjects: () => setShowProjects(true) } : undefined}
         onMode={(m, model) => { setMode(m); if (model) setAddModel(model) }}
         onSettings={(patch) => dispatch({ type: 'settings', patch })}
         onMeta={(name) => dispatch({ type: 'meta', name })}
@@ -201,6 +367,10 @@ function Workspace({ catalog }: { catalog: Catalog }) {
         showLabels={showLabels} onShowLabels={setShowLabels}
         onImport={importFile} onExport={exportFile}
         onNew={() => {
+          if (cloudMode) {
+            createCloud(emptyProject(catalog.defaults)).catch((e) => setStatus(`⚠ ${e.message}`))
+            return
+          }
           if (!confirm('Start a new empty project? Save the current one to a file first if you need it.')) return
           dispatch({ type: 'load', project: emptyProject(catalog.defaults) })
           setSelection(null)
@@ -219,10 +389,34 @@ function Workspace({ catalog }: { catalog: Catalog }) {
           }} />
           <button className="btn map-btn" onClick={exportMap} title="Download the map as a PNG image">📷 Map image</button>
         </div>
+        {saveState === 'conflict' && doc && (
+          <div className="conflict-banner" role="alert">
+            Someone else saved this project after you opened it. Your latest changes are not saved.
+            <div className="flex gap-2 mt-2">
+              <button className="btn" onClick={() => openCloud(doc.id)}>Load their version</button>
+              <button className="btn btn-active" onClick={() =>
+                createCloud({ ...project, name: `${project.name || 'Untitled'} (my copy)` })}>
+                Save mine as a copy
+              </button>
+            </div>
+          </div>
+        )}
         {mode !== 'select' && (
           <div className="mode-banner">Click the map to place the {mode === 'addGateway' ? 'gateway' : 'node'} · Esc to cancel</div>
         )}
       </main>
+      {showProjects && user && (
+        <ProjectsDialog me={user.me} currentId={doc?.id ?? null}
+          onOpen={(id) => { setShowProjects(false); openCloud(id).catch((e) => setStatus(`⚠ ${e.message}`)) }}
+          onDeleted={(id) => {
+            if (id === doc?.id) {
+              setDoc(null)
+              store(LAST_PROJECT_KEY, null)
+              createCloud(emptyProject(catalog.defaults)).catch((e) => setStatus(`⚠ ${e.message}`))
+            }
+          }}
+          onClose={() => setShowProjects(false)} />
+      )}
       {dev && selection && (
         <DevicePanel key={`${selection.kind}:${selection.name}`} catalog={catalog} project={project}
           kind={selection.kind} device={dev} link={links[dev.name]} cell={cells[dev.name]}
