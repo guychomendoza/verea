@@ -3,7 +3,7 @@
 import { COLORS } from '../colors'
 import { PLOTLY_CONFIG, PLOTLY_LOCALE } from '../profilePlot'
 import type { ReportData } from './collect'
-import { GLOSSARY, SOURCES, budgetRows, summary, tables, type Table } from './content'
+import { GLOSSARY, SOURCES, nodeFacts, overviewTable, settingsLine, summary } from './content'
 
 const MAPLIBRE = 'https://unpkg.com/maplibre-gl@5.24.0/dist'
 const PLOTLY = 'https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js'
@@ -32,24 +32,38 @@ export function buildHtml(d: ReportData): string {
       ...d.project.gateways.map((g) => ({ kind: 'gateway', name: g.name, lat: g.lat, lon: g.lon, color: COLORS.gateway })),
       ...d.project.nodes.map((n) => ({ kind: 'node', name: n.name, lat: n.lat, lon: n.lon, color: nodeColor(n.name) })),
     ],
-    links: d.sections.map((s) => ({
-      from: [s.gateway.lon, s.gateway.lat], to: [s.node.lon, s.node.lat], color: nodeColor(s.node.name),
+    links: d.nodes.filter((s) => s.gateway).map((s) => ({
+      from: [s.gateway!.lon, s.gateway!.lat], to: [s.node.lon, s.node.lat], color: nodeColor(s.node.name),
     })),
-    sections: d.sections.map((s, i) => ({ id: `p${i}`, figure: s.figure, coords: s.detail.profile.coordinates })),
+    sections: d.nodes.map((s, i) => ({ id: `p${i}`, figure: s.figure, coords: s.detail?.profile.coordinates }))
+      .filter((s) => s.figure),
     locale: PLOTLY_LOCALE,
     config: { ...PLOTLY_CONFIG, responsive: true },
   }
   const json = JSON.stringify(data).replace(/</g, '\\u003c')
-  const sections = d.sections.map((s, i) => {
-    const l = d.links[s.node.name]?.link
-    return `<section class="link">
-  <h3>Enlace ${esc(s.gateway.name)} → ${esc(s.node.name)} <span class="${l?.viable ? 'ok' : 'bad'}">${l?.viable ? 'viable' : 'no viable'}</span></h3>
-  <div class="chart" id="p${i}"></div>
-  <div class="cols">${tableHtml(['Presupuesto del enlace', 'Valor'], budgetRows(s.detail.budget))}
-  ${s.detail.summary.reasons.length ? `<div><b>Observaciones</b><ul>${s.detail.summary.reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul></div>` : ''}</div>
+  const verdict = (name: string, cellular: boolean) => {
+    if (cellular) {
+      const c = d.cells[name]
+      return [c ? c.short : 'Sin revisar', !c ? 'muted' : c.state === 'ok' ? 'ok' : c.state === 'none' ? 'bad' : 'warn']
+    }
+    const r = d.links[name]
+    const l = r?.link
+    return [l ? (l.viable ? 'Enlace viable' : 'Enlace no viable') : (r?.error ?? 'Sin resultado'),
+      !l ? 'muted' : l.viable ? 'ok' : l.margin_db > -5 ? 'warn' : 'bad']
+  }
+  const cards = d.nodes.map((s, i) => {
+    const l = s.cellular ? null : d.links[s.node.name]?.link
+    const [text, cls] = verdict(s.node.name, s.cellular)
+    return `<section class="card">
+  <h3>${esc(s.node.name)} <small>${esc(s.cellular ? 'Sensor 4G' : l ? `Nodo LoRa · enlace con ${l.gateway}` : 'Nodo LoRa')}</small></h3>
+  <p class="verdict ${cls}">${esc(text)}</p>
+  <img class="snap" alt="${esc(s.node.name)} en el mapa" src="${s.mapJpg}">
+  ${s.figure ? `<div class="chart" id="p${i}"></div>` : ''}
+  ${tableHtml(['Dato', 'Valor'], nodeFacts(d, s))}
+  ${l && !l.viable && l.reasons.length ? `<p class="muted"><b>Por qué no es viable:</b> ${l.reasons.map(esc).join(' · ')}</p>` : ''}
 </section>`
   }).join('\n')
-  const tableSections = tables(d).map((tb: Table) => `<h2>${esc(tb.title)}</h2>${tableHtml(tb.head, tb.rows)}`).join('\n')
+  const ov = overviewTable(d)
 
   return `<!doctype html>
 <html lang="es">
@@ -66,11 +80,14 @@ export function buildHtml(d: ReportData): string {
   main { max-width:1150px; margin:0 auto; padding:16px 16px 48px; }
   h2 { font-size:18px; border-bottom:1px solid var(--line); padding-bottom:6px; margin:28px 0 10px; }
   h3 { font-size:16px; margin:0 0 8px; } h3 span { font-size:12px; padding:2px 8px; border-radius:99px; color:#fff; }
-  .ok { background:#06a77d; } .bad { background:#d64161; }
+  .verdict { display:inline-block; margin:0 0 10px; padding:3px 10px; border-radius:99px; color:#fff; font-weight:600; font-size:13px; }
+  .ok { background:#06a77d; } .warn { background:#c98a00; } .bad { background:#d64161; } .muted.verdict { background:#6c757d; }
+  h3 small { font-weight:400; color:var(--muted); font-size:13px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:10px; padding:16px; margin:18px 0; }
+  .snap { width:100%; border-radius:8px; display:block; margin-bottom:10px; }
   #map { height:520px; border-radius:10px; overflow:hidden; border:1px solid var(--line); }
   .tbl { overflow-x:auto; } table { border-collapse:collapse; width:100%; background:#fff; font-size:13px; }
   th { background:#0e1117; color:#e9ecef; text-align:left; } th, td { padding:6px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
-  .link { background:#fff; border:1px solid var(--line); border-radius:10px; padding:14px; margin:16px 0; }
   .chart { height:460px; border-radius:8px; overflow:hidden; }
   .cols { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; margin-top:10px; }
   dt { font-weight:600; margin-top:8px; } dd { margin:0; color:var(--muted); }
@@ -84,11 +101,12 @@ export function buildHtml(d: ReportData): string {
 <main>
 ${d.project.description.trim() ? `<p>${esc(d.project.description)}</p>` : ''}
 <h2>Resumen</h2>${tableHtml(['Concepto', 'Valor'], summary(d))}
+<p class="muted">${esc(settingsLine(d))}</p>
 <h2>Mapa</h2><div id="map"></div>
-<p class="muted">Pasa el mouse sobre un perfil de elevación para ver el punto en el mapa.</p>
-${tableSections}
-${d.sections.length ? '<h2>Enlaces</h2>' : ''}
-${sections}
+<p class="muted">Pasa el mouse sobre un Perfil de Elevación para ver el punto en este mapa.</p>
+<h2>${esc(ov.title)}</h2>${tableHtml(ov.head, ov.rows)}
+${d.nodes.length ? '<h2>Nodos</h2>' : ''}
+${cards}
 <h2>Glosario</h2><dl>${GLOSSARY.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
 <h2>Fuentes y atribuciones</h2>${SOURCES.map((s) => `<p class="muted">${esc(s)}</p>`).join('')}
 </main>

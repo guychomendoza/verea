@@ -121,34 +121,56 @@ def main():
         assert img.getpixel((5, 5))[0] < 40, "profile image background should be dark"
         print("profile image:", img.size, dl.value.suggested_filename)
 
-        # ── panels: collapse / expand and resize ──
+        # ── panels: arrows on the borders, shown only nearby; collapse / expand and resize ──
         left = page.locator('[data-panel-id="left"]')
         width = lambda: left.bounding_box()["width"]
         w0 = width()
-        page.get_by_role("button", name=re.compile("Proyecto$")).click()
+        arrow = page.locator(".edge-left .edge-toggle")
+        assert float(arrow.evaluate("e => getComputedStyle(e).opacity")) == 0, "hidden until the pointer is near"
+        page.locator(".edge-left").hover()
+        page.wait_for_timeout(250)
+        assert float(arrow.evaluate("e => getComputedStyle(e).opacity")) == 1
+        expect(arrow).to_have_attribute("aria-label", "Cerrar Proyecto")
+        arrow.click()
         page.wait_for_timeout(300)
         assert width() < 5, width()
-        page.get_by_role("button", name=re.compile("Proyecto$")).click()
+        page.locator(".edge-left").hover()
+        expect(arrow).to_have_attribute("aria-label", "Abrir Proyecto")
+        arrow.click()
         page.wait_for_timeout(300)
         assert abs(width() - w0) < 5
         prof_region = page.get_by_role("region", name="Perfil de Elevación")
         h0 = prof_region.bounding_box()["height"]
         handle = page.locator(".resize-y").bounding_box()
-        page.mouse.move(handle["x"] + handle["width"] / 2, handle["y"] + 2)
+        page.mouse.move(handle["x"] + 40, handle["y"] + 2)
         page.mouse.down()
-        page.mouse.move(handle["x"] + handle["width"] / 2, handle["y"] - 120, steps=6)
+        page.mouse.move(handle["x"] + 40, handle["y"] - 120, steps=6)
         page.mouse.up()
         h1 = prof_region.bounding_box()["height"]
         assert h1 > h0 + 80, (h0, h1)
-        page.get_by_role("button", name=re.compile("Perfil$")).click()
+        page.locator(".edge-bottom").hover()
+        page.locator(".edge-bottom .edge-toggle").click()
         page.wait_for_timeout(300)
         assert page.locator('[data-panel-id="profile"]').bounding_box()["height"] < 5
-        page.get_by_role("button", name=re.compile("Perfil$")).click()
-        print(f"panels: left collapse/expand ok, profile resized {h0:.0f}px -> {h1:.0f}px, collapse ok")
+        page.locator(".edge-bottom").hover()
+        expect(page.locator(".edge-bottom .edge-toggle")).to_have_attribute("aria-label", "Abrir Perfil de Elevación")
+        page.locator(".edge-bottom .edge-toggle").click()
+        page.wait_for_timeout(300)
+        page.locator(".edge-right").hover()
+        page.locator(".edge-right .edge-toggle").click()
+        page.wait_for_timeout(300)
+        assert page.locator('[data-panel-id="right"]').bounding_box()["width"] < 5
+        page.locator(".edge-right").hover()
+        page.locator(".edge-right .edge-toggle").click()
+        page.wait_for_timeout(300)
+        assert page.locator('[data-panel-id="right"]').bounding_box()["width"] > 100
+        page.screenshot(path=f"{OUT}/2_edges.png")
+        print(f"panels: border arrows hidden until hover; left/right/profile close and reopen; profile {h0:.0f}->{h1:.0f}px")
 
-        # ── ruler (R), two clicks, compare with haversine ──
-        page.get_by_role("button", name="Cerrar").first.click()       # close the device panel
-        page.keyboard.press("r")
+        # ── ruler: button on the map, two clicks, compare with haversine ──
+        page.get_by_role("complementary", name="Dispositivo").get_by_role("button", name="Cerrar").click()
+        page.get_by_role("button", name="Regla: medir distancias").click()
+        expect(page.get_by_role("button", name="Regla: medir distancias")).to_have_attribute("aria-pressed", "true")
         box = page.get_by_test_id("map").bounding_box()
         p1, p2 = (box["x"] + 300, box["y"] + 250), (box["x"] + 600, box["y"] + 120)
         page.mouse.click(*p1)
@@ -224,7 +246,9 @@ def main():
         assert len(pdf_bytes) < 5_000_000, f"PDF too big: {len(pdf_bytes) / 1e6:.1f} MB"
         pdf.save_as(OUT / pdf.suggested_filename)
         html.save_as(OUT / html.suggested_filename)
-        print("report:", names, f"PDF {len(pdf_bytes) / 1024:.0f} KB, {pages} pages")
+        n_nodes = len(labels) - 1 + 1        # sample nodes + the one added with N (minus the gateway)
+        assert n_nodes + 2 <= pages <= n_nodes + 3, (pages, n_nodes)     # cover, a page per node, glossary
+        print("report:", names, f"PDF {len(pdf_bytes) / 1024:.0f} KB, {pages} pages ({n_nodes} node cards)")
         dialog.get_by_role("button", name="Cerrar").last.click()
         rep = ctx.new_page()
         rep_errors = []
@@ -233,9 +257,15 @@ def main():
         expect(rep.locator(".chart .main-svg").first).to_be_visible(timeout=60000)
         rep.wait_for_timeout(2000)
         charts = rep.locator(".chart").count()
+        snaps = rep.locator("img.snap")
+        assert snaps.count() == n_nodes, snaps.count()
+        first = Image.open(io.BytesIO(__import__("base64").b64decode(snaps.first.get_attribute("src").split(",", 1)[1]))).convert("RGB")
+        white = sum(1 for px in first.getdata() if min(px) > 235)
+        assert white > 400, f"highlighted link (white rings and casing) not visible: {white}"
+        first.save(OUT / "node_card_map.jpg")
         rep.screenshot(path=f"{OUT}/5_report_html.png", full_page=False)
         assert not rep_errors, rep_errors
-        print("HTML report opens:", charts, "interactive profiles, no errors")
+        print("HTML report opens:", charts, "interactive profiles,", snaps.count(), "node maps, no errors")
         rep.close()
 
         # ── reload, phone ──

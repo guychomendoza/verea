@@ -1,10 +1,10 @@
 // Report text and tables, shared by the PDF and the HTML versions (ui/report.py, in Spanish).
 import { distance, num } from '../geo'
-import type { ReportData } from './collect'
+import type { NodeSection, ReportData } from './collect'
 
 export type Table = { title: string; head: string[]; rows: string[][] }
 
-export const GLOSSARY: [string, string][] = [
+const ALL_TERMS: [string, string][] = [
   ['Modelo de propagación', 'Cómo se estima la pérdida sobre el terreno. Se usa la mayor (la más '
     + 'conservadora) entre Longley-Rice (ITM), que recorre el perfil real con reflexión en el suelo y '
     + 'difracción sobre cada loma, y el modelo de trayecto corto ITU-R P.526 (difracción sobre colinas '
@@ -30,6 +30,8 @@ export const GLOSSARY: [string, string][] = [
     + 'plano, donde el borde depende de la distancia a la torre. Los huecos pequeños se toman con 100 m.'],
 ]
 
+export const GLOSSARY = ALL_TERMS.filter(([k]) => ["Margen de seguridad", "Margen del enlace", "Spreading factor (SF)", "Despeje de Fresnel", "Modelo de propagación", "Sensores 4G", "Cobertura garantizada / diferenciada"].includes(k))
+
 export const SOURCES = [
   'Elevación: Copernicus DEM GLO-90 (© DLR e.V. 2010-2014 y © Airbus Defence and Space GmbH 2014-2018, '
     + 'proporcionado bajo COPERNICUS por la Unión Europea y la ESA).',
@@ -37,8 +39,6 @@ export const SOURCES = [
     + 'datos.gob.mx (CC BY 4.0).',
   'Imágenes satelitales y nombres: © Esri y sus proveedores.',
 ]
-
-const MODEL_NAMES: Record<string, string> = { itm: 'ITM', short: 'P.526', simple: 'Simple' }
 
 export function envLabel(d: ReportData, key?: string): string {
   return (key && d.catalog.environments[key]?.label) || key || '—'
@@ -63,79 +63,59 @@ export function summary(d: ReportData): string[][] {
   return rows
 }
 
-export function tables(d: ReportData): Table[] {
+/** Settings in one line. */
+export function settingsLine(d: ReportData): string {
   const s = d.project.settings
-  const t: Table[] = [{
-    title: 'Configuración de radio',
-    head: ['Parámetro', 'Valor'],
-    rows: [
-      ['Frecuencia', `${s.freq_mhz} MHz`],
-      ['Modelo de propagación', s.propagation_model === 'itm' ? 'ITM + ITU-R P.526 (el más conservador)' : 'Simple'],
-      ['Margen de seguridad', `${num(s.safety_margin, 1)} dB`],
-      ['Entorno por defecto', envLabel(d, s.environment)],
-      ['Operador 4G', s.cell_operator ?? '—'],
-    ],
-  }]
-  if (d.project.gateways.length) {
-    t.push({
-      title: 'Gateways',
-      head: ['Nombre', 'Modelo', 'Latitud', 'Longitud', 'Altura', 'Potencia', 'Ganancia', 'Estado'],
-      rows: d.project.gateways.map((g) => [
-        g.name, d.catalog.gateway_profiles[g.model]?.label ?? g.model, g.lat.toFixed(6), g.lon.toFixed(6),
-        `${num(g.height ?? 0, 1)} m`, `${num(g.tx_power ?? 0, 0)} dBm`, `${num(g.gain ?? 0, 1)} dBi`,
-        g.online ? 'En línea' : 'Fuera de línea',
-      ]),
-    })
-  }
-  const lora = d.project.nodes.filter((n) => !d.cellular.has(n.name))
-  if (lora.length) {
-    t.push({
-      title: 'Nodos LoRa',
-      head: ['Nombre', 'Modelo', 'Gateway', 'Distancia', 'Margen', 'RSSI', 'SNR', 'SF', 'Entorno', 'Estado'],
-      rows: lora.map((n) => {
-        const r = d.links[n.name]
-        const l = r?.link
-        return [
-          n.name, d.catalog.node_profiles[n.model]?.label ?? n.model, l?.gateway ?? '—',
-          l ? distance(l.distance_m) : '—', l ? `${num(l.margin_db, 1)} dB` : '—',
-          l ? `${num(l.rssi_dbm, 0)} dBm` : '—', l ? `${num(l.snr_db, 1)} dB` : '—', `SF${n.sf ?? '—'}`,
-          envLabel(d, n.environment), l ? (l.viable ? 'Viable' : 'No viable') : (r?.error ?? 'Sin resultado'),
-        ]
-      }),
-    })
-  }
-  const cell = d.project.nodes.filter((n) => d.cellular.has(n.name))
-  if (cell.length) {
-    t.push({
-      title: 'Sensores 4G',
-      head: ['Nombre', 'Modelo', 'Latitud', 'Longitud', 'Estado'],
-      rows: cell.map((n) => [
-        n.name, d.catalog.node_profiles[n.model]?.label ?? n.model, n.lat.toFixed(6), n.lon.toFixed(6),
-        d.cells[n.name]?.text.replace(/^[^\p{L}\p{N}]+/u, '') ?? 'Sin revisar (elige un operador)',
-      ]),
-    })
-  }
-  return t
+  return `${s.freq_mhz} MHz · margen de seguridad ${num(s.safety_margin, 1)} dB · modelo `
+    + `${s.propagation_model === 'itm' ? 'ITM / ITU-R P.526' : 'simple'}${s.cell_operator ? ` · 4G: ${s.cell_operator}` : ''}`
 }
 
-/** Link budget of one section, as rows. */
-export function budgetRows(b: Record<string, unknown>): string[][] {
-  const f = (k: string, unit = 'dB', digits = 1) => {
-    const v = b[k]
-    return typeof v === 'number' ? `${num(v, digits)} ${unit}` : '—'
+function status(d: ReportData, name: string): string {
+  if (d.cellular.has(name)) {
+    const c = d.cells[name]
+    return c ? c.short : 'Sin revisar'
   }
+  const r = d.links[name]
+  return r?.link ? (r.link.viable ? 'Viable' : 'No viable') : (r?.error ?? 'Sin resultado')
+}
+
+/** One row per node: the connectivity at a glance. */
+export function overviewTable(d: ReportData): Table {
+  return {
+    title: 'Conectividad por nodo',
+    head: ['Nodo', 'Tipo', 'Gateway', 'Distancia', 'Margen', 'Estado'],
+    rows: d.project.nodes.map((n) => {
+      const l = d.cellular.has(n.name) ? null : d.links[n.name]?.link
+      return [n.name, d.cellular.has(n.name) ? '4G' : 'LoRa', l?.gateway ?? '—',
+        l ? distance(l.distance_m) : '—', l ? `${num(l.margin_db, 1)} dB` : '—', status(d, n.name)]
+    }),
+  }
+}
+
+/** The few facts that matter for one node. */
+export function nodeFacts(d: ReportData, s: NodeSection): string[][] {
+  const n = s.node
+  const model = d.catalog.node_profiles[n.model]?.label ?? n.model
+  if (s.cellular) {
+    const c = d.cells[n.name]
+    return [
+      ['Modelo', model],
+      ['Estado 4G', c ? c.text.replace(/^[^\p{L}\p{N}]+/u, '') : 'Sin revisar (elige un operador)'],
+      ['Cubierto alrededor (300 m)', c?.nearby_share != null ? `${Math.round(c.nearby_share * 100)} %` : '—'],
+      c?.covered
+        ? ['Señal declarada', c.level_dbm != null ? `${c.level_dbm} dBm` : '—']
+        : ['Cobertura más cercana', c?.nearest_m != null ? distance(c.nearest_m) : '> 20 km'],
+      ['Coordenadas', `${n.lat.toFixed(5)}, ${n.lon.toFixed(5)}`],
+    ]
+  }
+  const l = d.links[n.name]?.link
+  if (!l) return [['Modelo', model], ['Estado', status(d, n.name)], ['Coordenadas', `${n.lat.toFixed(5)}, ${n.lon.toFixed(5)}`]]
   return [
-    ['Potencia TX del nodo', f('tx_power_dbm', 'dBm')],
-    ['PIRE (EIRP)', f('eirp_dbm', 'dBm')],
-    ['Pérdida en espacio libre', f('fspl_db')],
-    ['Pérdida por terreno', `${f('terrain_loss_db')} (${MODEL_NAMES[String(b.propagation_model)] ?? b.propagation_model})`],
-    ['Pérdida por entorno', f('clutter_loss_db')],
-    ['Pérdida total del trayecto', f('total_path_loss_db')],
-    ['Potencia recibida (RSSI)', f('rx_power_dbm', 'dBm')],
-    ['Sensibilidad del gateway', f('sensitivity_dbm', 'dBm')],
-    ['Margen de seguridad', f('fading_margin_db')],
-    ['Margen del enlace', f('link_margin_db')],
-    ['SNR (requerida)', `${f('snr_db')} (${f('snr_required_db')})`],
-    ['Despeje mínimo de Fresnel', f('fresnel_min_clearance_pct', '%', 0)],
+    ['Gateway', l.gateway],
+    ['Distancia', distance(l.distance_m)],
+    ['Margen del enlace', `${num(l.margin_db, 1)} dB`],
+    ['RSSI / SNR', `${num(l.rssi_dbm, 0)} dBm / ${num(l.snr_db, 1)} dB`],
+    ['SF · entorno', `SF${n.sf ?? '—'} · ${envLabel(d, n.environment)}`],
+    ['Modelo', model],
   ]
 }

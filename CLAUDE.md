@@ -31,8 +31,12 @@ frontend, DB with users) is planned.
   resizable/collapsible panels via react-resizable-panels), `MapView.tsx` (map, drag, add, ruler,
   labels "name / km · dB", profile cursor and pins), `ProfilePanel.tsx` + `profilePlot.ts`
   ("Perfil de Elevación", Plotly loaded on demand from `plotly.ts`, same traces as
-  `ui/profile_interactive.py`), `Sidebar.tsx`, `DevicePanel.tsx`, `report/` (PDF with jsPDF and
-  interactive HTML, both built in the browser), `shortcuts.ts` (G/Ctrl+G, N = LSE01, R, Ctrl+S;
+  `ui/profile_interactive.py`), `mapStyle.ts` (map style + device/link GeoJSON shared by the map
+  and the report; `highlight` rings one link and dims the rest), `Sidebar.tsx`, `DevicePanel.tsx`,
+  `report/` (built in the browser: general map + one card per node with its link on the map —
+  from a hidden map in `snapshots.ts` — its profile and few figures; PDF with jsPDF, and
+  interactive HTML), panel borders (`Edge` in `App.tsx`) show an open/close arrow on hover,
+  ruler is a map control (and R), `shortcuts.ts` (G/Ctrl+G, N = LSE01, R, Ctrl+S;
   Ctrl+N cannot be captured in Chrome), `project.ts` (pure reducer), `api.ts`.
   maplibre-gl.css forces `.maplibregl-map` to position: relative: size the map container inline.
   Map updates apply after the map's own 'load' (a late `once('load')` never fires).

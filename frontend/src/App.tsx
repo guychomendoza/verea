@@ -62,6 +62,26 @@ function useDebounced<T>(value: T, ms: number): T {
   return v
 }
 
+/**
+ * Border between panels: drag it to resize; near it, an arrow appears to close the panel on
+ * that side (or, once closed, to open it again).
+ */
+function Edge({ axis, side, collapsed, name, onToggle }: {
+  axis: 'x' | 'y'; side: 'left' | 'right' | 'bottom'; collapsed: boolean; name: string; onToggle: () => void
+}) {
+  const arrow = { left: collapsed ? '›' : '‹', right: collapsed ? '‹' : '›', bottom: collapsed ? '⌃' : '⌄' }[side]
+  const text = collapsed ? `Abrir ${name}` : `Cerrar ${name}`
+  return (
+    <PanelResizeHandle className={`resize-handle resize-${axis} edge-${side}`}>
+      <button type="button" className="edge-toggle" title={text} aria-label={text} aria-expanded={!collapsed}
+        onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); onToggle() }}>
+        {arrow}
+      </button>
+    </PanelResizeHandle>
+  )
+}
+
 function useNarrow(): boolean {
   const [narrow, setNarrow] = useState(() => window.innerWidth < NARROW_PX)
   useEffect(() => {
@@ -514,7 +534,11 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
         onMove={(kind, name, lat, lon) => dispatch({ type: 'move', kind, name, lat, lon })}
         onAdd={add}
         onRulerPoint={(lat, lon) => setRuler((r) => [...r, [lat, lon]])}
-        onRulerDone={() => setMode('select')} />
+        onRulerDone={() => setMode('select')}
+        onToggleRuler={() => {
+          if (mode === 'ruler') setMode('select')
+          else { setRuler([]); setMode('ruler') }
+        }} />
       <div className="map-tools">
         <SearchBox onPick={(pl) => {
           setPin({ lat: pl.lat, lon: pl.lon })
@@ -522,16 +546,6 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
         }} />
         <button className="btn map-btn" onClick={exportMap} title="Descargar el mapa como imagen PNG">📷 Imagen del mapa</button>
       </div>
-      {!narrow && (
-        <div className="panel-toggles">
-          <button className="btn map-btn" onClick={() => toggle('left')} aria-pressed={!collapsed.left}
-            title="Mostrar u ocultar el panel del proyecto">{collapsed.left ? '▶' : '◀'} Proyecto</button>
-          <button className="btn map-btn" onClick={() => toggle('profile')} aria-pressed={!collapsed.profile}
-            title="Mostrar u ocultar el Perfil de Elevación">{collapsed.profile ? '▲' : '▼'} Perfil</button>
-          {dev && <button className="btn map-btn" onClick={() => toggle('right')} aria-pressed={!collapsed.right}
-            title="Mostrar u ocultar los detalles del dispositivo">Detalles {collapsed.right ? '◀' : '▶'}</button>}
-        </div>
-      )}
       {(mode === 'ruler' || ruler.length > 0) && (
         <div className="ruler-box" role="region" aria-label="Regla">
           <strong>📏 Regla</strong>{' '}
@@ -595,7 +609,7 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
       )}
       {showReport && (
         <ReportDialog catalog={catalog} project={project} links={links} cells={cells} cellular={cellular}
-          author={user ? user.me.full_name || user.me.email : ''} map={mapRef.current}
+          author={user ? user.me.full_name || user.me.email : ''}
           legend={mapLegend()} showCoverage={showCoverage} onClose={() => setShowReport(false)} />
       )}
     </>
@@ -621,11 +635,11 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
           onExpand={() => setCollapsed((c) => ({ ...c, left: false }))}>
           {sidebar}
         </Panel>
-        <PanelResizeHandle className="resize-handle resize-x" />
+        <Edge axis="x" side="left" collapsed={collapsed.left} name="Proyecto" onToggle={() => toggle('left')} />
         <Panel id="center" order={2} minSize={30}>
           <PanelGroup direction="vertical" autoSaveId="verea-layout-v">
             <Panel id="map" order={1} minSize={25}>{mapArea}</Panel>
-            <PanelResizeHandle className="resize-handle resize-y" />
+            <Edge axis="y" side="bottom" collapsed={collapsed.profile} name="Perfil de Elevación" onToggle={() => toggle('profile')} />
             <Panel id="profile" order={2} ref={profileRef} defaultSize={34} minSize={14} collapsible collapsedSize={0}
               onCollapse={() => setCollapsed((c) => ({ ...c, profile: true }))}
               onExpand={() => setCollapsed((c) => ({ ...c, profile: false }))}>
@@ -635,7 +649,7 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
         </Panel>
         {devicePanel && (
           <>
-            <PanelResizeHandle className="resize-handle resize-x" />
+            <Edge axis="x" side="right" collapsed={collapsed.right} name="Detalles" onToggle={() => toggle('right')} />
             <Panel id="right" order={3} ref={rightRef} defaultSize={24} minSize={16} collapsible collapsedSize={0}
               onCollapse={() => setCollapsed((c) => ({ ...c, right: true }))}
               onExpand={() => setCollapsed((c) => ({ ...c, right: false }))}>

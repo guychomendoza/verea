@@ -1,19 +1,10 @@
 import { useEffect, useRef } from 'react'
 import maplibregl, { type GeoJSONSource, type MapMouseEvent, type MapTouchEvent } from 'maplibre-gl'
-import { Protocol } from 'pmtiles'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { COLORS, COVERAGE_URL, DEFAULT_CENTER } from './colors'
-import { db, distance, haversine } from './geo'
+import { DEFAULT_CENTER } from './colors'
+import { distance, haversine } from './geo'
+import { MAP_LOCALE, buildStyle, devicesGeoJSON, ensurePmtiles, linksGeoJSON } from './mapStyle'
 import type { CellStatus, LinkResult, Project, Selection } from './types'
-
-const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services'
-const ESRI_IMAGERY = `${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`
-// Transparent reference layers: roads, then places and boundaries
-const ESRI_ROADS = `${ESRI}/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}`
-const ESRI_PLACES = `${ESRI}/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}`
-const GLYPHS = 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf'
-const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] }
-let protocolAdded = false
 
 export type MapMode = 'select' | 'addGateway' | 'addNode' | 'ruler'
 type LatLon = [number, number]
@@ -37,79 +28,32 @@ interface Props {
   onAdd: (lat: number, lon: number) => void
   onRulerPoint: (lat: number, lon: number) => void
   onRulerDone: () => void
+  onToggleRuler: () => void
   onReady?: (map: maplibregl.Map) => void
 }
 
-function linkColor(r?: LinkResult): string {
-  const l = r?.link
-  if (!l) return COLORS.none
-  return l.viable ? COLORS.viable : l.margin_db > -5 ? COLORS.marginal : COLORS.fail
-}
-
-function cellColor(c?: CellStatus): string {
-  if (!c) return COLORS.none
-  return c.state === 'ok' ? COLORS.cellOk : c.state === 'none' ? COLORS.cellNone : COLORS.cellEdge
-}
-
-/** Second label line: distance and margin of LoRa nodes, 4G state, nodes served by a gateway. */
-function subLabel(p: Props, kind: 'gateway' | 'node', name: string): string {
-  if (kind === 'gateway') {
-    const n = Object.values(p.links).filter((r) => r.link?.gateway === name).length
-    return n ? `${n} nodo${n === 1 ? '' : 's'}` : ''
+/** Map button for the ruler, under the zoom buttons. */
+class RulerControl implements maplibregl.IControl {
+  private el = document.createElement('div')
+  private btn = document.createElement('button')
+  constructor(onClick: () => void) {
+    this.el.className = 'maplibregl-ctrl maplibregl-ctrl-group'
+    this.btn.type = 'button'
+    this.btn.className = 'verea-ruler-btn'
+    this.btn.title = 'Regla (R): medir distancias'
+    this.btn.setAttribute('aria-label', 'Regla: medir distancias')
+    this.btn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" '
+      + 'd="M3 15.6 15.6 3 21 8.4 8.4 21zm2.1 0 3.3 3.3L18.9 8.4l-3.3-3.3-1.2 1.2 1.6 1.6-.9.9-1.6-1.6-1.2 1.2 '
+      + '2.4 2.4-.9.9-2.4-2.4-1.2 1.2 1.6 1.6-.9.9-1.6-1.6-1.2 1.2 2.4 2.4-.9.9-2.4-2.4z"/></svg>'
+    this.btn.onclick = onClick
+    this.el.appendChild(this.btn)
   }
-  if (p.cellular.has(name)) return p.cells[name]?.short ?? '4G'
-  const l = p.links[name]?.link
-  return l ? `${distance(l.distance_m)} · ${db(l.margin_db)}` : ''
-}
-
-function devicesGeoJSON(p: Props): GeoJSON.FeatureCollection {
-  const sel = p.selection
-  const label = (kind: 'gateway' | 'node', name: string) => {
-    const sub = subLabel(p, kind, name)
-    return sub ? `${name}\n${sub}` : name
+  setActive(on: boolean) {
+    this.btn.classList.toggle('active', on)
+    this.btn.setAttribute('aria-pressed', String(on))
   }
-  return {
-    type: 'FeatureCollection',
-    features: [
-      ...p.project.gateways.map((g) => ({
-        type: 'Feature' as const,
-        geometry: { type: 'Point' as const, coordinates: [g.lon, g.lat] },
-        properties: {
-          kind: 'gateway', name: g.name, label: label('gateway', g.name),
-          color: g.online ? COLORS.gateway : COLORS.none,
-          selected: sel?.kind === 'gateway' && sel.name === g.name,
-        },
-      })),
-      ...p.project.nodes.map((n) => {
-        const cell = p.cellular.has(n.name)
-        return {
-          type: 'Feature' as const,
-          geometry: { type: 'Point' as const, coordinates: [n.lon, n.lat] },
-          properties: {
-            kind: 'node', name: n.name, cellular: cell, label: label('node', n.name),
-            color: cell ? cellColor(p.cells[n.name]) : linkColor(p.links[n.name]),
-            selected: sel?.kind === 'node' && sel.name === n.name,
-          },
-        }
-      }),
-    ],
-  }
-}
-
-function linksGeoJSON(p: Props): GeoJSON.FeatureCollection {
-  const gws = new Map(p.project.gateways.map((g) => [g.name, g]))
-  const features: GeoJSON.Feature[] = []
-  for (const n of p.project.nodes) {
-    const r = p.links[n.name]
-    const gw = r?.link ? gws.get(r.link.gateway) : undefined
-    if (!gw) continue
-    features.push({
-      type: 'Feature',
-      geometry: { type: 'LineString', coordinates: [[gw.lon, gw.lat], [n.lon, n.lat]] },
-      properties: { color: linkColor(r) },
-    })
-  }
-  return { type: 'FeatureCollection', features }
+  onAdd() { return this.el }
+  onRemove() { this.el.remove() }
 }
 
 function pointsGeoJSON(points: LatLon[], numbered = false): GeoJSON.FeatureCollection {
@@ -169,13 +113,11 @@ export default function MapView(props: Props) {
   // narrows the map between mousedown and click, so the click no longer lands on the device.
   const pressedDevice = useRef(false)
   const loaded = useRef(false)
+  const rulerCtl = useRef<RulerControl | null>(null)
 
   // Create the map once
   useEffect(() => {
-    if (!protocolAdded) {
-      maplibregl.addProtocol('pmtiles', new Protocol().tile)
-      protocolAdded = true
-    }
+    ensurePmtiles()
     const first = propsRef.current.project.gateways[0] ?? propsRef.current.project.nodes[0]
     const map = new maplibregl.Map({
       container: container.current!,
@@ -184,108 +126,14 @@ export default function MapView(props: Props) {
       maxZoom: 19,
       attributionControl: { compact: true },
       doubleClickZoom: false,               // double click ends a ruler measurement
-      locale: {
-        'NavigationControl.ZoomIn': 'Acercar', 'NavigationControl.ZoomOut': 'Alejar',
-        'NavigationControl.ResetBearing': 'Arrastra para girar el mapa; clic para volver al norte',
-        'AttributionControl.ToggleAttribution': 'Mostrar u ocultar atribuciones',
-        'AttributionControl.MapFeedback': 'Comentarios sobre el mapa',
-        'Map.Title': 'Mapa', 'ScaleControl.Meters': 'm', 'ScaleControl.Kilometers': 'km',
-        'Marker.Title': 'Marcador', 'Popup.Close': 'Cerrar',
-      },
+      locale: MAP_LOCALE,
       canvasContextAttributes: { preserveDrawingBuffer: true },   // map image download
-      style: {
-        version: 8,
-        glyphs: GLYPHS,
-        sources: {
-          imagery: {
-            type: 'raster', tiles: [ESRI_IMAGERY], tileSize: 256, maxzoom: 18,
-            attribution: 'Imágenes © Esri',
-          },
-          roads: { type: 'raster', tiles: [ESRI_ROADS], tileSize: 256, maxzoom: 19 },
-          places: {
-            type: 'raster', tiles: [ESRI_PLACES], tileSize: 256, maxzoom: 19,
-            attribution: 'Nombres © Esri',
-          },
-          coverage: {
-            type: 'raster', url: `pmtiles://${new URL(COVERAGE_URL, window.location.href).href}`,
-            tileSize: 256,
-            attribution: 'Cobertura 4G: CRT / datos.gob.mx (CC BY 4.0)',
-          },
-          devices: { type: 'geojson', data: EMPTY },
-          links: { type: 'geojson', data: EMPTY },
-          ruler: { type: 'geojson', data: EMPTY },
-          'profile-pins': { type: 'geojson', data: EMPTY },
-          cursor: { type: 'geojson', data: EMPTY },
-        },
-        layers: [
-          { id: 'imagery', type: 'raster', source: 'imagery' },
-          {
-            id: 'coverage', type: 'raster', source: 'coverage',
-            layout: { visibility: 'none' }, paint: { 'raster-resampling': 'nearest' },
-          },
-          { id: 'roads', type: 'raster', source: 'roads' },
-          { id: 'places', type: 'raster', source: 'places' },
-          {
-            id: 'links', type: 'line', source: 'links',
-            paint: { 'line-color': ['get', 'color'], 'line-width': 3, 'line-opacity': 0.85 },
-          },
-          {
-            id: 'device-halo', type: 'circle', source: 'devices',
-            filter: ['==', ['get', 'selected'], true],
-            paint: { 'circle-radius': 15, 'circle-color': '#ffffff', 'circle-opacity': 0.9 },
-          },
-          {
-            id: 'devices', type: 'circle', source: 'devices',
-            paint: {
-              'circle-radius': ['match', ['get', 'kind'], 'gateway', 10, 8],
-              'circle-color': ['get', 'color'],
-              'circle-stroke-color': '#ffffff',
-              'circle-stroke-width': 2,
-            },
-          },
-          {
-            id: 'labels', type: 'symbol', source: 'devices',
-            layout: {
-              'text-field': ['get', 'label'],
-              'text-font': ['Open Sans Semibold'],
-              'text-size': 12,
-              'text-line-height': 1.25,
-              'text-offset': [0, 1.3],
-              'text-anchor': 'top',
-              'text-optional': true,       // hide a label rather than overlap it
-            },
-            paint: { 'text-color': '#ffffff', 'text-halo-color': '#000000', 'text-halo-width': 1.5 },
-          },
-          {
-            id: 'ruler-line', type: 'line', source: 'ruler', filter: ['==', ['get', 'kind'], 'line'],
-            paint: { 'line-color': '#ffd166', 'line-width': 2.5, 'line-dasharray': [2, 1.5] },
-          },
-          {
-            id: 'ruler-vertex', type: 'circle', source: 'ruler', filter: ['==', ['get', 'kind'], 'vertex'],
-            paint: { 'circle-radius': 4.5, 'circle-color': '#ffd166', 'circle-stroke-color': '#000', 'circle-stroke-width': 1 },
-          },
-          {
-            id: 'ruler-text', type: 'symbol', source: 'ruler', filter: ['==', ['get', 'kind'], 'segment'],
-            layout: { 'text-field': ['get', 'text'], 'text-font': ['Open Sans Semibold'], 'text-size': 12, 'text-allow-overlap': true },
-            paint: { 'text-color': '#ffd166', 'text-halo-color': '#000000', 'text-halo-width': 1.8 },
-          },
-          {
-            id: 'profile-pins', type: 'circle', source: 'profile-pins',
-            paint: { 'circle-radius': 9, 'circle-color': '#ef476f', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 },
-          },
-          {
-            id: 'profile-pin-numbers', type: 'symbol', source: 'profile-pins',
-            layout: { 'text-field': ['get', 'n'], 'text-font': ['Open Sans Semibold'], 'text-size': 11, 'text-allow-overlap': true },
-            paint: { 'text-color': '#ffffff' },
-          },
-          {
-            id: 'cursor', type: 'circle', source: 'cursor',
-            paint: { 'circle-radius': 7, 'circle-color': '#ffd166', 'circle-stroke-color': '#000', 'circle-stroke-width': 2 },
-          },
-        ],
-      },
+      style: buildStyle(),
     })
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right')
+    const ruler = new RulerControl(() => propsRef.current.onToggleRuler())
+    map.addControl(ruler, 'top-right')
+    rulerCtl.current = ruler
     map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left')
     mapRef.current = map
     propsRef.current.onReady?.(map)
@@ -357,6 +205,7 @@ export default function MapView(props: Props) {
   useEffect(() => {
     const map = mapRef.current
     if (map && loaded.current) applyProps(map, props, !!drag.current)
+    rulerCtl.current?.setActive(props.mode === 'ruler')
   }, [props])
 
   useEffect(() => {

@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import type maplibregl from 'maplibre-gl'
 import { downloadBlob, safeName, type LegendItem } from '../exportImage'
 import type { Catalog, CellStatus, LinkResult, Project } from '../types'
 import { collectReport } from './collect'
@@ -11,7 +10,6 @@ interface Props {
   cells: Record<string, CellStatus>
   cellular: Set<string>
   author: string
-  map: maplibregl.Map | null
   legend: LegendItem[]
   showCoverage: boolean
   onClose: () => void
@@ -41,7 +39,7 @@ export default function ReportDialog(p: Props) {
     setDone([])
     try {
       const data = await collectReport({
-        project: p.project, catalog: p.catalog, author: p.author, map: p.map, links: p.links,
+        project: p.project, catalog: p.catalog, author: p.author, links: p.links,
         cells: p.cells, cellular: p.cellular, legend: p.legend, showCoverage: p.showCoverage,
         onProgress: (text, fraction) => setProgress({ text, fraction }),
       })

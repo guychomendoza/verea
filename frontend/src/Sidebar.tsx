@@ -89,8 +89,6 @@ export default function Sidebar(p: Props) {
               {cellModels.map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </optgroup>
           </select>
-          <button className={`btn ${p.mode === 'ruler' ? 'btn-active' : ''}`} title="R"
-            onClick={() => p.onMode(p.mode === 'ruler' ? 'select' : 'ruler')}>📏 Regla</button>
         </div>
         {(p.mode === 'addGateway' || p.mode === 'addNode') && <p className="hint">Haz clic en el mapa para colocarlo. Esc para cancelar.</p>}
       </section>
