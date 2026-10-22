@@ -75,7 +75,7 @@ from core.profiles import (
     gateway_profile, node_profile, is_cellular, new_gateway, new_node, estimated_note,
 )
 from core.project import project_to_dict, project_from_dict
-from core.cellular import find_sources, EDGE_MARGIN_M
+from core.cellular import find_sources, MARGIN_FLAT_M, MARGIN_STEEP_M
 from utils.geo import haversine
 
 # Terrain model actually used for a link (ITM falls back to the short-path model)
@@ -265,8 +265,11 @@ def cell_status(nd: dict, operator: str | None) -> dict:
         if hit and hit.covered and hit.margin_ok:
             st_ = ("ok", f"✅ {operator} 4G guaranteed", f"{operator} 4G ✓")
         elif hit and hit.covered:
-            st_ = ("edge", f"⚠️ {operator} 4G uncertain: less than {EDGE_MARGIN_M} m from an area "
-                           f"without signal", f"{operator} 4G uncertain")
+            terrain = "steep terrain" if hit.margin_m <= 60 else "flat terrain" if hit.margin_m >= 200 \
+                else "rolling terrain"
+            st_ = ("edge", f"⚠️ {operator} 4G uncertain: {hit.edge_m:,.0f} m from an area without "
+                           f"signal (margin there {hit.margin_m:,.0f} m, {terrain})",
+                   f"{operator} 4G uncertain")
         elif diff and diff.covered:
             st_ = ("differentiated", f"⚠️ {operator} 4G differentiated only (no guarantee)",
                    f"{operator} 4G no guarantee")
@@ -464,8 +467,10 @@ with st.sidebar:
             help="Coverage declared by the operator to the regulator (CRT open data). "
                  "4G sensors are checked against it.")
         show_cell = st.toggle("Show on map", value=False, key="show_cell_layer",
-                              help=f"Green = 4G guaranteed. Yellow = covered but less than "
-                                   f"{EDGE_MARGIN_M} m from an area without signal (not certain). "
+                              help=f"Green = 4G guaranteed. Yellow = covered but close to an area "
+                                   f"without signal (not certain): within {MARGIN_STEEP_M} m where "
+                                   f"a hill cuts the signal, up to {MARGIN_FLAT_M} m on flat ground "
+                                   f"where the edge depends on distance to the tower. "
                                    f"Red = no 4G declared.")
         if show_cell and not coverage_tiles_file(cell_operator):
             st.caption("Map tiles not found: showing only the area around the project. "
@@ -1146,7 +1151,7 @@ with col_map:
     )
     st.caption("🟢 viable · 🔴 not viable · ⚪ no result yet (calculating, or no gateway online) "
                "· 📶 4G sensors: same colors for the operator's declared coverage "
-               f"(🟠 within {EDGE_MARGIN_M} m of an area without signal)")
+               f"(🟠 near an area without signal: {MARGIN_STEEP_M}–{MARGIN_FLAT_M} m by terrain)")
 
     # ── Handle marker click: select the device under it ──
     obj = map_data.get("last_object_clicked") if map_data else None

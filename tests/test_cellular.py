@@ -8,7 +8,7 @@ import shapely
 
 geopandas = pytest.importorskip("geopandas")
 
-from core.cellular import CoverageSource, find_sources
+from core.cellular import CoverageSource, Relief, find_sources, margin_for_relief
 
 
 @pytest.fixture
@@ -68,9 +68,9 @@ def test_geometries_clip_to_bbox(coverage_file):
 
 
 def test_margin_near_a_gap(coverage_file):
-    """Covered points closer than EDGE_MARGIN_M (100 m) to a gap are not certain."""
+    """Without relief data, covered points closer than EDGE_MARGIN_M (100 m) to a gap are not certain."""
     from core.cellular import EDGE_MARGIN_M
-    s = CoverageSource(coverage_file)
+    s = CoverageSource(coverage_file, relief=Relief(None))
     deg_lon = 111_320 * math.cos(math.radians(19.62))
     near = s.status_at(19.62, -103.50 + 60 / deg_lon)     # 60 m inside the west edge
     far = s.status_at(19.62, -103.50 + 160 / deg_lon)     # 160 m inside
@@ -87,3 +87,46 @@ def test_split_by_margin_partitions_coverage():
     assert abs(certain.union(edge).area - cov.area) < 1e-3
     assert not certain.intersects(shapely.Point(425, 300))      # within 100 m of the hole
     assert certain.contains(shapely.Point(700, 300))
+
+
+def test_margin_for_relief():
+    assert margin_for_relief(0) == pytest.approx(300)
+    assert margin_for_relief(15) == pytest.approx(300)
+    assert margin_for_relief(120) == pytest.approx(40)
+    assert margin_for_relief(255) == pytest.approx(40)
+    m = margin_for_relief([20, 40, 80])
+    assert 300 > m[0] > m[1] > m[2] > 40
+    assert margin_for_relief(np.nan) == 100
+
+
+def _relief_file(tmp_path, value):
+    """Relief grid for the 1° tile of the fixtures (lon -104, lat 19), constant value."""
+    path = tmp_path / "relief.npz"
+    np.savez_compressed(path, **{"-104_19": np.full((400, 400), value, dtype=np.uint8)})
+    return Relief(path)
+
+
+def test_relief_lookup(tmp_path):
+    r = _relief_file(tmp_path, 7)
+    assert r.available
+    vals = r.at([-103.5, -103.5, 10.0], [19.62, 19.62, 10.0])
+    assert vals[0] == 7 and np.isnan(vals[2])
+    assert np.isnan(Relief(None).at(-103.5, 19.62))
+
+
+@pytest.mark.parametrize("relief, inside_m, ok", [
+    (5, 200, False),      # flat: 300 m margin
+    (5, 330, True),
+    (200, 60, True),      # steep: 40 m margin
+    (200, 25, False),
+])
+def test_margin_follows_relief(coverage_file, tmp_path, relief, inside_m, ok):
+    s = CoverageSource(coverage_file, relief=_relief_file(tmp_path, relief))
+    deg_lon = 111_320 * math.cos(math.radians(19.62))
+    hit = s.status_at(19.62, -103.50 + inside_m / deg_lon)
+    assert hit.covered and hit.margin_ok is ok
+    if inside_m < 300:
+        assert hit.edge_m == pytest.approx(inside_m, abs=3)
+        assert hit.margin_m == pytest.approx(margin_for_relief(relief))
+    else:
+        assert hit.edge_m is None          # no edge within the largest margin

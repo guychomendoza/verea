@@ -12,17 +12,30 @@ lookups and map layers only touch the small cached tiles.
 
 import json
 import math
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
 import shapely
 
 TILE_DEG = 0.2
 NEARBY_RADIUS_M = 300            # surroundings checked for the coverage share
 EDGE_MARGIN_M = 100              # next to an area without coverage, signal is not certain
-#                                  (the operator maps are rasters of 50 m pixels)
+#                                  (the operator maps are rasters of 50 m pixels); used where
+#                                  there is no relief data
+
+# Terrain-adaptive margin: where the coverage edge is a terrain shadow (steep relief) the
+# signal drops within a few tens of metres; on flat ground the edge is set by distance to the
+# tower and moves hundreds of metres with a few dB of model error.
+RELIEF_FILE = Path(__file__).resolve().parent.parent / "data" / "coverage" / "relief_mx.npz"
+RELIEF_CELL_DEG = 0.0025         # relief grid (scripts/build_relief.py), ≈270 m
+RELIEF_RADIUS_M = 500            # relief = highest minus lowest point within this radius
+RELIEF_FLAT_M, RELIEF_STEEP_M = 15, 120
+MARGIN_FLAT_M, MARGIN_STEEP_M = 300, 40      # log-interpolated in between
+MARGIN_LEVELS_M = (40, 60, 90, 130, 200, 300)   # steps used by the map tiles
 SEARCH_STEPS_M = (1_000, 5_000, 20_000)  # where to look for the nearest coverage
 
 OPERATORS = {
@@ -48,14 +61,79 @@ class CoverageHit:
     level_dbm: Optional[float] = None       # signal level the operator declares for that area
     nearby_share: float = 0.0                # share of the surroundings (300 m) with coverage, 0–1
     nearest_m: Optional[float] = None        # outside: distance to the nearest coverage (None = > 20 km)
-    margin_ok: bool = False                  # covered and no gap within EDGE_MARGIN_M (certain)
+    margin_ok: bool = False                  # covered and no gap within the edge margin (certain)
+    edge_m: Optional[float] = None           # covered: distance to the nearest gap (None = > 300 m)
+    margin_m: Optional[float] = None         # covered: margin of the edge that decides margin_ok
+
+
+def margin_for_relief(relief):
+    """Edge margin (m) for the local relief (m); NaN relief (no data) -> EDGE_MARGIN_M."""
+    r = np.asarray(relief, dtype=float)
+    f = (np.log(np.maximum(r, 1.0)) - math.log(RELIEF_FLAT_M)) / math.log(RELIEF_STEEP_M / RELIEF_FLAT_M)
+    f = np.clip(f, 0.0, 1.0)
+    m = np.exp(math.log(MARGIN_FLAT_M) + f * math.log(MARGIN_STEEP_M / MARGIN_FLAT_M))
+    return np.where(np.isnan(r), float(EDGE_MARGIN_M), m)
+
+
+class Relief:
+    """National relief grid (scripts/build_relief.py): one uint8 array per 1° tile."""
+
+    def __init__(self, path=None):
+        self.path = Path(path) if path else None
+        self._npz, self._pid = None, None
+        self._tiles: dict = {}
+
+    @property
+    def available(self) -> bool:
+        return bool(self.path and self.path.exists())
+
+    def _tile(self, key):
+        if key not in self._tiles:
+            # One open file per process: forked workers must not share the file offset
+            if self._pid != os.getpid():
+                self._npz, self._pid = np.load(self.path), os.getpid()
+            name = f"{key[0]}_{key[1]}"
+            self._tiles[key] = self._npz[name] if name in self._npz.files else None
+        return self._tiles[key]
+
+    def at(self, lon, lat) -> np.ndarray:
+        """Relief (m) at the points; NaN where there is no data."""
+        lon, lat = np.broadcast_arrays(np.asarray(lon, dtype=float), np.asarray(lat, dtype=float))
+        out = np.full(lon.shape, np.nan)
+        if not self.available:
+            return out
+        tx, ty = np.floor(lon).astype(int), np.floor(lat).astype(int)
+        for key in set(zip(tx.ravel().tolist(), ty.ravel().tolist())):
+            arr = self._tile(key)
+            if arr is None:
+                continue
+            m = (tx == key[0]) & (ty == key[1])
+            n = arr.shape[0]
+            col = ((lon[m] - key[0]) / RELIEF_CELL_DEG).astype(int).clip(0, n - 1)
+            row = ((key[1] + 1 - lat[m]) / RELIEF_CELL_DEG).astype(int).clip(0, n - 1)
+            out[m] = arr[row, col]
+        return out
+
+    def margin_at(self, lon, lat) -> np.ndarray:
+        return margin_for_relief(self.at(lon, lat))
+
+
+_DEFAULT_RELIEF = None
+
+
+def default_relief() -> Relief:
+    global _DEFAULT_RELIEF
+    if _DEFAULT_RELIEF is None:
+        _DEFAULT_RELIEF = Relief(RELIEF_FILE)
+    return _DEFAULT_RELIEF
 
 
 class CoverageSource:
     """One operator / technology / coverage-type file (a CRT GeoPackage)."""
 
-    def __init__(self, path, cache_dir=None):
+    def __init__(self, path, cache_dir=None, relief: Optional[Relief] = None):
         self.path = Path(path)
+        self.relief = relief if relief is not None else default_relief()
         m = _NAME_RE.match(self.path.stem)
         if not m:
             raise ValueError(f"Unrecognised coverage file name: {self.path.name}")
@@ -147,6 +225,26 @@ class CoverageSource:
         return [(level, shapely.transform(g, lambda c: (c - [lon, lat]) * [kx, ky]))
                 for level, g in self.geometries((lon - dlon, lat - dlat, lon + dlon, lat + dlat))]
 
+    def _edge_check(self, lat: float, lon: float, local) -> tuple[bool, Optional[float], Optional[float]]:
+        """
+        (margin_ok, distance to the nearest gap, margin of the deciding edge) for a covered
+        point: every coverage edge within MARGIN_FLAT_M is sampled every ~15 m, and each
+        sample has the margin of the relief where it lies.
+        """
+        radius = max(MARGIN_FLAT_M, EDGE_MARGIN_M)
+        disk = shapely.Point(0, 0).buffer(radius, quad_segs=32)
+        cov = shapely.union_all([shapely.intersection(g, disk) for _, g in local])
+        cov = cov.buffer(0.5).buffer(-0.5)          # close slivers between adjacent pieces
+        edges = shapely.intersection(cov.boundary, disk.buffer(-1.0))
+        if edges.is_empty:
+            return True, None, None
+        xy = shapely.get_coordinates(shapely.segmentize(edges, 15.0))
+        d = np.hypot(xy[:, 0], xy[:, 1])
+        kx, ky = 111_320 * math.cos(math.radians(lat)), 111_320
+        margins = self.relief.margin_at(lon + xy[:, 0] / kx, lat + xy[:, 1] / ky)
+        i = int(np.argmin(d - margins))
+        return bool(d[i] >= margins[i]), float(d.min()), float(margins[i])
+
     def status_at(self, lat: float, lon: float) -> CoverageHit:
         """
         Whether the point has coverage, plus two field-useful numbers: how much of
@@ -155,15 +253,14 @@ class CoverageSource:
         nearest covered area is.
         """
         origin = shapely.Point(0, 0)
-        local = self._local(lat, lon, NEARBY_RADIUS_M)
+        local = self._local(lat, lon, max(NEARBY_RADIUS_M, MARGIN_FLAT_M))
         hit = next(((level, g) for level, g in local if g.covers(origin)), None)
         circle = origin.buffer(NEARBY_RADIUS_M, quad_segs=16)
         covered_area = sum(shapely.intersection(g, circle).area for _, g in local)
         share = min(covered_area / circle.area, 1.0)
         if hit:
-            margin = origin.buffer(EDGE_MARGIN_M, quad_segs=16)
-            gap = margin.area - sum(shapely.intersection(g, margin).area for _, g in local)
-            return CoverageHit(True, hit[0], share, 0.0, margin_ok=gap < 1.0)
+            ok, edge_m, margin_m = self._edge_check(lat, lon, local)
+            return CoverageHit(True, hit[0], share, 0.0, margin_ok=ok, edge_m=edge_m, margin_m=margin_m)
         nearest = None
         for radius in SEARCH_STEPS_M:
             pieces = self._local(lat, lon, radius) if radius > NEARBY_RADIUS_M else local

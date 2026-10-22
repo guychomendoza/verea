@@ -8,7 +8,7 @@ frontend, DB with users) is planned.
 
 ## Run and test
 - App: `.venv/bin/streamlit run app.py` (port 8501). Windows: `python -m streamlit run app.py`.
-- Tests: `.venv/bin/python -m pytest -q` (70 tests). Headless app tests use
+- Tests: `.venv/bin/python -m pytest -q` (79 tests). Headless app tests use
   `streamlit.testing.v1.AppTest`; set `VEREA_AUTOSAVE=<tmp file>` so they do not
   overwrite the user's autosave (`~/.verea/autosave.verea.json`).
 - Browser tests: Playwright with Chromium; in WSL run with
@@ -30,10 +30,14 @@ frontend, DB with users) is planned.
 - `core/project.py` — project JSON (versioned) save/load.
 - `core/cellular.py` — 4G coverage per point from the CRT GeoPackage (0.2° tile cache on
   disk): covered, declared level, share covered within 300 m, nearest coverage,
-  `margin_ok` (no gap within `EDGE_MARGIN_M` = 100 m).
+  `margin_ok` (no coverage edge within its terrain-adaptive margin: `margin_for_relief`,
+  40 m steep → 300 m flat; fixed `EDGE_MARGIN_M` = 100 m without relief data).
+- `scripts/build_relief.py` — Copernicus GLO-90 DEM (→ `data/dem/`, ≈1 GB) → national relief grid
+  `data/coverage/relief_mx.npz` (max−min within 500 m, 0.0025° cells, uint8 per 1° tile).
 - `scripts/build_coverage_tiles.py` — GeoPackage → PMTiles of PNG tiles z5–13 with classes
   certain / edge (within the margin) / none. Raster pipeline: rasterize 0.2° tiles on a
-  0.0004° grid, erode by the margin, render Web-Mercator tiles (Mexico ≈ 23 min).
+  0.0004° grid, margin per gap cell from the relief (one distance transform per
+  `MARGIN_LEVELS_M` step), render Web-Mercator tiles (Mexico ≈ 23 min).
   Needs `requirements-build.txt`.
 - `ui/map_base.py` — stable base map + capture, ruler and coverage-layer JS controls.
 - `ui/tile_server.py` — local Range-capable server for the PMTiles (127.0.0.1 only).
@@ -58,8 +62,7 @@ frontend, DB with users) is planned.
 - Elevation APIs reject > 100 points (falls back to flat terrain silently).
 
 ## Current work: realistic 4G uncertainty margin (decided 2026-10-21)
-Today the yellow band is a fixed 100 m next to any area without coverage. Planned:
-1. **Terrain-adaptive margin** — use a national DEM (download once) to measure relief at
+1. **Terrain-adaptive margin** (done 2026-10-21) — use a national DEM (download once) to measure relief at
    each coverage edge: sharp terrain-shadow edges get a small margin (~30–50 m),
    flat/open distance-limited edges a wide one (~200–500 m). Integrate into
    `build_coverage_tiles.py` (per-tile grids) and `core/cellular.py` (sensor status).

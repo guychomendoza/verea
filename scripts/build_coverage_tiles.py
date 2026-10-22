@@ -2,8 +2,8 @@
 Build the 4G coverage map tiles shown in the app (PMTiles of PNG images).
 
 From an operator coverage GeoPackage (CRT open data) every map pixel gets a class:
-  certain - covered and farther than EDGE_MARGIN_M from any area without coverage
-  edge    - covered, but within EDGE_MARGIN_M of an area without coverage
+  certain - covered and farther than the edge margin from any area without coverage
+  edge    - covered, but within the edge margin of an area without coverage
   none    - Mexican land without declared coverage
 (transparent: sea / outside Mexico)
 
@@ -13,13 +13,17 @@ Run once per quarter:
         data/coverage/telcel_4g_2026q2.pmtiles
 
 Needs requirements-build.txt (scipy, rasterio, pmtiles) besides the app requirements.
+The margin follows the terrain (core.cellular.margin_for_relief: ≈40 m where the relief is
+steep, ≈300 m on flat ground) when data/coverage/relief_mx.npz exists
+(scripts/build_relief.py); otherwise, or with --fixed-margin, it is the same everywhere.
 
 The operator maps are rasters of 50 m cells published as polygons, so they are
 handled as images again:
   1. sort the polygons into 0.2° tiles on disk, region by region (a tile on a region
      border gets both regions);
-  2. rasterize each tile to a ~45 m grid and erode the coverage by the margin
-     (an image operation: milliseconds, where polygon buffers took minutes);
+  2. rasterize each tile to a ~45 m grid; a covered cell is "edge" when some gap cell
+     lies within that gap's margin (one distance transform per margin step: milliseconds,
+     where polygon buffers took minutes);
   3. render Web-Mercator PNG tiles (z5–13) from the grids and pack them in one
      PMTiles file that the browser reads by HTTP ranges.
 """
@@ -43,12 +47,13 @@ import shapely.geometry
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from core.cellular import EDGE_MARGIN_M, TILE_DEG  # noqa: E402
+from core.cellular import (EDGE_MARGIN_M, MARGIN_FLAT_M, MARGIN_LEVELS_M, RELIEF_FILE,  # noqa: E402
+                           TILE_DEG, Relief)
 
 LAND_FILE = ROOT / "data" / "mexico_land.geojson"
 CELL = 0.0004                       # grid cell in degrees (≈44 m N-S), finer than the 50 m source
 N = round(TILE_DEG / CELL)          # 500 cells per 0.2° tile
-PAD_CELLS = 10                      # neighbour context so the erosion makes no fake edges at seams
+PAD_CELLS = 10                      # neighbour context (> largest margin) so seams make no fake edges
 PAD_DEG = PAD_CELLS * CELL
 MIN_ZOOM, MAX_ZOOM = 5, 13          # z13 pixels ≈ 18 m; the browser over-zooms beyond
 MOSAIC_FACTORS = (4, 16)            # coarse national grids for low zooms (≈180 m, ≈710 m)
@@ -122,6 +127,14 @@ def read_parts(path: Path):
 
 
 _LAND = None
+_RELIEF = None
+
+
+def _relief():
+    global _RELIEF
+    if _RELIEF is None:
+        _RELIEF = Relief(RELIEF_FILE)
+    return _RELIEF
 
 
 def _land():
@@ -135,10 +148,10 @@ def _land():
 
 # ── pass 2: one 0.2° tile -> class grid ──
 def classify_grid(args):
-    t, parts_file, margin_m, grid_dir = args
+    t, parts_file, fixed_margin, grid_dir = args
     from rasterio.features import rasterize
     from rasterio.transform import from_origin
-    from scipy.ndimage import binary_erosion
+    from scipy.ndimage import distance_transform_edt
 
     west, south, east, north = padded(tile_box(t))
     n = N + 2 * PAD_CELLS
@@ -156,13 +169,26 @@ def classify_grid(args):
         land = rasterize([land_geom], out_shape=(n, n), transform=transform, fill=0,
                          default_value=1, dtype="uint8").astype(bool)
 
-    # Margin as an elliptical structuring element (cells are not square in metres)
+    # Margin of every gap cell, rounded up to a step; then, per step, covered cells closer
+    # than it to a gap of that step are edge (cells are not square in metres)
     lat = (south + north) / 2
-    ry = margin_m / (CELL * 111_320)
-    rx = margin_m / (CELL * 111_320 * math.cos(math.radians(lat)))
-    yy, xx = np.mgrid[-math.ceil(ry):math.ceil(ry) + 1, -math.ceil(rx):math.ceil(rx) + 1]
-    disk = (yy / ry) ** 2 + (xx / rx) ** 2 <= 1.0
-    certain = binary_erosion(cov, structure=disk, border_value=1)
+    gap = ~cov
+    edge = np.zeros_like(cov)
+    if cov.any() and gap.any():
+        if fixed_margin is None:
+            centres = west + (np.arange(n) + 0.5) * CELL, north - (np.arange(n) + 0.5) * CELL
+            lon_g, lat_g = np.meshgrid(*centres)
+            margins = _relief().margin_at(lon_g, lat_g)
+            steps = np.array(MARGIN_LEVELS_M, dtype=float)
+            level = steps[np.searchsorted(steps, margins - 1e-6).clip(0, len(steps) - 1)]
+        else:
+            level = np.full((n, n), float(fixed_margin))
+        sampling = (CELL * 111_320, CELL * 111_320 * math.cos(math.radians(lat)))
+        half_cell = sum(sampling) / 4           # centre-to-centre -> distance to the gap's border
+        for m in np.unique(level[gap]):
+            dist = distance_transform_edt(~(gap & (level == m)), sampling=sampling)
+            edge |= cov & (dist - half_cell <= m)
+    certain = cov & ~edge
 
     classes = np.zeros((n, n), dtype=np.uint8)
     classes[land & ~cov] = 1
@@ -261,7 +287,8 @@ def main():
     ap.add_argument("gpkg", type=Path)
     ap.add_argument("out", type=Path, help="output .pmtiles")
     ap.add_argument("--regions", nargs="*", help="only these REGION codes (testing), e.g. R5")
-    ap.add_argument("--margin", type=float, default=EDGE_MARGIN_M)
+    ap.add_argument("--fixed-margin", type=float, default=None,
+                    help="same margin (m) everywhere instead of the terrain-adaptive one")
     ap.add_argument("--workers", type=int, default=None)
     ap.add_argument("--keep-work", action="store_true", help="keep the intermediate files")
     args = ap.parse_args()
@@ -288,9 +315,15 @@ def main():
         extent = _land().bounds
     land_tiles = {t for t in tiles_in(extent) if _land().intersects(shapely.box(*tile_box(t)))}
     tiles = sorted(cov_tiles | land_tiles)
-    print(f"Pass 2/3: classifying {len(tiles)} tiles on a {CELL}° grid (margin {args.margin:g} m)",
+    margin = args.fixed_margin
+    if margin is None and not _relief().available:
+        print(f"  no {RELIEF_FILE.name} (scripts/build_relief.py): fixed {EDGE_MARGIN_M} m margin", flush=True)
+        margin = EDGE_MARGIN_M
+    margin_text = (f"{margin:g} m" if margin is not None
+                   else f"terrain-adaptive {MARGIN_LEVELS_M[0]}–{MARGIN_FLAT_M} m")
+    print(f"Pass 2/3: classifying {len(tiles)} tiles on a {CELL}° grid (margin {margin_text})",
           flush=True)
-    jobs = [(t, str(parts_dir / f"{t[0]}_{t[1]}.bin") if t in cov_tiles else None, args.margin,
+    jobs = [(t, str(parts_dir / f"{t[0]}_{t[1]}.bin") if t in cov_tiles else None, margin,
              str(grid_dir)) for t in tiles]
     areas, grids = {k: 0.0 for k in CLASS_NAMES.values()}, []
     with ProcessPoolExecutor(max_workers=args.workers) as pool:
@@ -353,7 +386,7 @@ def main():
                 "center_lat_e7": int((bounds[1] + bounds[3]) / 2 * 1e7),
             },
             {
-                "name": args.out.stem, "source": args.gpkg.name, "margin_m": args.margin,
+                "name": args.out.stem, "source": args.gpkg.name, "margin": margin_text,
                 "classes": {"certain": "covered, farther than the margin from any gap",
                             "edge": "covered, within the margin of a gap",
                             "none": "land without declared coverage"},

@@ -51,8 +51,9 @@ GLOSSARY = [
      "declares to the regulator (outdoor LTE); LTE-M / NB-IoT usually reach as far or farther."),
     ("Guaranteed / differentiated coverage", "Guaranteed: the operator commits to service quality "
      "there. Differentiated: there is signal but without that commitment (weaker or variable). "
-     "'Uncertain' means covered, but less than 100 m from an area without signal: the operator "
-     "maps are rasters of 50 m cells, so signal is not certain right next to a gap."),
+     "'Uncertain' means covered, but close to an area without signal. How close depends on the "
+     "terrain: where a hill cuts the signal the edge is sharp (40 m margin); on flat ground the "
+     "edge is set by distance to the tower and a few dB of error move it a long way (up to 300 m)."),
     ("Continuous coverage / farthest signal", "Along the gateway→node direction: distance "
      "before the first point without signal, and the last point that still has signal."),
 ]

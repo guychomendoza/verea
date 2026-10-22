@@ -19,9 +19,14 @@ Two kinds of file:
 - `RADIOMOVIL_4G_GARANTIZADA_2T_2026.gpkg` — the operator map as published; used
   to check each 4G sensor.
 - `telcel_4g_2026q2.pmtiles` — map tiles for the whole country (green = certain,
-  yellow = covered but within 100 m of an area without signal, red = no coverage),
+  yellow = covered but near an area without signal, red = no coverage),
   read by the browser piece by piece. Made from the GeoPackage with
   `scripts/build_coverage_tiles.py` (≈25 min, needs `pip install -r requirements-build.txt`).
+- `relief_mx.npz` — terrain relief (highest minus lowest point within 500 m, every
+  ≈270 m) that sizes the yellow band: ≈40 m where a hill cuts the signal (sharp edge),
+  up to 300 m on flat ground (the edge depends on distance to the tower, and a few dB
+  of model error move it far). Made with `scripts/build_relief.py` from the Copernicus
+  DEM GLO-90 (downloads ≈1 GB into `data/dem/` once). Without it the band is a fixed 100 m.
 
 **New quarter:** download the new GeoPackage from datos.gob.mx (below), build the
 tiles, publish both as a new release (`gh release create coverage-YYYYQn <files>`),
@@ -51,4 +56,6 @@ The app serves the tiles from a small local server (`ui/tile_server.py`, 127.0.0
 only), because Streamlit's static serving refuses files over 200 MB.
 
 Attribution: "Mapas de cobertura del servicio móvil, Comisión Reguladora de
-Telecomunicaciones, datos.gob.mx, CC BY 4.0."
+Telecomunicaciones, datos.gob.mx, CC BY 4.0." Relief: "Copernicus DEM GLO-90,
+© DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018, provided under
+COPERNICUS by the European Union and ESA."

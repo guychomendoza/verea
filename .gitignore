@@ -13,4 +13,8 @@ build/
 data/coverage/*.gpkg
 data/coverage/cache/
 data/coverage/*.pmtiles
+data/coverage/*.npz
 data/coverage/.build_*/
+
+# Copernicus DEM tiles (scripts/build_relief.py)
+data/dem/
