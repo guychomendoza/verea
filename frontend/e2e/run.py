@@ -229,6 +229,20 @@ def main():
                                timeout=15000)
         print("search by coordinates: ok")
 
+        # ── 4G coverage switch on the map (bottom right) ──
+        cov_btn = page.get_by_role("button", name="Cobertura 4G")
+        vis = lambda: page.evaluate("() => window.__vereaMap.getLayoutProperty('coverage', 'visibility')")
+        assert vis() == "none"
+        cov_btn.click()
+        expect(cov_btn).to_have_attribute("aria-pressed", "true")
+        assert vis() == "visible"
+        expect(page.locator(".verea-coverage-legend")).to_contain_text("Posible (LTE-M)")
+        page.wait_for_timeout(2500)
+        page.screenshot(path=f"{OUT}/3_coverage.png")
+        cov_btn.click()
+        assert vis() == "none"
+        print("coverage switch on the map: on/off with its legend")
+
         # ── map image with dark frame ──
         side.get_by_role("button", name=re.compile(r"N-1")).click()
         page.wait_for_timeout(2500)
@@ -302,6 +316,13 @@ def main():
         assert white > 400, f"highlighted link (white rings and casing) not visible: {white}"
         first.save(OUT / "node_card_map.jpg")
         rep.screenshot(path=f"{OUT}/5_report_html.png", full_page=False)
+        rep_cov = rep.get_by_role("button", name="Cobertura 4G")
+        rep_cov.click()
+        expect(rep_cov).to_have_attribute("aria-pressed", "true")
+        rep.wait_for_timeout(3000)
+        rep.screenshot(path=f"{OUT}/5_report_coverage.png")
+        assert rep.evaluate("() => window.vereaMap.getLayoutProperty('coverage', 'visibility')") == "visible"
+        print("HTML report: coverage switch")
         assert not rep_errors, rep_errors
         print("HTML report opens:", charts, "interactive profiles,", snaps.count(), "node maps, no errors")
         rep.close()

@@ -25,7 +25,6 @@ interface Props {
   onSettings: (patch: Partial<Settings>) => void
   onMeta: (meta: { name?: string; description?: string }) => void
   onSelect: (s: Selection, focus?: boolean) => void
-  onShowCoverage: (v: boolean) => void
   onShowLabels: (v: boolean) => void
   onImport: (file: File) => void
   onExport: () => void
@@ -188,16 +187,11 @@ export default function Sidebar(p: Props) {
                 {p.catalog.cell_operators.map((o) => <option key={o}>{o}</option>)}
               </select>
             </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={p.showCoverage} onChange={(e) => p.onShowCoverage(e.target.checked)} />
-              Mostrar en el mapa
-            </label>
-            {p.showCoverage && (
-              <p className="hint">
-                {dot(COLORS.cellOk)} garantizada · {dot(COLORS.cellEdge)} incierta: cerca del borde (125–250 m según el terreno) ·{' '}
-                {dot(COLORS.cellPossible)} posible para sensores LTE-M / NB-IoT (hasta 100–300 m fuera) · {dot(COLORS.cellNone)} sin cobertura
-              </p>
-            )}
+            <p className="hint">
+              Muéstrala u ocúltala con el botón «Cobertura 4G» del mapa (abajo a la derecha).{' '}
+              {dot(COLORS.cellOk)} garantizada · {dot(COLORS.cellEdge)} incierta: cerca del borde (125–250 m según el terreno) ·{' '}
+              {dot(COLORS.cellPossible)} posible para sensores LTE-M / NB-IoT (hasta 100–300 m fuera) · {dot(COLORS.cellNone)} sin cobertura
+            </p>
           </>
         ) : <p className="hint">El servidor no tiene datos de cobertura.</p>}
       </section>

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import maplibregl, { type GeoJSONSource, type MapMouseEvent, type MapTouchEvent } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { DEFAULT_CENTER } from './colors'
+import { COLORS, DEFAULT_CENTER } from './colors'
 import { distance, haversine } from './geo'
 import { registerDeviceIcons } from './deviceIcons'
 import { MAP_LOCALE, buildStyle, devicesGeoJSON, ensurePmtiles, linksGeoJSON } from './mapStyle'
@@ -31,6 +31,8 @@ interface Props {
   onRulerPoint: (lat: number, lon: number) => void
   onRulerDone: () => void
   onToggleRuler: () => void
+  coverageAvailable: boolean            // the server has 4G coverage data
+  onToggleCoverage: () => void
   onReady?: (map: maplibregl.Map) => void
 }
 
@@ -53,6 +55,36 @@ class RulerControl implements maplibregl.IControl {
   setActive(on: boolean) {
     this.btn.classList.toggle('active', on)
     this.btn.setAttribute('aria-pressed', String(on))
+  }
+  onAdd() { return this.el }
+  onRemove() { this.el.remove() }
+}
+
+/** 4G coverage on/off, bottom right beside the attribution, with its legend while shown. */
+class CoverageControl implements maplibregl.IControl {
+  private el = document.createElement('div')
+  private btn = document.createElement('button')
+  private legend = document.createElement('div')
+  constructor(onClick: () => void) {
+    this.el.className = 'maplibregl-ctrl verea-coverage-ctrl'
+    this.btn.type = 'button'
+    this.btn.className = 'verea-coverage-btn'
+    this.btn.title = 'Mostrar u ocultar la cobertura 4G declarada'
+    this.btn.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" '
+      + 'stroke-width="2.4" stroke-linecap="round"><path d="M5 20v-3M9.7 20v-6.5M14.3 20v-10M19 20V6.5"/></svg>'
+      + '<span>Cobertura 4G</span>'
+    this.btn.onclick = onClick
+    this.legend.className = 'verea-coverage-legend'
+    this.legend.innerHTML = ([[COLORS.cellOk, 'Garantizada'], [COLORS.cellEdge, 'Incierta'],
+      [COLORS.cellPossible, 'Posible (LTE-M)'], [COLORS.cellNone, 'Sin cobertura']] as const)
+      .map(([c, t]) => `<span><i style="background:${c}"></i>${t}</span>`).join('')
+    this.el.append(this.legend, this.btn)
+  }
+  set(on: boolean, available: boolean) {
+    this.el.hidden = !available
+    this.btn.classList.toggle('active', on)
+    this.btn.setAttribute('aria-pressed', String(on))
+    this.legend.hidden = !on
   }
   onAdd() { return this.el }
   onRemove() { this.el.remove() }
@@ -116,6 +148,7 @@ export default function MapView(props: Props) {
   const pressedDevice = useRef(false)
   const loaded = useRef(false)
   const rulerCtl = useRef<RulerControl | null>(null)
+  const coverageCtl = useRef<CoverageControl | null>(null)
 
   // Create the map once
   useEffect(() => {
@@ -138,6 +171,9 @@ export default function MapView(props: Props) {
     map.addControl(ruler, 'top-right')
     rulerCtl.current = ruler
     map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left')
+    const coverage = new CoverageControl(() => propsRef.current.onToggleCoverage())
+    map.addControl(coverage, 'bottom-right')
+    coverageCtl.current = coverage
     mapRef.current = map
     propsRef.current.onReady?.(map)
     if (import.meta.env.DEV) (window as unknown as { __vereaMap: maplibregl.Map }).__vereaMap = map
@@ -209,6 +245,7 @@ export default function MapView(props: Props) {
     const map = mapRef.current
     if (map && loaded.current) applyProps(map, props, !!drag.current)
     rulerCtl.current?.setActive(props.mode === 'ruler')
+    coverageCtl.current?.set(props.showCoverage, props.coverageAvailable)
   }, [props])
 
   useEffect(() => {

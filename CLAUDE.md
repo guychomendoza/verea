@@ -39,7 +39,9 @@ frontend, DB with users) is planned.
   few figures; node cards are only built when the HTML is requested, after the PDF has been
   downloaded (`onSummary`); Cancelar / ✕ / Esc abort; no e-mail in reports),
   nodes may carry optional `owner` (titular) and `area_ha` (in `core/project.py` `_NODE_KEYS`), panel borders (`Edge` in `App.tsx`) show an open/close arrow on hover,
-  ruler is a map control (and R), `shortcuts.ts` (G/Ctrl+G, N = LSE01, R, Ctrl+S;
+  ruler is a map control (and R), 4G coverage on/off is a map control beside the attribution
+  (`CoverageControl`, also in the HTML report, which reads the PMTiles from the app's server — the
+  dev server sends CORS headers for that), `shortcuts.ts` (G/Ctrl+G, N = LSE01, R, Ctrl+S;
   Ctrl+N cannot be captured in Chrome), `project.ts` (pure reducer), `api.ts`.
   maplibre-gl.css forces `.maplibregl-map` to position: relative: size the map container inline.
   Map updates apply after the map's own 'load' (a late `once('load')` never fires).

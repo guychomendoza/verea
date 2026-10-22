@@ -18,6 +18,15 @@ function coverageFiles(): Plugin {
         const name = path.basename(decodeURIComponent((req.url ?? '').split('?')[0]))
         const file = path.join(COVERAGE_DIR, name)
         if (!name.endsWith('.pmtiles') || !fs.existsSync(file)) return next()
+        // The interactive HTML report is opened from disk and reads the layer from here
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        res.setHeader('Access-Control-Allow-Headers', 'Range')
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, ETag')
+        if (req.method === 'OPTIONS') {
+          res.statusCode = 204
+          res.end()
+          return
+        }
         const size = fs.statSync(file).size
         const m = /bytes=(\d+)-(\d*)/.exec(req.headers.range ?? '')
         res.setHeader('Accept-Ranges', 'bytes')

@@ -1,7 +1,7 @@
 // Interactive HTML report: one self-contained file (data embedded), map and elevation
 // profiles navigable in any browser; MapLibre and Plotly load from a CDN when it is opened.
 import { BRAND, logoSvg } from '../brand'
-import { COLORS } from '../colors'
+import { COLORS, COVERAGE_URL } from '../colors'
 import { deviceIconSvg, glyphPngs, iconImageId } from '../deviceIcons'
 import type { LegendItem } from '../legend'
 import { cellColor, nodeKindOf } from '../mapStyle'
@@ -11,6 +11,7 @@ import { GLOSSARY, SOURCES, byOwner, cellTable, loraTable, nodeFacts, nodeTitle,
 
 const MAPLIBRE = 'https://unpkg.com/maplibre-gl@5.24.0/dist'
 const PLOTLY = 'https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js'
+const PMTILES = 'https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js'
 
 function esc(s: unknown): string {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
@@ -56,6 +57,10 @@ export function buildHtml(d: ReportData): string {
     sections: d.nodes.map((s, i) => ({ id: `p${i}`, figure: s.figure, coords: s.detail?.profile.coordinates }))
       .filter((s) => s.figure),
     icons: glyphPngs(),
+    // 4G layer, read from the same server as the app (it must be reachable when the file is opened)
+    coverage: { url: new URL(COVERAGE_URL, window.location.href).href, shown: d.showCoverage,
+      legend: [[COLORS.cellOk, 'Garantizada'], [COLORS.cellEdge, 'Incierta'], [COLORS.cellPossible, 'Posible (LTE-M)'],
+        [COLORS.cellNone, 'Sin cobertura']] },
     locale: PLOTLY_LOCALE,
     config: { ...PLOTLY_CONFIG, responsive: true },
   }
@@ -100,6 +105,15 @@ export function buildHtml(d: ReportData): string {
   header .logo { width:150px; flex-shrink:0; } header .logo svg { display:block; width:100%; height:auto; }
   header h1 { margin:0 0 4px; font-size:24px; } header p { margin:0; color:#9fb0c3; }
   h2 { color:var(--navy); }
+  .maplibregl-ctrl-bottom-right { display:flex; align-items:flex-end; gap:6px; }
+  .cov-ctrl { display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
+  .cov-btn { padding:4px 10px; border-radius:999px; border:0; background:#fff; color:#162a40; cursor:pointer;
+    font:600 12px/1.2 system-ui,sans-serif; box-shadow:0 0 0 2px rgb(0 0 0 / .1); }
+  .cov-btn.active { background:var(--navy); color:#fff; }
+  .cov-legend { display:flex; flex-direction:column; gap:2px; padding:6px 9px; border-radius:8px;
+    background:rgb(15 34 54 / .88); color:#e6edf4; font:11px/1.3 system-ui,sans-serif; }
+  .cov-legend[hidden] { display:none; } .cov-legend span { display:flex; align-items:center; gap:6px; }
+  .cov-legend i { width:10px; height:10px; border-radius:2px; display:inline-block; }
   .symbology { display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; font-size:12px; color:var(--muted); margin:8px 0 12px; }
   .symbology span { display:inline-flex; align-items:center; gap:5px; } .symbology b { color:var(--ink); }
   td .dt { width:10px; height:10px; border-radius:50%; display:inline-block; vertical-align:-1px; margin-right:4px; }
@@ -143,6 +157,7 @@ ${cards}
 </main>
 <script id="verea-data" type="application/json">${json}</script>
 <script src="${MAPLIBRE}/maplibre-gl.js"></script>
+<script src="${PMTILES}"></script>
 <script src="${PLOTLY}"></script>
 <script>
 const D = JSON.parse(document.getElementById('verea-data').textContent);
@@ -150,6 +165,7 @@ const D = JSON.parse(document.getElementById('verea-data').textContent);
 const icons = {};
 await Promise.all(Object.entries(D.icons).map(([id, src]) => { const im = new Image(); im.src = src; icons[id] = im; return im.decode(); }));
 const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services';
+if (window.pmtiles) maplibregl.addProtocol('pmtiles', new pmtiles.Protocol().tile);
 const map = new maplibregl.Map({
   container: 'map', attributionControl: { compact: true },
   locale: { 'NavigationControl.ZoomIn': 'Acercar', 'NavigationControl.ZoomOut': 'Alejar',
@@ -159,6 +175,8 @@ const map = new maplibregl.Map({
     sources: {
       imagery: { type: 'raster', tiles: [ESRI + '/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, maxzoom: 18, attribution: 'Imágenes © Esri' },
       places: { type: 'raster', tiles: [ESRI + '/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'], tileSize: 256 },
+      coverage: { type: 'raster', url: 'pmtiles://' + D.coverage.url, tileSize: 256,
+        attribution: 'Cobertura 4G: CRT / datos.gob.mx (CC BY 4.0)' },
       devices: { type: 'geojson', data: { type: 'FeatureCollection', features: D.devices.map(d => ({ type: 'Feature',
         geometry: { type: 'Point', coordinates: [d.lon, d.lat] }, properties: d })) } },
       links: { type: 'geojson', data: { type: 'FeatureCollection', features: D.links.map(l => ({ type: 'Feature',
@@ -167,6 +185,8 @@ const map = new maplibregl.Map({
     },
     layers: [
       { id: 'imagery', type: 'raster', source: 'imagery' },
+      { id: 'coverage', type: 'raster', source: 'coverage', paint: { 'raster-resampling': 'nearest' },
+        layout: { visibility: D.coverage.shown ? 'visible' : 'none' } },
       { id: 'places', type: 'raster', source: 'places' },
       { id: 'links', type: 'line', source: 'links', paint: { 'line-color': ['get', 'color'], 'line-width': 3 } },
       { id: 'devices', type: 'circle', source: 'devices', paint: { 'circle-radius': ['match', ['get', 'kind'], 'gateway', 13, 11],
@@ -180,9 +200,35 @@ const map = new maplibregl.Map({
         'circle-stroke-color': '#000', 'circle-stroke-width': 2 } },
     ] },
 });
+window.vereaMap = map;
 map.on('styleimagemissing', e => { if (icons[e.id] && !map.hasImage(e.id)) map.addImage(e.id, icons[e.id], { pixelRatio: 2 }); });
 map.addControl(new maplibregl.NavigationControl(), 'top-right');
 map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
+// 4G coverage on/off beside the attribution, with its legend while shown
+map.addControl({
+  onAdd() {
+    const el = document.createElement('div');
+    el.className = 'maplibregl-ctrl cov-ctrl';
+    const legend = document.createElement('div');
+    legend.className = 'cov-legend';
+    legend.innerHTML = D.coverage.legend.map(([c, t]) => '<span><i style="background:' + c + '"></i>' + t + '</span>').join('');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cov-btn';
+    btn.textContent = 'Cobertura 4G';
+    const show = (on) => {
+      map.setLayoutProperty('coverage', 'visibility', on ? 'visible' : 'none');
+      btn.classList.toggle('active', on);
+      btn.setAttribute('aria-pressed', String(on));
+      legend.hidden = !on;
+    };
+    btn.onclick = () => show(map.getLayoutProperty('coverage', 'visibility') !== 'visible');
+    map.once('load', () => show(D.coverage.shown));
+    el.append(legend, btn);
+    return el;
+  },
+  onRemove() {},
+}, 'bottom-right');
 if (D.devices.length) {
   const b = new maplibregl.LngLatBounds();
   D.devices.forEach(d => b.extend([d.lon, d.lat]));

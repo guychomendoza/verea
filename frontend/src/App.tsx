@@ -499,7 +499,7 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
       }}
       onSettings={(patch) => dispatch({ type: 'settings', patch })}
       onMeta={(meta) => dispatch({ type: 'meta', ...meta })}
-      onSelect={select} onShowCoverage={setShowCoverage}
+      onSelect={select}
       showLabels={showLabels} onShowLabels={setShowLabels}
       onImport={importFile} onExport={exportFile} onReport={() => setShowReport(true)}
       onNew={() => {
@@ -526,6 +526,7 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
         onAdd={add}
         onRulerPoint={(lat, lon) => setRuler((r) => [...r, [lat, lon]])}
         onRulerDone={() => setMode('select')}
+        coverageAvailable={catalog.cell_operators.length > 0} onToggleCoverage={() => setShowCoverage((v) => !v)}
         onToggleRuler={() => {
           if (mode === 'ruler') setMode('select')
           else { setRuler([]); setMode('ruler') }

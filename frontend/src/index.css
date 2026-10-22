@@ -231,3 +231,21 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-
 .symbology { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; font-size: 12px; color: var(--muted); }
 .symbology span { display: flex; align-items: center; gap: 6px; }
 .project-description { resize: vertical; min-height: 2.6em; font: inherit; font-size: 13px; }
+
+/* 4G coverage switch beside the attribution (bottom right) */
+.maplibregl-ctrl-bottom-right { display: flex; align-items: flex-end; gap: 6px; }
+.verea-coverage-ctrl { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.verea-coverage-ctrl[hidden], .verea-coverage-legend[hidden] { display: none; }
+.verea-coverage-btn {
+  display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 999px; cursor: pointer;
+  background: #fff; color: #162a40; border: 0; font: 600 12px/1.2 system-ui, sans-serif;
+  box-shadow: 0 0 0 2px rgb(0 0 0 / .1);
+}
+.verea-coverage-btn:hover { background: #eef3f7; }
+.verea-coverage-btn.active { background: var(--brand-navy); color: #fff; }
+.verea-coverage-legend {
+  display: flex; flex-direction: column; gap: 2px; padding: 6px 9px; border-radius: 8px;
+  background: rgb(15 34 54 / .88); color: #e6edf4; font: 11px/1.3 system-ui, sans-serif;
+}
+.verea-coverage-legend span { display: flex; align-items: center; gap: 6px; }
+.verea-coverage-legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
