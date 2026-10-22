@@ -176,10 +176,13 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
     openDoc(p, r)
   }, [openDoc])
 
-  // First open: the last project, else the most recent, else a new one
+  // First open: the last project, else the most recent, else a new one (once: React's
+  // development mode runs effects twice, which would create two empty projects)
+  const startedRef = useRef(false)
   useEffect(() => {
-    if (!cloudMode) return
-    (async () => {
+    if (!cloudMode || startedRef.current) return
+    startedRef.current = true
+    ;(async () => {
       const last = recall(LAST_PROJECT_KEY)
       try {
         if (last) return await openCloud(last)
@@ -350,6 +353,14 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
     a.download = `${(project.name.trim() || 'verea_project').replace(/[^\w-]+/g, '_').slice(0, 60)}.verea.json`
     a.click()
     URL.revokeObjectURL(a.href)
+  }
+
+  // Cloud: nothing is editable until the project is open, so no edit is lost to the load
+  if (cloudMode && !doc) {
+    return saveState === 'error'
+      ? <Notice title="Could not open your projects"><p className="hint">{saveError}</p>
+          <button className="btn" onClick={() => window.location.reload()}>Try again</button></Notice>
+      : <div className="p-6">Opening project…</div>
   }
 
   const dev = selected(project, selection)

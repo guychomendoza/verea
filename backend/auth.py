@@ -9,12 +9,15 @@ Environment:
 Without either, every protected request is refused: the safe default.
 """
 
+import logging
 import os
 from functools import lru_cache
 
 from fastapi import Header, HTTPException
 
 AUDIENCE = "authenticated"
+log = logging.getLogger("verea.auth")
+CLOCK_LEEWAY_S = 30      # Supabase's clock can be a second or two ahead of ours (iat "in the future")
 
 
 @lru_cache(maxsize=1)
@@ -38,8 +41,11 @@ def require_user(authorization: str = Header(default="")) -> dict:
     secret = os.environ.get("SUPABASE_JWT_SECRET")
     try:
         if secret and jwt.get_unverified_header(token).get("alg") == "HS256":
-            return jwt.decode(token, secret, algorithms=["HS256"], audience=AUDIENCE, issuer=issuer)
+            return jwt.decode(token, secret, algorithms=["HS256"], audience=AUDIENCE, issuer=issuer,
+                              leeway=CLOCK_LEEWAY_S)
         key = _jwks_client(url).get_signing_key_from_jwt(token)
-        return jwt.decode(token, key.key, algorithms=["ES256", "RS256"], audience=AUDIENCE, issuer=issuer)
-    except jwt.PyJWTError:
+        return jwt.decode(token, key.key, algorithms=["ES256", "RS256"], audience=AUDIENCE, issuer=issuer,
+                          leeway=CLOCK_LEEWAY_S)
+    except jwt.PyJWTError as e:
+        log.warning("rejected session token: %s: %s", type(e).__name__, e)
         raise HTTPException(401, "Invalid or expired session")

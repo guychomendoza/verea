@@ -4,9 +4,11 @@ against a fake Supabase answered inside the browser: Playwright intercepts the a
 and REST calls and serves them from an in-memory table. The real database rules are
 tested in supabase/tests.
 
-Needs the API (VEREA_DEV=1) and a dev server in cloud mode:
+Needs a development API (accepts any token) and a dev server in cloud mode pointing at it:
 
-    VITE_SUPABASE_URL=https://fake.supabase.co VITE_SUPABASE_ANON_KEY=x npx vite --port 5174
+    VEREA_DEV=1 VEREA_CORS_ORIGINS=http://127.0.0.1:5174 .venv/bin/uvicorn backend.main:app --port 8001
+    cd frontend && VITE_API_URL=http://127.0.0.1:8001 VITE_SUPABASE_URL=https://fake.supabase.co \
+        VITE_SUPABASE_ANON_KEY=x npx vite --host 127.0.0.1 --port 5174
     .venv/bin/python frontend/e2e/cloud.py
 """
 import json

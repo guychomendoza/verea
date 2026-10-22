@@ -128,8 +128,15 @@ def test_login_required(supabase):
     assert ok.status_code == 200 and "node_profiles" in ok.json()
 
 
+def test_small_clock_skew_tolerated(supabase):
+    """Tokens issued a few seconds 'in the future' by a server whose clock runs ahead."""
+    c = TestClient(api.app)
+    t = supabase(iat=int(time.time()) + 5, nbf=int(time.time()) + 5)
+    assert c.get("/api/catalog", headers={"Authorization": f"Bearer {t}"}).status_code == 200
+
+
 @pytest.mark.parametrize("claims", [
-    {"exp": int(time.time()) - 10},                      # expired
+    {"exp": int(time.time()) - 120},                     # expired
     {"aud": "anon"},                                     # not a logged-in user
     {"iss": "https://other.supabase.co/auth/v1"},        # another project
 ])
