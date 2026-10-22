@@ -498,7 +498,7 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
         if (model) setAddModel(model)
       }}
       onSettings={(patch) => dispatch({ type: 'settings', patch })}
-      onMeta={(name) => dispatch({ type: 'meta', name })}
+      onMeta={(meta) => dispatch({ type: 'meta', ...meta })}
       onSelect={select} onShowCoverage={setShowCoverage}
       showLabels={showLabels} onShowLabels={setShowLabels}
       onImport={importFile} onExport={exportFile} onReport={() => setShowReport(true)}

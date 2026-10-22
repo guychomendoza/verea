@@ -22,7 +22,7 @@ interface Props {
   user?: { name: string; onSignOut: () => void; onProjects: () => void }
   onMode: (m: MapMode, model?: string) => void
   onSettings: (patch: Partial<Settings>) => void
-  onMeta: (name: string) => void
+  onMeta: (meta: { name?: string; description?: string }) => void
   onSelect: (s: Selection, focus?: boolean) => void
   onShowCoverage: (v: boolean) => void
   onShowLabels: (v: boolean) => void
@@ -65,7 +65,10 @@ export default function Sidebar(p: Props) {
         )}
       </div>
       <input className="font-semibold" placeholder="Proyecto sin nombre" value={p.project.name}
-        maxLength={80} onChange={(e) => p.onMeta(e.target.value)} aria-label="Nombre del proyecto" />
+        maxLength={80} onChange={(e) => p.onMeta({ name: e.target.value })} aria-label="Nombre del proyecto" />
+      <textarea className="project-description" rows={2} maxLength={2000} placeholder="Descripción (aparece en el reporte)"
+        value={p.project.description} onChange={(e) => p.onMeta({ description: e.target.value })}
+        aria-label="Descripción del proyecto" />
       <div className="flex flex-wrap gap-1.5">
         {p.user && <button className="btn" onClick={p.user.onProjects}>Proyectos…</button>}
         <button className="btn" onClick={p.onNew}>Nuevo</button>

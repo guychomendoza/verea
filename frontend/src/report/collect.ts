@@ -51,10 +51,13 @@ function blobToDataUrl(b: Blob): Promise<string> {
 export async function collectReport(args: {
   project: Project; catalog: Catalog
   details: boolean              // node cards (maps, profiles): only the HTML report has them
+  signal?: AbortSignal          // Cancel in the dialog
   links: Record<string, LinkResult>; cells: Record<string, CellStatus>; cellular: Set<string>; stations: Set<string>
   legend: LegendItem[]; showCoverage: boolean; onProgress: (text: string, fraction: number) => void
 }): Promise<ReportData> {
-  const { project, onProgress } = args
+  const { project, signal } = args
+  const stopped = () => { if (signal?.aborted) throw new DOMException('Reporte cancelado', 'AbortError') }
+  const onProgress = (text: string, fraction: number) => { stopped(); args.onProgress(text, fraction) }
   const base = { project, links: args.links, cells: args.cells, cellular: args.cellular, stations: args.stations }
   onProgress('Preparando el mapa…', 0.02)
   const snap = await SnapshotMap.create()
@@ -85,7 +88,7 @@ export async function collectReport(args: {
         { coverage: cellular })
       const section: NodeSection = { node, cellular, mapJpg, legend: cardLegend(base, node.name, gateway?.name) }
       if (gateway && Plotly) {
-        const detail = await api.link(gateway, node, project.settings)
+        const detail = await api.link(gateway, node, project.settings, signal)
         const title = profileTitle(detail.profile, { gateway: gateway.name, node: node.name, sf: node.sf, freqMhz: project.settings.freq_mhz })
         const figure = profileFigure(detail.profile, title)
         await Plotly.newPlot(holder, figure.data as Plotly.Data[], figure.layout as Partial<Plotly.Layout>,

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { downloadBlob, safeName, type LegendItem } from '../exportImage'
 import type { Catalog, CellStatus, LinkResult, Project } from '../types'
 import { collectReport } from './collect'
@@ -23,12 +23,23 @@ export default function ReportDialog(p: Props) {
   const [progress, setProgress] = useState<{ text: string; fraction: number } | null>(null)
   const [error, setError] = useState('')
   const [done, setDone] = useState<string[]>([])
+  const ctrl = useRef<AbortController | null>(null)
+  // Closing while a report is being made cancels it
+  const close = () => {
+    ctrl.current?.abort()
+    p.onClose()
+  }
+  useEffect(() => () => ctrl.current?.abort(), [])
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) p.onClose() }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      ctrl.current?.abort()
+      p.onClose()
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [busy, p])
+  }, [p])
 
   const lora = p.project.nodes.filter((n) => !p.cellular.has(n.name))
   const withLink = lora.filter((n) => p.links[n.name]?.link).length
@@ -37,12 +48,14 @@ export default function ReportDialog(p: Props) {
     && p.project.nodes.some((n) => p.cellular.has(n.name) && !p.cells[n.name])
 
   const generate = async () => {
+    const c = new AbortController()
+    ctrl.current = c
     setBusy(true)
     setError('')
     setDone([])
     try {
       const data = await collectReport({
-        project: p.project, catalog: p.catalog, details: html, links: p.links,
+        project: p.project, catalog: p.catalog, details: html, signal: c.signal, links: p.links,
         cells: p.cells, cellular: p.cellular, stations: p.stations, legend: p.legend, showCoverage: p.showCoverage,
         onProgress: (text, fraction) => setProgress({ text, fraction }),
       })
@@ -51,10 +64,12 @@ export default function ReportDialog(p: Props) {
       const files: string[] = []
       if (pdf) {
         const { buildPdf } = await import('./pdf')
-        downloadBlob(await buildPdf(data), `${base}.pdf`)
+        const blob = await buildPdf(data)
+        if (c.signal.aborted) return
+        downloadBlob(blob, `${base}.pdf`)
         files.push(`${base}.pdf`)
       }
-      if (html) {
+      if (html && !c.signal.aborted) {
         const { buildHtml } = await import('./html')
         downloadBlob(new Blob([buildHtml(data)], { type: 'text/html;charset=utf-8' }), `${base}.html`)
         files.push(`${base}.html`)
@@ -62,18 +77,20 @@ export default function ReportDialog(p: Props) {
       setDone(files)
       setProgress({ text: 'Listo', fraction: 1 })
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      if (c.signal.aborted) setProgress(null)
+      else setError(e instanceof Error ? e.message : String(e))
     } finally {
+      if (ctrl.current === c) ctrl.current = null
       setBusy(false)
     }
   }
 
   return (
-    <div className="dialog-backdrop" onClick={() => !busy && p.onClose()}>
+    <div className="dialog-backdrop" onClick={() => !busy && close()}>
       <div className="dialog" role="dialog" aria-label="Reporte" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold">📄 Reporte de la red</h2>
-          <button className="btn-ghost" onClick={p.onClose} disabled={busy} aria-label="Cerrar">✕</button>
+          <button className="btn-ghost" onClick={close} aria-label="Cerrar">✕</button>
         </div>
         <p className="hint">
           {p.project.gateways.length} gateways · {lora.length} nodos LoRa ({withLink} con enlace) ·{' '}
@@ -99,7 +116,9 @@ export default function ReportDialog(p: Props) {
         {cellPending && !busy && <p className="hint" role="status">Calculando la cobertura 4G de los sensores… el reporte se habilita al terminar.</p>}
         {error && <p className="error" role="alert">⚠ {error}</p>}
         <div className="flex gap-2 justify-end">
-          <button className="btn" onClick={p.onClose} disabled={busy}>Cerrar</button>
+          {busy
+            ? <button className="btn btn-danger" onClick={() => ctrl.current?.abort()}>Cancelar</button>
+            : <button className="btn" onClick={close}>Cerrar</button>}
           <button className="btn btn-active" onClick={generate} disabled={busy || cellPending || (!pdf && !html)}>
             {busy ? 'Generando…' : 'Generar y descargar'}
           </button>

@@ -249,6 +249,13 @@ def main():
         # ── report: PDF + interactive HTML ──
         side.get_by_role("button", name="📄 Reporte").click()
         dialog = page.get_by_role("dialog", name="Reporte")
+        dialog.get_by_role("button", name="Generar y descargar").click()
+        expect(dialog.get_by_role("button", name="Cancelar")).to_be_visible()
+        page.wait_for_timeout(800)
+        dialog.get_by_role("button", name="Cancelar").click()
+        expect(dialog.get_by_role("button", name="Generar y descargar")).to_be_enabled(timeout=20000)
+        expect(dialog.get_by_role("alert")).to_have_count(0)
+        print("report: Cancelar stops the generation")
         downloads = []
         page.on("download", lambda d: downloads.append(d))
         dialog.get_by_role("button", name="Generar y descargar").click()
