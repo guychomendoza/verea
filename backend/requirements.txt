@@ -1,0 +1,6 @@
+# Web API (besides ../requirements.txt for core/)
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pyjwt[crypto]>=2.8
+rasterio>=1.4          # local DEM (core/dem.py)
+httpx>=0.27            # tests (fastapi.testclient)

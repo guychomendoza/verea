@@ -61,8 +61,7 @@ from config import (
     clamp_sf,
 )
 from core.devices import Gateway, EndNode, WeatherStation, Antenna
-from core.terrain import TerrainProfile, ElevationAPI, link_samples
-from core.link_budget import calculate_link_budget, route_to_best_gateway
+from core.terrain import ElevationAPI, link_samples
 from core.propagation import fspl, max_fresnel_radius
 from ui.profile_chart import get_elevation_summary
 from ui.profile_interactive import build_profile_html
@@ -76,6 +75,7 @@ from core.profiles import (
 )
 from core.project import project_to_dict, project_from_dict
 from core.cellular import find_sources, MARGIN_FLAT_M, MARGIN_STEEP_M
+import core.network as net
 from utils.geo import haversine
 
 # Terrain model actually used for a link (ITM falls back to the short-path model)
@@ -262,22 +262,7 @@ def cell_status(nd: dict, operator: str | None) -> dict:
         hit = g.status_at(nd["lat"], nd["lon"]) if g else None
         d = srcs.get("differentiated")
         diff = d.status_at(nd["lat"], nd["lon"]) if d and not (hit and hit.covered) else None
-        if hit and hit.covered and hit.margin_ok:
-            st_ = ("ok", f"✅ {operator} 4G guaranteed", f"{operator} 4G ✓")
-        elif hit and hit.covered:
-            terrain = "steep terrain" if hit.margin_m <= 60 else "flat terrain" if hit.margin_m >= 200 \
-                else "rolling terrain"
-            st_ = ("edge", f"⚠️ {operator} 4G uncertain: {hit.edge_m:,.0f} m from an area without "
-                           f"signal (margin there {hit.margin_m:,.0f} m, {terrain})",
-                   f"{operator} 4G uncertain")
-        elif diff and diff.covered:
-            st_ = ("differentiated", f"⚠️ {operator} 4G differentiated only (no guarantee)",
-                   f"{operator} 4G no guarantee")
-        else:
-            near = (f"nearest {hit.nearest_m:,.0f} m away" if hit and hit.nearest_m is not None
-                    else "none within 20 km")
-            st_ = ("none", f"❌ No {operator} 4G declared ({near})", f"no {operator} 4G")
-        cache[key] = {"state": st_[0], "text": st_[1], "short": st_[2], "hit": hit}
+        cache[key] = {**net.cell_state(operator, hit, diff), "hit": hit}
     return cache[key]
 
 
@@ -595,42 +580,19 @@ def next_device_index(prefix: str) -> int:
     return counters[prefix]
 
 
+def rf_now() -> net.RFSettings:
+    """Radio settings from the sidebar."""
+    return net.RFSettings(freq_mhz, propagation_model, diffraction_method, safety_margin, environment)
+
+
 def gateway_device(gw_info: dict) -> Gateway:
     """Gateway object from its session-state dict."""
-    prof = gateway_profile(gw_info)
-    gw_dev = Gateway(
-        name=gw_info.get("name", "Gateway"),
-        lat=gw_info["lat"], lon=gw_info["lon"],
-        tx_power_dbm=gw_info.get("tx_power", prof["tx_power"]),
-        antenna=Antenna(
-            gain_dbi=gw_info.get("gain", prof["gain"]),
-            height_m=gw_info.get("height", prof["height"]),
-            cable_loss_db=gw_info.get("cable_loss", prof["cable_loss"]),
-        ),
-        frequency_hz=freq_hz,
-        online=gw_info.get("online", True),
-        sensitivity=prof["sensitivity"],
-    )
-    return gw_dev
+    return net.gateway_device(gw_info, rf_now())
 
 
 def node_device(node_info: dict) -> EndNode:
     """EndNode / WeatherStation object from its session-state dict."""
-    prof = node_profile(node_info)
-    cls = WeatherStation if prof["type"] == "weather" else EndNode
-    node_dev = cls(
-        name=node_info["name"],
-        lat=node_info["lat"], lon=node_info["lon"],
-        tx_power_dbm=node_info.get("tx_power", prof["tx_power"]),
-        spreading_factor=clamp_sf(node_info.get("sf", prof["sf"])),
-        antenna=Antenna(
-            gain_dbi=node_info.get("gain", prof["gain"]),
-            height_m=node_info.get("height", prof["height"]),
-            cable_loss_db=node_info.get("cable_loss", prof["cable_loss"]),
-        ),
-        frequency_hz=freq_hz,
-    )
-    return node_dev
+    return net.node_device(node_info, rf_now())
 
 
 def best_link(nd: dict) -> tuple[dict | None, str | None]:
@@ -640,19 +602,8 @@ def best_link(nd: dict) -> tuple[dict | None, str | None]:
     """
     if is_cellular(nd):
         return None, None
-    online = [gw for gw in st.session_state.gateways if gw.get("online", True)]
-    if not online:
-        return None, "No gateway online"
-    best, error = None, None
-    for gw in online:
-        try:
-            analysis = run_analysis(gw, nd, node_environment=nd.get("environment"))
-        except Exception as e:
-            error = f"Calculation failed ({type(e).__name__}: {e})"
-            continue
-        if best is None or analysis["result"].link_margin_db > best["result"].link_margin_db:
-            best = analysis
-    return best, (None if best else error)
+    return net.best_link(st.session_state.gateways, nd,
+                        lambda gw: run_analysis(gw, nd, node_environment=nd.get("environment")))
 
 
 MAX_NAME_LEN = 40
@@ -756,15 +707,7 @@ def store_link(name: str, best: dict | None, error: str | None):
 
 def budget_kwargs(env: str) -> dict:
     """Link budget settings from the sidebar."""
-    return dict(
-        diffraction_method=diffraction_method,
-        environment=env,
-        # The whole safety margin is the reserve: Link margin = dB left over it,
-        # viable when >= 0 (same result as the old fading 8 dB + minimum 3 dB)
-        margin_threshold=0.0,
-        fading_margin_db=safety_margin,
-        propagation_model=propagation_model,
-    )
+    return net.budget_kwargs(rf_now(), env)
 
 
 def device_signature(d: dict) -> tuple:
@@ -808,7 +751,7 @@ def coverage_signature(params: dict) -> tuple:
 
 
 def run_analysis(gw_info: dict, node_info: dict, node_environment: str = None) -> dict:
-    """Run full terrain + link budget analysis for a GW-Node pair."""
+    """Run full terrain + link budget analysis for a GW-Node pair (terrain cached)."""
     n_points = link_samples(haversine(gw_info["lat"], gw_info["lon"],
                                       node_info["lat"], node_info["lon"]))
     cache_key = (
@@ -816,53 +759,12 @@ def run_analysis(gw_info: dict, node_info: dict, node_environment: str = None) -
         f"{node_info['lat']:.6f},{node_info['lon']:.6f}_"
         f"{n_points}"
     )
-
-    gw_dev = gateway_device(gw_info)
-    node_dev = node_device(node_info)
-
-    # Fetch terrain (with cache)
-    api = st.session_state.elevation_api
-    if cache_key in st.session_state.terrain_cache:
-        terrain = st.session_state.terrain_cache[cache_key]
-    else:
-        try:
-            # Terrain direction: GW (pos 0) → Node (pos -1)
-            terrain = TerrainProfile.from_coordinates(
-                gw_info["lat"], gw_info["lon"],
-                node_info["lat"], node_info["lon"],
-                n_points=n_points,
-                api=api,
-            )
-        except Exception:
-            terrain = TerrainProfile.from_manual_elevations(
-                gw_info["lat"], gw_info["lon"],
-                node_info["lat"], node_info["lon"],
-                np.full(n_points, 1500.0),
-            )
-        st.session_state.terrain_cache[cache_key] = terrain
-
-    gw_dev.altitude_m = float(terrain.elevations[0])    # GW ground at pos 0
-    node_dev.altitude_m = float(terrain.elevations[-1])  # Node ground at pos -1
-
-    # Per-node environment (Fix #3) or global fallback
-    env = node_environment if node_environment else environment
-    result = calculate_link_budget(gw_dev, node_dev, terrain, **budget_kwargs(env))
-
-    # LOS analysis for chart (same direction: GW pos0, Node pos-1)
-    los_data = terrain.compute_los_clearance(
-        h_tx_asl=gw_dev.antenna_height_asl,
-        h_rx_asl=node_dev.antenna_height_asl,
-        freq_hz=freq_hz,
-        diffraction_method=diffraction_method,
-    )
-
-    return {
-        "result": result,
-        "terrain": terrain,
-        "los_data": los_data,
-        "gw_dev": gw_dev,
-        "node_dev": node_dev,
-    }
+    cache = st.session_state.terrain_cache
+    if cache_key not in cache:
+        cache[cache_key] = net.link_terrain(gw_info, node_info, st.session_state.elevation_api)
+    # Per-node environment, or the global default
+    nd = {**node_info, "environment": node_environment or environment}
+    return net.analyze_link(gw_info, nd, rf_now(), terrain=cache[cache_key])
 
 
 if compute_cov:

@@ -1,0 +1,144 @@
+"""Tests for the web API (backend/) with a stub elevation source."""
+
+import time
+
+import numpy as np
+import pytest
+
+pytest.importorskip("fastapi")
+jwt = pytest.importorskip("jwt")
+from fastapi.testclient import TestClient  # noqa: E402
+
+import backend.auth as auth  # noqa: E402
+import backend.main as api  # noqa: E402
+import core.network as net  # noqa: E402
+
+GW = {"name": "GW-1", "lat": 21.262, "lon": -102.300, "model": "sensecap_m2", "height": 6.0}
+NODE = {"name": "N-1", "lat": 21.2519, "lon": -102.2952, "model": "dragino_se0x_lb", "sf": 10}
+CELL = {"name": "4G-1", "lat": 21.30, "lon": -102.39, "model": "dragino_se0x_cs"}
+
+
+class Hill:
+    """Flat ground with a 60 m hill between the test gateway and node."""
+    source_name = "test"
+
+    def fetch_elevations(self, coords):
+        lat = np.array([c[0] for c in coords])
+        return 1800 + 60 * np.exp(-((lat - 21.257) / 0.002) ** 2)
+
+
+@pytest.fixture
+def client(monkeypatch):
+    monkeypatch.setenv("VEREA_DEV", "1")
+    monkeypatch.setattr(api.ELEVATIONS, "_src", Hill())
+    return TestClient(api.app)
+
+
+def test_links_match_core(client):
+    r = client.post("/api/links", json={"gateways": [GW], "nodes": [NODE, CELL],
+                                        "settings": {"safety_margin": 11}})
+    assert r.status_code == 200
+    res = r.json()["results"]
+    assert set(res) == {"N-1"}                       # cellular nodes have no LoRa link
+    direct = net.analyze_link(GW, NODE, net.RFSettings(safety_margin=11), Hill())["result"]
+    assert res["N-1"]["link"]["margin_db"] == pytest.approx(direct.link_margin_db)
+    assert res["N-1"]["link"]["gateway"] == "GW-1"
+
+
+def test_no_gateway_online(client):
+    r = client.post("/api/links", json={"gateways": [{**GW, "online": False}], "nodes": [NODE]})
+    assert r.json()["results"]["N-1"] == {"link": None, "error": "No gateway online"}
+
+
+def test_link_detail_has_profile(client):
+    r = client.post("/api/link", json={"gateway": GW, "node": NODE}).json()
+    prof = r["profile"]
+    assert len(prof["distances_m"]) == len(prof["elevations_m"]) == len(prof["los_m"]) >= 30
+    assert max(prof["elevations_m"]) == pytest.approx(1860, abs=2)
+    assert r["budget"]["link_margin_db"] == pytest.approx(r["summary"]["margin_db"])
+
+
+def test_radial_and_coverage(client):
+    r = client.post("/api/radial", json={"gateway": GW, "node": NODE, "bearing_deg": 180,
+                                         "max_distance_m": 3000}).json()
+    assert r["segments"] and len(r["margins_db"]) == len(r["coordinates"])
+    cov = client.post("/api/coverage", json={"gateway": GW, "radius_km": 1, "radials": 4}).json()
+    assert len(cov["radials"]) == 4
+
+
+def test_limits(client):
+    many = [{**GW, "name": f"GW-{i}"} for i in range(31)]
+    assert client.post("/api/links", json={"gateways": many, "nodes": [NODE]}).status_code == 422
+    assert client.post("/api/coverage", json={"gateway": GW, "radials": 500}).status_code == 422
+    assert client.post("/api/links", json={"gateways": [{**GW, "lat": 95}], "nodes": []}).status_code == 422
+
+
+def test_project_normalize(client):
+    ok = client.post("/api/project/normalize", json={"project": {"gateways": [GW], "nodes": [NODE]}})
+    assert ok.status_code == 200 and ok.json()["nodes"][0]["type"] == "sensor"
+    bad = client.post("/api/project/normalize", json={"project": {"nodes": []}})
+    assert bad.status_code == 422
+
+
+def test_cell_status(client):
+    if "Telcel" not in api.coverage_sources():
+        pytest.skip("no coverage data")
+    r = client.post("/api/cell-status", json={"operator": "Telcel", "points": [CELL]}).json()
+    assert r["points"][0]["state"] in {"ok", "edge", "differentiated", "none"}
+    assert client.post("/api/cell-status", json={"operator": "Nope", "points": [CELL]}).status_code == 404
+
+
+# ── login ──
+def test_refused_without_login_config(monkeypatch):
+    monkeypatch.delenv("VEREA_DEV", raising=False)
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
+    c = TestClient(api.app)
+    assert c.get("/api/health").status_code == 200          # public
+    assert c.get("/api/catalog").status_code == 503
+
+
+@pytest.fixture
+def supabase(monkeypatch):
+    """A fake Supabase project: its signing key and a token factory."""
+    from cryptography.hazmat.primitives.asymmetric import ec
+    url = "https://test.supabase.co"
+    key = ec.generate_private_key(ec.SECP256R1())
+    monkeypatch.delenv("VEREA_DEV", raising=False)
+    monkeypatch.setenv("SUPABASE_URL", url)
+
+    class Jwks:
+        def get_signing_key_from_jwt(self, token):
+            jwt.get_unverified_header(token)                  # malformed tokens fail here
+            return type("K", (), {"key": key.public_key()})()
+
+    monkeypatch.setattr(auth, "_jwks_client", lambda u: Jwks())
+
+    def token(**claims):
+        base = {"sub": "user-1", "aud": "authenticated", "iss": f"{url}/auth/v1",
+                "exp": int(time.time()) + 600}
+        return jwt.encode({**base, **claims}, key, algorithm="ES256")
+    return token
+
+
+def test_login_required(supabase):
+    c = TestClient(api.app)
+    assert c.get("/api/catalog").status_code == 401
+    assert c.get("/api/catalog", headers={"Authorization": "Bearer garbage"}).status_code == 401
+    ok = c.get("/api/catalog", headers={"Authorization": f"Bearer {supabase()}"})
+    assert ok.status_code == 200 and "node_profiles" in ok.json()
+
+
+@pytest.mark.parametrize("claims", [
+    {"exp": int(time.time()) - 10},                      # expired
+    {"aud": "anon"},                                     # not a logged-in user
+    {"iss": "https://other.supabase.co/auth/v1"},        # another project
+])
+def test_bad_tokens_rejected(supabase, claims):
+    c = TestClient(api.app)
+    assert c.get("/api/catalog", headers={"Authorization": f"Bearer {supabase(**claims)}"}).status_code == 401
+
+
+def test_cors_only_allowed_origins(client):
+    r = client.options("/api/links", headers={"Origin": "https://evil.example",
+                                              "Access-Control-Request-Method": "POST"})
+    assert "access-control-allow-origin" not in r.headers

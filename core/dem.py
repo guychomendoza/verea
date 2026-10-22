@@ -56,7 +56,11 @@ class LocalDEM:
         return arr
 
     def fetch_elevations(self, coordinates: list[tuple[float, float]]) -> np.ndarray:
-        """Bilinear elevations (m) at (lat, lon) points; 0 where there is no tile (sea)."""
+        """
+        Elevation (m) of the DEM cell containing each (lat, lon), as the Open-Meteo API
+        returns it (no interpolation), so results match the app's online source.
+        0 where there is no tile (sea).
+        """
         lat = np.array([c[0] for c in coordinates], dtype=float)
         lon = np.array([c[1] for c in coordinates], dtype=float)
         out = np.zeros(len(lat))
@@ -66,12 +70,8 @@ class LocalDEM:
             if arr is None:
                 continue
             m = (tx == key[0]) & (ty == key[1])
-            # Pixel centres: row 0 at the north edge
-            fx = (lon[m] - key[0]) * DEM_N - 0.5
-            fy = (key[1] + 1 - lat[m]) * DEM_N - 0.5
-            x0 = np.clip(np.floor(fx).astype(int), 0, arr.shape[1] - 2)
-            y0 = np.clip(np.floor(fy).astype(int), 0, arr.shape[0] - 2)
-            ax, ay = np.clip(fx - x0, 0, 1), np.clip(fy - y0, 0, 1)
-            out[m] = (arr[y0, x0] * (1 - ax) * (1 - ay) + arr[y0, x0 + 1] * ax * (1 - ay)
-                      + arr[y0 + 1, x0] * (1 - ax) * ay + arr[y0 + 1, x0 + 1] * ax * ay)
+            # Row 0 is the north edge
+            col = np.clip(((lon[m] - key[0]) * DEM_N).astype(int), 0, arr.shape[1] - 1)
+            row = np.clip(((key[1] + 1 - lat[m]) * DEM_N).astype(int), 0, arr.shape[0] - 1)
+            out[m] = np.round(arr[row, col])          # the API returns whole metres
         return out

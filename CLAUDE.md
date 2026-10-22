@@ -8,7 +8,9 @@ frontend, DB with users) is planned.
 
 ## Run and test
 - App: `.venv/bin/streamlit run app.py` (port 8501). Windows: `python -m streamlit run app.py`.
-- Tests: `.venv/bin/python -m pytest -q` (88 tests). Headless app tests use
+- Tests: `.venv/bin/python -m pytest -q` (101 tests).
+- Web API: `VEREA_DEV=1 .venv/bin/uvicorn backend.main:app --port 8000` (docs at /docs).
+  `pip install -r backend/requirements.txt` first. Headless app tests use
   `streamlit.testing.v1.AppTest`; set `VEREA_AUTOSAVE=<tmp file>` so they do not
   overwrite the user's autosave (`~/.verea/autosave.verea.json`).
 - Browser tests: Playwright with Chromium; in WSL run with
@@ -20,6 +22,12 @@ frontend, DB with users) is planned.
 
 ## Layout
 - `app.py` — the whole Streamlit UI (sidebar, map, panels, report, projects, autosave).
+- `core/network.py` — device dicts → Gateway/EndNode, `RFSettings`, `analyze_link`, `best_link`,
+  `cell_state`: the calculations shared by Streamlit and the API (results must stay identical).
+- `backend/` — FastAPI web API (`main.py`), request limits (`schemas.py`), Supabase JWT check
+  (`auth.py`: no `SUPABASE_URL` and no `VEREA_DEV=1` → every protected request is refused).
+  Elevations from the local DEM (`core/dem.py`), sampled like Open-Meteo (cell containing the
+  point, whole metres) so margins match the app exactly.
 - `config.py` — radio constants, SX1276/SX1302 sensitivity, US915 SF7–10, environments, safety margin.
 - `core/link_budget.py` — LoRa link budget. Terrain loss: ITM (`core/propagation.itm_path_loss`)
   for paths ≥ ~1 km, delta-Bullington short-path model (ITU-R P.526) below.
@@ -93,6 +101,15 @@ report to the company's own server).
 
 Other pending items (web migration): drag nodes on the map, overlapping labels when nodes
 are close, real PDF report, cloud projects with users, LoRa calibration with ChirpStack RSSI.
+
+## Web migration (plan approved 2026-10-21; team only, invite-only accounts)
+React + TypeScript + Vite + MapLibre (PMTiles from Cloudflare R2) on Cloudflare Pages; FastAPI on
+Fly.io with a volume for data; Supabase for Auth + Postgres (projects as the JSON of
+`core/project.py`, Row Level Security). No own domain yet. Phases: 1 API (done) → 2 frontend MVP →
+3 accounts/cloud → 4 deploy → 5 PDF report + parity, retire Streamlit.
+- Deploy note: a cold 4G lookup reads the 1.2 GB GeoPackage (1.36 GB RAM peak, 7–10 s). On the
+  server, pre-build the national 0.2° tile cache instead (≈3–5 GB) and skip the GeoPackage.
+- Open-Meteo has an hourly request limit (hit on 2026-10-21): the API must use the local DEM.
 
 ## Conventions
 - UI text in English; the user writes in Spanish.
