@@ -13,12 +13,14 @@ interface Props {
   mode: MapMode
   addModel: string
   showCoverage: boolean
+  showLabels: boolean
   status: string
   onMode: (m: MapMode, model?: string) => void
   onSettings: (patch: Partial<Settings>) => void
   onMeta: (name: string) => void
   onSelect: (s: Selection, focus?: boolean) => void
   onShowCoverage: (v: boolean) => void
+  onShowLabels: (v: boolean) => void
   onImport: (file: File) => void
   onExport: () => void
   onNew: () => void
@@ -143,6 +145,14 @@ export default function Sidebar(p: Props) {
       </section>
 
       <section>
+        <h3>Map</h3>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={p.showLabels} onChange={(e) => p.onShowLabels(e.target.checked)} />
+          Place names, roads and boundaries
+        </label>
+      </section>
+
+      <section>
         <h3>4G coverage</h3>
         {p.catalog.cell_operators.length ? (
           <>
@@ -158,7 +168,7 @@ export default function Sidebar(p: Props) {
             </label>
             {p.showCoverage && (
               <p className="hint">
-                {dot('#2a9d8f')} guaranteed · {dot('#e9c46a')} near an area without signal (40–300 m by terrain) · {dot('#e63946')} none declared
+                {dot('#2a9d8f')} guaranteed · {dot('#e9c46a')} near an area without signal (250–500 m by terrain) · {dot('#e63946')} none declared
               </p>
             )}
           </>

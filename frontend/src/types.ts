@@ -119,3 +119,10 @@ export interface Catalog {
 }
 
 export type Selection = { kind: 'gateway' | 'node'; name: string } | null
+
+export interface Place {
+  name: string
+  lat: number
+  lon: number
+  kind: string
+}

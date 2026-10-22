@@ -23,7 +23,7 @@ import shapely
 
 TILE_DEG = 0.2
 NEARBY_RADIUS_M = 300            # surroundings checked for the coverage share
-EDGE_MARGIN_M = 100              # next to an area without coverage, signal is not certain
+EDGE_MARGIN_M = 250              # next to an area without coverage, signal is not certain
 #                                  (the operator maps are rasters of 50 m pixels); used where
 #                                  there is no relief data
 
@@ -34,10 +34,13 @@ RELIEF_FILE = Path(__file__).resolve().parent.parent / "data" / "coverage" / "re
 RELIEF_CELL_DEG = 0.0025         # relief grid (scripts/build_relief.py), ≈270 m
 RELIEF_RADIUS_M = 500            # relief = highest minus lowest point within this radius
 RELIEF_FLAT_M, RELIEF_STEEP_M = 15, 120
-MARGIN_FLAT_M, MARGIN_STEEP_M = 300, 40      # log-interpolated in between
-MARGIN_LEVELS_M = (40, 60, 90, 130, 200, 300)   # steps used by the map tiles
+# Raised 2026-10-21 (user: green looked optimistic; tower model validation found flat-ground
+# edges uncertain by ~1 km): 250 m where steep, 500 m on flat ground.
+MARGIN_FLAT_M, MARGIN_STEEP_M = 500, 250     # log-interpolated in between
+SMALL_GAP_MARGIN_M = 100         # small holes inside coverage (see below)
+MARGIN_LEVELS_M = (100, 250, 300, 350, 400, 450, 500)   # steps used by the map tiles
 # A small hole inside coverage is a local obstruction (a building, a hollow), not a
-# distance-limited edge: towers reach all around it, so it gets the steep-terrain margin
+# distance-limited edge: towers reach all around it, so it gets a small margin
 SMALL_GAP_M2 = 100_000           # 0.1 km², ≈40 cells of the operator's 50 m raster
 GAP_WINDOW_M = 900               # half-side of the square where gap sizes are measured
 SEARCH_STEPS_M = (1_000, 5_000, 20_000)  # where to look for the nearest coverage
@@ -66,7 +69,7 @@ class CoverageHit:
     nearby_share: float = 0.0                # share of the surroundings (300 m) with coverage, 0–1
     nearest_m: Optional[float] = None        # outside: distance to the nearest coverage (None = > 20 km)
     margin_ok: bool = False                  # covered and no gap within the edge margin (certain)
-    edge_m: Optional[float] = None           # covered: distance to the nearest gap (None = > 300 m)
+    edge_m: Optional[float] = None           # covered: distance to the nearest gap (None = > 500 m)
     margin_m: Optional[float] = None         # covered: margin of the edge that decides margin_ok
 
 
@@ -243,7 +246,7 @@ class CoverageSource:
         """
         (margin_ok, distance to the nearest gap, margin of the deciding edge) for a covered
         point: every coverage edge within MARGIN_FLAT_M is sampled every ~15 m, and each
-        sample has the margin of the relief where it lies (MARGIN_STEEP_M on small holes).
+        sample has the margin of the relief where it lies (SMALL_GAP_MARGIN_M on small holes).
         """
         radius = max(MARGIN_FLAT_M, EDGE_MARGIN_M)
         disk = shapely.Point(0, 0).buffer(radius, quad_segs=32)
@@ -262,7 +265,7 @@ class CoverageSource:
         small = [g for g in gaps if g.area < SMALL_GAP_M2 and not g.intersects(window.exterior)]
         if small:
             on_small = shapely.distance(shapely.union_all(small), shapely.points(xy)) < 1.0
-            margins = np.where(on_small, float(MARGIN_STEEP_M), margins)
+            margins = np.where(on_small, float(SMALL_GAP_MARGIN_M), margins)
         i = int(np.argmin(d - margins))
         return bool(d[i] >= margins[i]), float(d.min()), float(margins[i])
 

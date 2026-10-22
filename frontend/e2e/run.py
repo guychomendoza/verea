@@ -20,6 +20,13 @@ HERE = Path(__file__).resolve().parent
 SAMPLE = HERE / "sample.verea.json"
 OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(tempfile.mkdtemp(prefix="verea-e2e-"))
 URL = "http://127.0.0.1:5173/"
+
+
+def png_size(path: Path) -> tuple[int, int]:
+    """(width, height) of a PNG, checking it is one."""
+    data = path.read_bytes()
+    assert data[:8] == b"\x89PNG\r\n\x1a\n", "not a PNG"
+    return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
 errors = []
 with sync_playwright() as pw:
     b = pw.chromium.launch(args=["--use-gl=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"])
@@ -43,6 +50,12 @@ with sync_playwright() as pw:
     expect(panel).to_contain_text("Link margin")
     expect(panel.get_by_role("img", name="Terrain profile")).to_be_visible(timeout=30000)
     print("panel:", panel.locator(".verdict").inner_text())
+    # terrain chart image
+    with page.expect_download() as dl:
+        panel.get_by_role("button", name=re.compile("Download chart image")).click()
+    chart = OUT / "chart.png"
+    dl.value.save_as(chart)
+    print("chart image:", png_size(chart), dl.value.suggested_filename)
     page.wait_for_timeout(1500)
     page.screenshot(path=f"{OUT}/2_panel.png")
     # drag N-1 on the map: the map is centred on it after the click (flyTo)
@@ -68,6 +81,19 @@ with sync_playwright() as pw:
     expect(side.get_by_role("button", name=re.compile(r"GW-2"))).to_be_visible()   # refused: duplicate
     name.fill("Tower North"); name.press("Enter")
     expect(side.get_by_role("button", name=re.compile(r"Tower North"))).to_be_visible()
+    # place search: coordinates (no network) and a place name (Nominatim)
+    search = page.get_by_label("Search location")
+    search.fill("21.8818, -102.2916"); search.press("Enter")
+    page.wait_for_function("() => { const c = window.__vereaMap.getCenter();"
+                           " return Math.abs(c.lat - 21.8818) < 1e-3 && Math.abs(c.lng + 102.2916) < 1e-3 }",
+                           timeout=15000)
+    search.fill("Calvillo"); search.press("Enter")
+    results = page.get_by_label("Search results")
+    expect(results.get_by_role("button").first).to_be_visible(timeout=20000)
+    print("search Calvillo:", results.get_by_role("button").first.inner_text())
+    results.get_by_role("button").first.click()
+    page.wait_for_timeout(3000)
+    page.screenshot(path=f"{OUT}/2b_search_labels.png")
     # 4G coverage layer
     page.get_by_label("Operator").select_option("Telcel")
     page.get_by_label("Show on map").check()
@@ -75,6 +101,11 @@ with sync_playwright() as pw:
     expect(panel).to_contain_text("Covered around", timeout=30000)
     page.wait_for_timeout(4000)
     page.screenshot(path=f"{OUT}/3_coverage.png")
+    with page.expect_download() as dl:
+        page.get_by_role("button", name=re.compile("Map image")).click()
+    mp = OUT / "map.png"
+    dl.value.save_as(mp)
+    print("map image:", png_size(mp), dl.value.suggested_filename)
     # persists across reload (local copy)
     page.reload()
     expect(side.get_by_role("button", name=re.compile(r"Tower North"))).to_be_visible(timeout=30000)

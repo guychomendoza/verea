@@ -40,12 +40,11 @@ def _band_m(tmp_path, monkeypatch, relief_value, fixed=None):
 
 
 def test_flat_edges_get_a_wide_margin(tmp_path, monkeypatch):
-    assert _band_m(tmp_path, monkeypatch, 5) == pytest.approx(300, abs=45)
+    assert _band_m(tmp_path, monkeypatch, 5) == pytest.approx(500, abs=45)
 
 
 def test_steep_edges_get_a_narrow_margin(tmp_path, monkeypatch):
-    # 40 m is less than a cell: still one cell of edge, never none
-    assert _band_m(tmp_path, monkeypatch, 200) == pytest.approx(42, abs=1)
+    assert _band_m(tmp_path, monkeypatch, 200) == pytest.approx(250, abs=45)
 
 
 def test_fixed_margin_ignores_relief(tmp_path, monkeypatch):
@@ -65,5 +64,5 @@ def test_small_holes_get_a_narrow_margin(tmp_path, monkeypatch):
     monkeypatch.setattr(bct, "_RELIEF", Relief(relief))
     bct.classify_grid((TILE, str(parts), None, str(tmp_path)))
     classes = np.load(tmp_path / f"{TILE[0]}_{TILE[1]}.npz")["c"]
-    # 4x4 hole + one cell of edge all around = 6x6 cells, not a 300 m ring
-    assert (classes == 2).sum() == pytest.approx(36 - 16, abs=6)
+    # 4x4 hole: a ~100 m ring around it
+    assert 30 < (classes == 2).sum() < 70        # ring of ~2 cells (~100 m), not 500 m

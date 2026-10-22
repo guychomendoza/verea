@@ -5,8 +5,11 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { COLORS, COVERAGE_URL, DEFAULT_CENTER } from './colors'
 import type { CellStatus, LinkResult, Project, Selection } from './types'
 
-const ESRI_IMAGERY =
-  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services'
+const ESRI_IMAGERY = `${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`
+// Transparent reference layers: roads, then places and boundaries
+const ESRI_ROADS = `${ESRI}/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}`
+const ESRI_PLACES = `${ESRI}/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}`
 const GLYPHS = 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf'
 let protocolAdded = false
 
@@ -20,10 +23,13 @@ interface Props {
   cellular: Set<string>
   mode: MapMode
   showCoverage: boolean
+  showLabels: boolean
+  pin: { lat: number; lon: number } | null
   focus: { lat: number; lon: number; zoom?: number; key: number } | null
   onSelect: (s: Selection) => void
   onMove: (kind: 'gateway' | 'node', name: string, lat: number, lon: number) => void
   onAdd: (lat: number, lon: number) => void
+  onReady?: (map: maplibregl.Map) => void
 }
 
 function linkColor(r?: LinkResult): string {
@@ -102,6 +108,7 @@ export default function MapView(props: Props) {
       zoom: first ? 14 : 12,
       maxZoom: 19,
       attributionControl: { compact: true },
+      canvasContextAttributes: { preserveDrawingBuffer: true },   // map image download
       style: {
         version: 8,
         glyphs: GLYPHS,
@@ -109,6 +116,11 @@ export default function MapView(props: Props) {
           imagery: {
             type: 'raster', tiles: [ESRI_IMAGERY], tileSize: 256, maxzoom: 18,
             attribution: 'Imagery © Esri',
+          },
+          roads: { type: 'raster', tiles: [ESRI_ROADS], tileSize: 256, maxzoom: 19 },
+          places: {
+            type: 'raster', tiles: [ESRI_PLACES], tileSize: 256, maxzoom: 19,
+            attribution: 'Labels © Esri',
           },
           coverage: {
             type: 'raster', url: `pmtiles://${new URL(COVERAGE_URL, window.location.href).href}`,
@@ -124,6 +136,8 @@ export default function MapView(props: Props) {
             id: 'coverage', type: 'raster', source: 'coverage',
             layout: { visibility: 'none' }, paint: { 'raster-resampling': 'nearest' },
           },
+          { id: 'roads', type: 'raster', source: 'roads' },
+          { id: 'places', type: 'raster', source: 'places' },
           {
             id: 'links', type: 'line', source: 'links',
             paint: { 'line-color': ['get', 'color'], 'line-width': 3, 'line-opacity': 0.85 },
@@ -160,6 +174,7 @@ export default function MapView(props: Props) {
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right')
     map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left')
     mapRef.current = map
+    propsRef.current.onReady?.(map)
     if (import.meta.env.DEV) (window as unknown as { __vereaMap: maplibregl.Map }).__vereaMap = map
 
     const featureAt = (e: MapMouseEvent | MapTouchEvent) =>
@@ -225,6 +240,9 @@ export default function MapView(props: Props) {
       ;(map.getSource('devices') as GeoJSONSource).setData(devicesGeoJSON(props))
       ;(map.getSource('links') as GeoJSONSource).setData(linksGeoJSON(props))
       map.setLayoutProperty('coverage', 'visibility', props.showCoverage ? 'visible' : 'none')
+      for (const id of ['roads', 'places']) {
+        map.setLayoutProperty(id, 'visibility', props.showLabels ? 'visible' : 'none')
+      }
     }
     if (map.isStyleLoaded()) apply()
     else map.once('load', apply)
@@ -241,6 +259,17 @@ export default function MapView(props: Props) {
     })
     return () => cancelAnimationFrame(id)
   }, [props.focus])
+
+  // Marker of the last place searched
+  const pinRef = useRef<maplibregl.Marker | null>(null)
+  useEffect(() => {
+    const map = mapRef.current
+    pinRef.current?.remove()
+    pinRef.current = null
+    if (map && props.pin) {
+      pinRef.current = new maplibregl.Marker({ color: '#ef476f' }).setLngLat([props.pin.lon, props.pin.lat]).addTo(map)
+    }
+  }, [props.pin])
 
   // Inline style: maplibre-gl.css sets .maplibregl-map { position: relative }
   return <div ref={container} style={{ position: 'absolute', inset: 0 }} data-testid="map" />

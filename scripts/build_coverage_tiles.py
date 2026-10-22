@@ -13,8 +13,8 @@ Run once per quarter:
         data/coverage/telcel_4g_2026q2.pmtiles
 
 Needs requirements-build.txt (scipy, rasterio, pmtiles) besides the app requirements.
-The margin follows the terrain (core.cellular.margin_for_relief: ≈40 m where the relief is
-steep, ≈300 m on flat ground) when data/coverage/relief_mx.npz exists
+The margin follows the terrain (core.cellular.margin_for_relief: 250 m where the relief is
+steep, 500 m on flat ground; 100 m around small holes) when data/coverage/relief_mx.npz exists
 (scripts/build_relief.py); otherwise, or with --fixed-margin, it is the same everywhere.
 
 The operator maps are rasters of 50 m cells published as polygons, so they are
@@ -47,13 +47,13 @@ import shapely.geometry
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from core.cellular import (EDGE_MARGIN_M, MARGIN_FLAT_M, MARGIN_LEVELS_M, MARGIN_STEEP_M,  # noqa: E402
-                           RELIEF_FILE, SMALL_GAP_M2, TILE_DEG, Relief)
+from core.cellular import (EDGE_MARGIN_M, MARGIN_FLAT_M, MARGIN_LEVELS_M, RELIEF_FILE,  # noqa: E402
+                           SMALL_GAP_M2, SMALL_GAP_MARGIN_M, TILE_DEG, Relief)
 
 LAND_FILE = ROOT / "data" / "mexico_land.geojson"
 CELL = 0.0004                       # grid cell in degrees (≈44 m N-S), finer than the 50 m source
 N = round(TILE_DEG / CELL)          # 500 cells per 0.2° tile
-PAD_CELLS = 10                      # neighbour context (> largest margin) so seams make no fake edges
+PAD_CELLS = 15                      # neighbour context (> largest margin) so seams make no fake edges
 PAD_DEG = PAD_CELLS * CELL
 MIN_ZOOM, MAX_ZOOM = 5, 13          # z13 pixels ≈ 18 m; the browser over-zooms beyond
 MOSAIC_FACTORS = (4, 16)            # coarse national grids for low zooms (≈180 m, ≈710 m)
@@ -187,7 +187,7 @@ def classify_grid(args):
             small = np.bincount(labels.ravel()) * cell_m2 < SMALL_GAP_M2
             small[0] = False
             small[np.unique(np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]]))] = False
-            level[small[labels]] = MARGIN_STEEP_M
+            level[small[labels]] = SMALL_GAP_MARGIN_M
         else:
             level = np.full((n, n), float(fixed_margin))
         sampling = (CELL * 111_320, CELL * 111_320 * math.cos(math.radians(lat)))
@@ -327,7 +327,7 @@ def main():
         print(f"  no {RELIEF_FILE.name} (scripts/build_relief.py): fixed {EDGE_MARGIN_M} m margin", flush=True)
         margin = EDGE_MARGIN_M
     margin_text = (f"{margin:g} m" if margin is not None
-                   else f"terrain-adaptive {MARGIN_LEVELS_M[0]}–{MARGIN_FLAT_M} m")
+                   else f"terrain-adaptive {MARGIN_LEVELS_M[1]}–{MARGIN_FLAT_M} m, small holes {SMALL_GAP_MARGIN_M} m")
     print(f"Pass 2/3: classifying {len(tiles)} tiles on a {CELL}° grid (margin {margin_text})",
           flush=True)
     jobs = [(t, str(parts_dir / f"{t[0]}_{t[1]}.bin") if t in cov_tiles else None, margin,

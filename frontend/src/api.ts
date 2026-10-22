@@ -1,5 +1,5 @@
 import type {
-  Catalog, CellStatus, Gateway, LinkDetail, LinkResult, NodeDevice, Project, Settings,
+  Catalog, CellStatus, Gateway, LinkDetail, LinkResult, NodeDevice, Place, Project, Settings,
 } from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? ''
@@ -51,5 +51,7 @@ export const api = {
   cellStatus: (operator: string, points: { name: string; lat: number; lon: number }[],
     signal?: AbortSignal) =>
     call<{ points: CellStatus[]; sources: string[] }>('/api/cell-status', { operator, points }, signal),
+  geocode: (q: string, signal?: AbortSignal) =>
+    call<{ results: Place[] }>(`/api/geocode?q=${encodeURIComponent(q)}`, undefined, signal),
   normalize: (project: unknown) => call<Omit<Project, 'version'>>('/api/project/normalize', { project }),
 }

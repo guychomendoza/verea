@@ -68,15 +68,15 @@ def test_geometries_clip_to_bbox(coverage_file):
 
 
 def test_margin_near_a_gap(coverage_file):
-    """Without relief data, covered points closer than EDGE_MARGIN_M (100 m) to a gap are not certain."""
+    """Without relief data, covered points closer than EDGE_MARGIN_M (250 m) to a gap are not certain."""
     from core.cellular import EDGE_MARGIN_M
     s = CoverageSource(coverage_file, relief=Relief(None))
     deg_lon = 111_320 * math.cos(math.radians(19.62))
-    near = s.status_at(19.62, -103.50 + 60 / deg_lon)     # 60 m inside the west edge
-    far = s.status_at(19.62, -103.50 + 160 / deg_lon)     # 160 m inside
+    near = s.status_at(19.62, -103.50 + 200 / deg_lon)    # 200 m inside the west edge
+    far = s.status_at(19.62, -103.50 + 300 / deg_lon)     # 300 m inside
     assert near.covered and not near.margin_ok
     assert far.covered and far.margin_ok
-    assert EDGE_MARGIN_M == 100
+    assert EDGE_MARGIN_M == 250
 
 
 def test_split_by_margin_partitions_coverage():
@@ -90,13 +90,13 @@ def test_split_by_margin_partitions_coverage():
 
 
 def test_margin_for_relief():
-    assert margin_for_relief(0) == pytest.approx(300)
-    assert margin_for_relief(15) == pytest.approx(300)
-    assert margin_for_relief(120) == pytest.approx(40)
-    assert margin_for_relief(255) == pytest.approx(40)
+    assert margin_for_relief(0) == pytest.approx(500)
+    assert margin_for_relief(15) == pytest.approx(500)
+    assert margin_for_relief(120) == pytest.approx(250)
+    assert margin_for_relief(255) == pytest.approx(250)
     m = margin_for_relief([20, 40, 80])
-    assert 300 > m[0] > m[1] > m[2] > 40
-    assert margin_for_relief(np.nan) == 100
+    assert 500 > m[0] > m[1] > m[2] > 250
+    assert margin_for_relief(np.nan) == 250
 
 
 def _relief_file(tmp_path, value):
@@ -115,17 +115,17 @@ def test_relief_lookup(tmp_path):
 
 
 @pytest.mark.parametrize("relief, inside_m, ok", [
-    (5, 200, False),      # flat: 300 m margin
-    (5, 330, True),
-    (200, 60, True),      # steep: 40 m margin
-    (200, 25, False),
+    (5, 450, False),      # flat: 500 m margin
+    (5, 530, True),
+    (200, 280, True),     # steep: 250 m margin
+    (200, 220, False),
 ])
 def test_margin_follows_relief(coverage_file, tmp_path, relief, inside_m, ok):
     s = CoverageSource(coverage_file, relief=_relief_file(tmp_path, relief))
     deg_lon = 111_320 * math.cos(math.radians(19.62))
     hit = s.status_at(19.62, -103.50 + inside_m / deg_lon)
     assert hit.covered and hit.margin_ok is ok
-    if inside_m < 300:
+    if inside_m < 500:
         assert hit.edge_m == pytest.approx(inside_m, abs=3)
         assert hit.margin_m == pytest.approx(margin_for_relief(relief))
     else:
@@ -133,7 +133,7 @@ def test_margin_follows_relief(coverage_file, tmp_path, relief, inside_m, ok):
 
 
 def test_small_hole_gets_the_steep_margin(tmp_path):
-    """On flat ground a 150 m hole is a local obstruction: 40 m margin, not 300 m."""
+    """On flat ground a 150 m hole is a local obstruction: 100 m margin, not 500 m."""
     deg_lon = 111_320 * math.cos(math.radians(19.65))
     hole = shapely.box(-103.45, 19.65, -103.45 + 150 / deg_lon, 19.65 + 150 / 111_320)
     area = shapely.box(-103.50, 19.60, -103.40, 19.70).difference(hole)
@@ -142,8 +142,8 @@ def test_small_hole_gets_the_steep_margin(tmp_path):
     path = tmp_path / "RADIOMOVIL_4G_GARANTIZADA_2T_2026.gpkg"
     gdf.to_file(path, driver="GPKG")
     s = CoverageSource(path, relief=_relief_file(tmp_path, 5))      # flat
-    hit = s.status_at(19.65 + 75 / 111_320, -103.45 - 100 / deg_lon)   # 100 m west of the hole
+    hit = s.status_at(19.65 + 75 / 111_320, -103.45 - 130 / deg_lon)   # 130 m west of the hole
     assert hit.covered and hit.margin_ok
-    assert hit.edge_m == pytest.approx(100, abs=3) and hit.margin_m == 40
-    near = s.status_at(19.65 + 75 / 111_320, -103.45 - 25 / deg_lon)
+    assert hit.edge_m == pytest.approx(130, abs=3) and hit.margin_m == 100
+    near = s.status_at(19.65 + 75 / 111_320, -103.45 - 70 / deg_lon)
     assert not near.margin_ok

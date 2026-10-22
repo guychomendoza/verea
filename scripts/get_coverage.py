@@ -26,9 +26,9 @@ RELEASE_TAG = "coverage-2026Q2"
 FILES = [
     ("RADIOMOVIL_4G_GARANTIZADA_2T_2026.gpkg", 1204379648,
      "dc54d40be2d479102345f314fed6cad95db85a36a24fe54f68059d133eca1463"),
-    # map tiles made by scripts/build_coverage_tiles.py (terrain-adaptive margin)
-    ("telcel_4g_2026q2.pmtiles", 130051722,
-     "5b9b5b7c191b36d5b0793fb325eace113a101bce7bf760aa4be9730de6d31ba2"),
+    # map tiles made by scripts/build_coverage_tiles.py (margin 250-500 m by terrain)
+    ("telcel_4g_2026q2.pmtiles", 122283905,
+     "eeec92b432d6532b3974cf8890fdff3d001de27fcf4e34be6761c7dd5dd51d3a"),
     # relief that sizes the margin (scripts/build_relief.py, Copernicus DEM GLO-90)
     ("relief_mx.npz", 21978076,
      "9f541951ebb319fa0df37cc3d3c23d3636b56bdc8fbea4c6426e655757cf1f23"),

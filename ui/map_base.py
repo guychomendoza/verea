@@ -19,6 +19,10 @@ from jinja2 import Template
 
 ESRI_IMAGERY = ("https://server.arcgisonline.com/ArcGIS/rest/services/"
                 "World_Imagery/MapServer/tile/{z}/{y}/{x}")
+ESRI_ROADS = ("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/"
+              "World_Transportation/MapServer/tile/{z}/{y}/{x}")
+ESRI_PLACES = ("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/"
+               "World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}")
 
 LABEL_CSS = """
 <style>
@@ -297,6 +301,10 @@ def base_map(center, zoom: int, height=None) -> folium.Map:
                    **({"height": height} if height else {}))
     folium.TileLayer(ESRI_IMAGERY, attr="Esri", name="Satellite", max_zoom=19,
                      max_native_zoom=18, cross_origin="anonymous").add_to(m)
+    # Place names, roads and boundaries over the imagery (transparent reference layers)
+    for url in (ESRI_ROADS, ESRI_PLACES):
+        folium.TileLayer(url, attr="Esri", overlay=True, max_zoom=19, max_native_zoom=19,
+                         cross_origin="anonymous").add_to(m)
     m.get_root().header.add_child(Element(LABEL_CSS))
     CaptureControl().add_to(m)
     RulerControl().add_to(m)

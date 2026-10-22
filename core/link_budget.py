@@ -202,26 +202,29 @@ def calculate_link_budget(
     # the margins below so predicted RSSI/SNR stay comparable to field readings.
     # ── Terrain loss over free space ──
     # ITM (default) models ground reflection and multi-obstacle diffraction over
-    # the real profile. Where ITM does not apply (paths under ~1 km) the
-    # delta-Bullington short-path model takes over; the simple model only
-    # adds the knife-edge penalty (kept for comparison).
+    # the real profile; the delta-Bullington short-path model (ITU-R P.526) does
+    # the same more simply and also covers paths under ~1 km, where ITM does not
+    # apply. With the low antennas of field sensors ITM is outside its comfort
+    # zone: it swings 8-15 dB with the profile sampling and can come out ~12 dB
+    # below P.526 on the same terrain. So the larger (more conservative) of the
+    # two is used. The simple model only adds the knife-edge penalty (comparison).
     terrain_loss = diffraction_loss_val
     model_used = "simple"
     if propagation_model == "itm":
+        short_loss = short_path_excess_loss(
+            terrain.elevations, distance,
+            gateway.antenna.height_m, node.antenna.height_m, freq,
+        )
         itm_loss = itm_path_loss(
             terrain.elevations, distance,
             gateway.antenna.height_m, node.antenna.height_m, freq,
         )
-        if itm_loss is not None:
-            # Conservative: never better than free space
-            terrain_loss = max(itm_loss - fspl_loss, 0.0)
-            model_used = "itm"
+        # Never better than free space
+        itm_excess = None if itm_loss is None else max(itm_loss - fspl_loss, 0.0)
+        if itm_excess is not None and itm_excess >= short_loss:
+            terrain_loss, model_used = itm_excess, "itm"
         else:
-            terrain_loss = short_path_excess_loss(
-                terrain.elevations, distance,
-                gateway.antenna.height_m, node.antenna.height_m, freq,
-            )
-            model_used = "short"
+            terrain_loss, model_used = short_loss, "short"
 
     total_path_loss = fspl_loss + terrain_loss + env_clutter
 

@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from './api'
+import { downloadBlob, safeName, svgToPng } from './exportImage'
 import ProfileChart from './ProfileChart'
 import { isCellular, nameError } from './project'
 import type { Catalog, CellStatus, Gateway, LinkDetail, LinkResult, NodeDevice, Project } from './types'
@@ -53,6 +54,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 export default function DevicePanel(p: Props) {
   const [name, setName] = useState(p.device.name)
   const [detail, setDetail] = useState<LinkDetail | null>(null)
+  const chartRef = useRef<HTMLDivElement>(null)
   useEffect(() => setName(p.device.name), [p.device.name])
   const err = nameError(p.project, p.device.name, name)
   const node = p.kind === 'node' ? (p.device as NodeDevice) : null
@@ -71,6 +73,25 @@ export default function DevicePanel(p: Props) {
     api.link(bestGw, node, p.project.settings, ctrl.signal).then(setDetail).catch(() => {})
     return () => ctrl.abort()
   }, [node, bestGw, p.project.settings])
+
+  const exportChart = async () => {
+    const svg = chartRef.current?.querySelector('svg')
+    if (!svg || !best || !detail || !node) return
+    const blob = await svgToPng(svg, {
+      title: `Terrain profile ${best.gateway} → ${node.name}`,
+      subtitle: `${(best.distance_m / 1000).toFixed(2)} km · link margin ${best.margin_db.toFixed(1)} dB `
+        + `(${best.viable ? 'viable' : 'not viable'}) · RSSI ${best.rssi_dbm.toFixed(0)} dBm · SF${node.sf} · `
+        + `${p.project.name.trim() || 'Verea project'}`,
+      legend: [
+        { color: getComputedStyle(svg).getPropertyValue('--terrain').trim() || '#b9a27a', label: 'Terrain (m above sea level)' },
+        { color: getComputedStyle(svg).getPropertyValue('--los').trim() || '#118ab2', label: 'Line of sight', line: true },
+        { color: getComputedStyle(svg).getPropertyValue('--fresnel').trim() || '#7b8794', label: '1st Fresnel zone (lower edge)', line: true },
+        { color: getComputedStyle(svg).getPropertyValue('--worst').trim() || '#ef476f', label: 'Tightest point' },
+      ],
+      attribution: `Elevation: ${detail.profile.elevation_source}`,
+    })
+    downloadBlob(blob, `${safeName(`${best.gateway}_${node.name}`)}_profile.png`)
+  }
 
   const changeModel = (model: string) => {
     const pr = profiles[model]
@@ -117,7 +138,12 @@ export default function DevicePanel(p: Props) {
                 <Metric label="Distance" value={`${(best.distance_m / 1000).toFixed(2)} km`} />
               </div>
               {best.reasons.length > 0 && <ul className="hint list-disc pl-4">{best.reasons.map((r) => <li key={r}>{r}</li>)}</ul>}
-              {detail ? <ProfileChart profile={detail.profile} /> : <div className="hint">Loading terrain…</div>}
+              {detail ? (
+                <>
+                  <div ref={chartRef}><ProfileChart profile={detail.profile} /></div>
+                  <button className="btn self-start" onClick={exportChart}>📈 Download chart image</button>
+                </>
+              ) : <div className="hint">Loading terrain…</div>}
             </>
           ) : (
             <div className="verdict warn">⚠ {p.link?.error ?? 'Calculating…'}</div>

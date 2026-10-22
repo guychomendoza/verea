@@ -14,6 +14,7 @@ from config import (
     DEFAULT_DIFFRACTION_METHOD, DEFAULT_FADING_MARGIN_DB, DEFAULT_PROPAGATION_MODEL,
     DEFAULT_SAFETY_MARGIN_DB, ENVIRONMENT_PROFILES, clamp_sf,
 )
+from core.cellular import MARGIN_FLAT_M, MARGIN_STEEP_M, SMALL_GAP_MARGIN_M
 from core.devices import Antenna, EndNode, Gateway, WeatherStation
 from core.link_budget import calculate_link_budget
 from core.profiles import gateway_profile, node_profile
@@ -165,8 +166,9 @@ def cell_state(operator: str, hit, diff) -> dict:
     if hit and hit.covered and hit.margin_ok:
         state = ("ok", f"✅ {operator} 4G guaranteed", f"{operator} 4G ✓")
     elif hit and hit.covered:
-        terrain = ("steep terrain" if hit.margin_m <= 60 else "flat terrain" if hit.margin_m >= 200
-                   else "rolling terrain")
+        terrain = ("small gap" if hit.margin_m <= SMALL_GAP_MARGIN_M
+                   else "steep terrain" if hit.margin_m <= MARGIN_STEEP_M + 20
+                   else "flat terrain" if hit.margin_m >= MARGIN_FLAT_M - 50 else "rolling terrain")
         state = ("edge", f"⚠️ {operator} 4G uncertain: {hit.edge_m:,.0f} m from an area without "
                          f"signal (margin there {hit.margin_m:,.0f} m, {terrain})",
                  f"{operator} 4G uncertain")

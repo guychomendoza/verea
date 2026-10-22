@@ -397,9 +397,26 @@ class TestITM:
         r_itm = calculate_link_budget(gw, node, terrain, fading_margin_db=0.0)
         r_simple = calculate_link_budget(gw, node, terrain, fading_margin_db=0.0,
                                          propagation_model="simple")
-        assert r_itm.propagation_model == "itm"
+        assert r_itm.propagation_model in ("itm", "short")
         assert r_simple.propagation_model == "simple"
         assert r_itm.total_path_loss_db > r_simple.total_path_loss_db + 15
+
+    def test_terrain_loss_is_the_larger_of_itm_and_p526(self):
+        """Conservative envelope: never less loss than either model on the same profile."""
+        from core.propagation import fspl, itm_path_loss, short_path_excess_loss
+        gw = Gateway(altitude_m=1500.0)
+        node = EndNode(altitude_m=1500.0)
+        for km, hill in ((1.5, 40.0), (6.0, 80.0), (18.0, 0.0)):
+            d = km * 1000
+            elev = 1500.0 + hill * np.exp(-((np.linspace(0, 1, 120) - 0.5) / 0.08) ** 2)
+            terrain = self._terrain(d, elev)
+            r = calculate_link_budget(gw, node, terrain, fading_margin_db=0.0)
+            d = r.distance_m
+            h1, h2 = gw.antenna.height_m, node.antenna.height_m
+            itm = itm_path_loss(elev, d, h1, h2, node.frequency_hz)
+            short = fspl(d, node.frequency_hz) + short_path_excess_loss(elev, d, h1, h2, node.frequency_hz)
+            expected = max(short, itm if itm is not None else 0.0)
+            assert r.total_path_loss_db - r.clutter_loss_db == pytest.approx(expected, abs=0.01), km
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -582,16 +599,21 @@ class TestSafetyMarginAndSampling:
         from core.terrain import link_samples
         assert link_samples(100) == 30
         assert link_samples(4500) == 51
-        assert link_samples(50_000) == 100
+        assert link_samples(20_000) == 224
+        assert link_samples(50_000) == 400
 
     def test_never_asks_api_for_more_than_100_points(self):
-        from config import MAX_ELEVATION_POINTS
+        from config import MAX_ELEVATION_POINTS, MAX_PROFILE_POINTS
 
         class FakeAPI:
             source_name = "fake"
+            calls = 0
             def fetch_elevations(self, coords):
                 assert len(coords) <= MAX_ELEVATION_POINTS
+                FakeAPI.calls += 1
                 return np.full(len(coords), 1500.0)
 
-        t = TerrainProfile.from_coordinates(21.0, -102.0, 21.2, -102.0, n_points=200, api=FakeAPI())
-        assert t.n_points == MAX_ELEVATION_POINTS
+        t = TerrainProfile.from_coordinates(21.0, -102.0, 21.2, -102.0, n_points=250, api=FakeAPI())
+        assert t.n_points == len(t.elevations) == 250 and FakeAPI.calls == 3
+        t = TerrainProfile.from_coordinates(21.0, -102.0, 21.9, -102.0, n_points=999, api=FakeAPI())
+        assert t.n_points == MAX_PROFILE_POINTS

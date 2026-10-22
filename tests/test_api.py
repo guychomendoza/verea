@@ -142,3 +142,40 @@ def test_cors_only_allowed_origins(client):
     r = client.options("/api/links", headers={"Origin": "https://evil.example",
                                               "Access-Control-Request-Method": "POST"})
     assert "access-control-allow-origin" not in r.headers
+
+
+def test_geocode_coordinates_and_places(client, monkeypatch):
+    r = client.get("/api/geocode", params={"q": "21.8818, -102.2916"}).json()["results"]
+    assert r == [{"name": "21.881800, -102.291600", "lat": 21.8818, "lon": -102.2916, "kind": "coordinates"}]
+    calls = []
+
+    def fake_search(q):
+        calls.append(q)
+        return [{"name": "Aguascalientes, México", "lat": 21.88, "lon": -102.29, "kind": "city"}]
+    monkeypatch.setattr(api.GEOCODER, "search", fake_search)
+    r = client.get("/api/geocode", params={"q": "Aguascalientes"}).json()["results"]
+    assert r[0]["kind"] == "city" and calls == ["Aguascalientes"]
+    assert client.get("/api/geocode", params={"q": "x"}).status_code == 422
+
+
+def test_geocoder_caches_and_waits(monkeypatch):
+    g = api.Geocoder()
+    hits = []
+
+    class Resp:
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+        def read(self, *a):
+            return b'[{"display_name": "Calvillo", "lat": "21.85", "lon": "-102.71", "type": "town"}]'
+
+    def fake_open(req, timeout):
+        hits.append((time.monotonic(), req.get_header("User-agent")))
+        return Resp()
+    monkeypatch.setattr(api.urllib.request, "urlopen", fake_open)
+    assert g.search("Calvillo")[0]["lat"] == 21.85
+    assert g.search("calvillo ")[0]["lon"] == -102.71          # cached, no request
+    g.search("Jesús María")
+    assert len(hits) == 2 and "Verea" in hits[0][1]
+    assert hits[1][0] - hits[0][0] >= 0.99                      # 1 request per second

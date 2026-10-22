@@ -83,6 +83,7 @@ DEFAULT_CABLE_LOSS_DB = 1.5           # coax + connectors
 # ─── Terrain / GIS ───────────────────────────────────────────
 TERRAIN_SAMPLE_POINTS = 100
 MAX_ELEVATION_POINTS = 100            # Open-Meteo and OpenTopoData reject more per request
+MAX_PROFILE_POINTS = 400              # per link: one per 90 m DEM cell up to 36 km, fetched 100 at a time
 MIN_FRESNEL_CLEARANCE_PCT = 60.0      # 60% of F1 = acceptable
 FLAT_TERRAIN_ELEVATION_M = 1500.0     # last-resort fallback elevation
 

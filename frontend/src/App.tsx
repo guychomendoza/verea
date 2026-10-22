@@ -1,8 +1,12 @@
-import { useCallback, useEffect, useMemo, useReducer, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import type maplibregl from 'maplibre-gl'
 import { api, ApiError } from './api'
+import { COLORS } from './colors'
 import DevicePanel from './DevicePanel'
+import { downloadBlob, mapToPng, safeName, type LegendItem } from './exportImage'
 import MapView, { type MapMode } from './MapView'
 import { emptyProject, isCellular, PROJECT_VERSION, reduce, rename, selected, type Action } from './project'
+import SearchBox from './SearchBox'
 import Sidebar from './Sidebar'
 import type { Catalog, CellStatus, LinkResult, Project, Selection } from './types'
 
@@ -53,6 +57,9 @@ function Workspace({ catalog }: { catalog: Catalog }) {
   const [mode, setMode] = useState<MapMode>('select')
   const [addModel, setAddModel] = useState('')
   const [showCoverage, setShowCoverage] = useState(false)
+  const [showLabels, setShowLabels] = useState(true)
+  const [pin, setPin] = useState<{ lat: number; lon: number } | null>(null)
+  const mapRef = useRef<maplibregl.Map | null>(null)
   const [focus, setFocus] = useState<{ lat: number; lon: number; zoom?: number; key: number } | null>(null)
   const [links, setLinks] = useState<Record<string, LinkResult>>({})
   const [cells, setCells] = useState<Record<string, CellStatus>>({})
@@ -143,6 +150,35 @@ function Workspace({ catalog }: { catalog: Catalog }) {
     }
   }
 
+  const exportMap = async () => {
+    const map = mapRef.current
+    if (!map) return
+    const legend: LegendItem[] = []
+    if (project.gateways.length) legend.push({ color: COLORS.gateway, label: 'Gateway' })
+    if (Object.keys(links).length) {
+      legend.push({ color: COLORS.viable, label: 'Viable link', line: true },
+        { color: COLORS.marginal, label: 'Marginal', line: true },
+        { color: COLORS.fail, label: 'Not viable', line: true })
+    }
+    if (showCoverage) {
+      legend.push({ color: COLORS.cellOk, label: '4G guaranteed' },
+        { color: COLORS.cellEdge, label: '4G uncertain (near a gap)' },
+        { color: COLORS.cellNone, label: 'No 4G declared' })
+    }
+    const center = map.getCenter()
+    try {
+      const blob = await mapToPng(map.getCanvas(), {
+        title: project.name.trim() || 'Verea project',
+        subtitle: `${new Date().toLocaleString()} · centre ${center.lat.toFixed(5)}, ${center.lng.toFixed(5)}`,
+        legend,
+        attribution: 'Imagery and labels © Esri' + (showCoverage ? ' · 4G coverage: CRT / datos.gob.mx (CC BY 4.0)' : ''),
+      })
+      downloadBlob(blob, `${safeName(project.name)}_map.png`)
+    } catch (e) {
+      setStatus(`⚠ Could not create the map image: ${e instanceof Error ? e.message : e}`)
+    }
+  }
+
   const exportFile = () => {
     const blob = new Blob([JSON.stringify({ ...project, saved_at: new Date().toISOString() }, null, 1)],
       { type: 'application/json' })
@@ -162,6 +198,7 @@ function Workspace({ catalog }: { catalog: Catalog }) {
         onSettings={(patch) => dispatch({ type: 'settings', patch })}
         onMeta={(name) => dispatch({ type: 'meta', name })}
         onSelect={select} onShowCoverage={setShowCoverage}
+        showLabels={showLabels} onShowLabels={setShowLabels}
         onImport={importFile} onExport={exportFile}
         onNew={() => {
           if (!confirm('Start a new empty project? Save the current one to a file first if you need it.')) return
@@ -170,10 +207,18 @@ function Workspace({ catalog }: { catalog: Catalog }) {
         }} />
       <main className="map-area">
         <MapView project={project} selection={selection} links={links} cells={cells} cellular={cellular}
-          mode={mode} showCoverage={showCoverage} focus={focus}
+          mode={mode} showCoverage={showCoverage} showLabels={showLabels} pin={pin} focus={focus}
+          onReady={(m) => { mapRef.current = m }}
           onSelect={(s) => setSelection(s)}
           onMove={(kind, name, lat, lon) => dispatch({ type: 'move', kind, name, lat, lon })}
           onAdd={add} />
+        <div className="map-tools">
+          <SearchBox onPick={(pl) => {
+            setPin({ lat: pl.lat, lon: pl.lon })
+            setFocus({ lat: pl.lat, lon: pl.lon, zoom: pl.kind === 'coordinates' ? 16 : 14, key: Date.now() })
+          }} />
+          <button className="btn map-btn" onClick={exportMap} title="Download the map as a PNG image">📷 Map image</button>
+        </div>
         {mode !== 'select' && (
           <div className="mode-banner">Click the map to place the {mode === 'addGateway' ? 'gateway' : 'node'} · Esc to cancel</div>
         )}

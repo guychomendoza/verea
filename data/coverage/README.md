@@ -23,12 +23,12 @@ Two kinds of file:
   read by the browser piece by piece. Made from the GeoPackage with
   `scripts/build_coverage_tiles.py` (≈25 min, needs `pip install -r requirements-build.txt`).
 - `relief_mx.npz` — terrain relief (highest minus lowest point within 500 m, every
-  ≈270 m) that sizes the yellow band: ≈40 m where a hill cuts the signal (sharp edge),
-  up to 300 m on flat ground (the edge depends on distance to the tower, and a few dB
+  ≈270 m) that sizes the yellow band: 250 m where a hill cuts the signal (sharp edge),
+  up to 500 m on flat ground (the edge depends on distance to the tower, and a few dB
   of model error move it far). Made with `scripts/build_relief.py` from the Copernicus
   DEM GLO-90 (downloads ≈1 GB into `data/dem/` once). Small holes inside coverage
-  (< 0.1 km²) are local obstructions, not distance limits, and always get 40 m.
-  Without the file the band is a fixed 100 m.
+  (< 0.1 km²) are local obstructions, not distance limits, and get 100 m.
+  Without the file the band is a fixed 250 m.
 
 **New quarter:** download the new GeoPackage from datos.gob.mx (below), build the
 tiles, publish them as a new release with the relief grid (it does not change between

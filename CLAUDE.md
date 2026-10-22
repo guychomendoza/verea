@@ -36,8 +36,12 @@ frontend, DB with users) is planned.
   Elevations from the local DEM (`core/dem.py`), sampled like Open-Meteo (cell containing the
   point, whole metres) so margins match the app exactly.
 - `config.py` — radio constants, SX1276/SX1302 sensitivity, US915 SF7–10, environments, safety margin.
-- `core/link_budget.py` — LoRa link budget. Terrain loss: ITM (`core/propagation.itm_path_loss`)
-  for paths ≥ ~1 km, delta-Bullington short-path model (ITU-R P.526) below.
+- `core/link_budget.py` — LoRa link budget. Terrain loss: the larger of ITM
+  (`core/propagation.itm_path_loss`, ≥ 1 km) and delta-Bullington / ITU-R P.526 (any length).
+  Since 2026-10-21: with low sensor antennas ITM swings 8–15 dB with profile sampling and can be
+  ~12 dB below P.526, so the envelope avoids its optimistic artefacts. Profiles use one point per
+  90 m DEM cell up to 400 points (`MAX_PROFILE_POINTS`), fetched 100 per request. ITM stays at
+  median (50 %): the safety margin is the reserve; calibrate with field RSSI before changing it.
 - `core/terrain.py` — elevation profiles (Open-Meteo, fallback OpenTopoData; both accept
   max 100 points per request → `link_samples()`).
 - `core/coverage.py` — range along a direction and gateway coverage radials.
@@ -47,7 +51,8 @@ frontend, DB with users) is planned.
 - `core/cellular.py` — 4G coverage per point from the CRT GeoPackage (0.2° tile cache on
   disk): covered, declared level, share covered within 300 m, nearest coverage,
   `margin_ok` (no coverage edge within its terrain-adaptive margin: `margin_for_relief`,
-  40 m steep → 300 m flat; small holes < `SMALL_GAP_M2` (0.1 km²) always 40 m;
+  250 m steep → 500 m flat (raised 2026-10-21: green looked optimistic); small holes
+  < `SMALL_GAP_M2` (0.1 km²) 100 m;
   fixed `EDGE_MARGIN_M` = 100 m without relief data).
 - `core/towers.py` — OpenCelliD LTE cells → approximate sites (cells grouped by eNodeB, median
   position) in `data/coverage/towers_mx.csv` (`scripts/get_towers.py`; token, or `--from-file`).
@@ -101,7 +106,7 @@ frontend, DB with users) is planned.
    github.com/NorthveilSystems/treadstone-celldata, release 2026-10) the terrain model explains the
    declared map better than distance alone but worse than the map's own neighbourhood (leave-out
    Brier 0.14–0.16 vs 0.09–0.15), fitted σ ≈ 20 dB. Approximate site positions without sectors
-   cannot add to the operator's map, so no per-sensor probabilities are shown. The 40–300 m relief
+   cannot add to the operator's map, so no per-sensor probabilities are shown. The relief
    margins of step 1 are also unvalidated: only field RSSI can calibrate them.
 Field calibration with sensor RSSI comes later (no 4G sensors installed yet; they will
 report to the company's own server).

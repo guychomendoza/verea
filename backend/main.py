@@ -11,15 +11,21 @@ Environment:
   VEREA_DEV=1          accept requests without a login (local development only)
 """
 
+import json
 import math
 import os
+import re
 import sys
 import threading
+import time
+import urllib.parse
+import urllib.request
+from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -40,6 +46,10 @@ from core.terrain import ElevationAPI  # noqa: E402
 
 COVERAGE_DIR = ROOT / "data" / "coverage"
 MAX_RADIAL_POINTS = 100
+NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+# Nominatim's usage policy: identify the application, at most 1 request per second, cache results
+GEOCODER_AGENT = "Verea/0.1 (agricultural IoT network planning; +https://github.com/guychomendoza/verea)"
+_COORDS_RE = re.compile(r"^\s*(-?\d{1,2}(?:\.\d+)?)\s*[, ]\s*(-?\d{1,3}(?:\.\d+)?)\s*$")
 
 
 class SharedElevations:
@@ -224,3 +234,54 @@ def cell_status(req: CellRequest, user=Depends(require_user)):
                             nearest_m=hit.nearest_m, edge_m=hit.edge_m, margin_m=hit.margin_m)
             out.append(item)
     return {"points": out, "sources": [s.label for s in srcs.values()]}
+
+
+class Geocoder:
+    """Place search through Nominatim (OpenStreetMap), one request per second, cached."""
+
+    def __init__(self, max_cache: int = 500):
+        self._lock = threading.Lock()
+        self._last = 0.0
+        self._cache: OrderedDict = OrderedDict()
+        self._max = max_cache
+
+    def search(self, q: str) -> list[dict]:
+        key = q.strip().lower()
+        with self._lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
+                return self._cache[key]
+            wait = 1.0 - (time.monotonic() - self._last)
+            if wait > 0:
+                time.sleep(wait)
+            url = NOMINATIM_URL + "?" + urllib.parse.urlencode(
+                {"q": q, "format": "jsonv2", "limit": 6, "countrycodes": "mx", "accept-language": "es"})
+            req = urllib.request.Request(url, headers={"User-Agent": GEOCODER_AGENT})
+            try:
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    data = json.load(r)
+            finally:
+                self._last = time.monotonic()
+            out = [{"name": d.get("display_name", ""), "lat": float(d["lat"]), "lon": float(d["lon"]),
+                    "kind": d.get("type", "")} for d in data]
+            self._cache[key] = out
+            if len(self._cache) > self._max:
+                self._cache.popitem(last=False)
+            return out
+
+
+GEOCODER = Geocoder()
+
+
+@app.get("/api/geocode")
+def geocode(q: str = Query(min_length=2, max_length=120), user=Depends(require_user)):
+    """Places in Mexico matching q, or the point itself when q is "lat, lon"."""
+    m = _COORDS_RE.match(q)
+    if m:
+        lat, lon = float(m[1]), float(m[2])
+        if -90 <= lat <= 90 and -180 <= lon <= 180:
+            return {"results": [{"name": f"{lat:.6f}, {lon:.6f}", "lat": lat, "lon": lon, "kind": "coordinates"}]}
+    try:
+        return {"results": GEOCODER.search(q)}
+    except OSError:
+        raise HTTPException(502, "Place search is not available right now")

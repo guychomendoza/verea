@@ -22,6 +22,7 @@ from config import (
     OPENTOPODATA_ELEVATION_URL,
     TERRAIN_SAMPLE_POINTS,
     MAX_ELEVATION_POINTS,
+    MAX_PROFILE_POINTS,
     EFFECTIVE_EARTH_K,
     MIN_FRESNEL_CLEARANCE_PCT,
     FLAT_TERRAIN_ELEVATION_M,
@@ -42,10 +43,10 @@ _flat_terrain_warned = False
 
 def link_samples(distance_m: float) -> int:
     """
-    Elevation points for a link: about one per 90 m DEM cell, between 30 and
-    the 100 the elevation APIs accept per request.
+    Elevation points for a link: about one per 90 m DEM cell (coarser samples miss
+    ridges: up to ±10 dB on long links), between 30 and MAX_PROFILE_POINTS.
     """
-    return int(min(max(np.ceil(distance_m / 90.0) + 1, 30), MAX_ELEVATION_POINTS))
+    return int(min(max(np.ceil(distance_m / 90.0) + 1, 30), MAX_PROFILE_POINTS))
 
 
 class ElevationAPI:
@@ -207,9 +208,13 @@ class TerrainProfile:
         if api is None:
             api = ElevationAPI()
 
-        n_points = max(3, min(int(n_points), MAX_ELEVATION_POINTS))
+        n_points = max(3, min(int(n_points), MAX_PROFILE_POINTS))
         coords = interpolate_coordinates(lat1, lon1, lat2, lon2, n_points)
-        elevations = api.fetch_elevations(coords)
+        # The elevation APIs accept MAX_ELEVATION_POINTS per request
+        elevations = np.concatenate([
+            np.asarray(api.fetch_elevations(coords[i:i + MAX_ELEVATION_POINTS]), dtype=float)
+            for i in range(0, n_points, MAX_ELEVATION_POINTS)
+        ])
 
         total_d = haversine(lat1, lon1, lat2, lon2)
         distances = np.linspace(0, total_d, n_points)
