@@ -55,6 +55,7 @@ export type Action =
   | { type: 'remove'; kind: 'gateway' | 'node'; name: string }
   | { type: 'settings'; patch: Partial<Settings> }
   | { type: 'meta'; name?: string; description?: string }
+  | { type: 'removePlot'; id: string }
 
 export function reduce(p: Project, a: Action): Project {
   switch (a.type) {
@@ -97,6 +98,9 @@ export function reduce(p: Project, a: Action): Project {
       return { ...p, settings: { ...p.settings, ...a.patch } }
     case 'meta':
       return { ...p, name: a.name ?? p.name, description: a.description ?? p.description }
+    case 'removePlot':
+      return { ...p, plots: (p.plots ?? []).filter((pl) => pl.id !== a.id),
+        nodes: p.nodes.map((n) => (n.plot === a.id ? { ...n, plot: undefined } : n)) }
   }
 }
 

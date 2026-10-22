@@ -4,8 +4,11 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { COLORS, DEFAULT_CENTER } from './colors'
 import { distance, haversine } from './geo'
 import { registerDeviceIcons } from './deviceIcons'
-import { MAP_LOCALE, buildStyle, devicesGeoJSON, ensurePmtiles, linksGeoJSON } from './mapStyle'
+import { MAP_LOCALE, buildStyle, devicesGeoJSON, ensurePmtiles, linksGeoJSON, plotsGeoJSON } from './mapStyle'
 import type { CellStatus, LinkResult, Project, Selection } from './types'
+
+/** Where to move the view: a point (and zoom), or a box to fit (every device of a project). */
+export interface Focus { lat: number; lon: number; zoom?: number; bounds?: [[number, number], [number, number]]; key: number }
 
 export type MapMode = 'select' | 'addGateway' | 'addNode' | 'ruler'
 type LatLon = [number, number]
@@ -21,7 +24,7 @@ interface Props {
   showCoverage: boolean
   showLabels: boolean
   pin: { lat: number; lon: number } | null
-  focus: { lat: number; lon: number; zoom?: number; key: number } | null
+  focus: Focus | null
   cursor: LatLon | null                 // point hovered in the elevation profile
   profilePins: LatLon[]                 // points marked in the elevation profile
   ruler: LatLon[]
@@ -127,6 +130,7 @@ function applyProps(map: maplibregl.Map, props: Props, dragging: boolean) {
   if (!dragging) {
     ;(map.getSource('devices') as GeoJSONSource).setData(devicesGeoJSON(props))
     ;(map.getSource('links') as GeoJSONSource).setData(linksGeoJSON(props))
+    ;(map.getSource('plots') as GeoJSONSource).setData(plotsGeoJSON(props))
   }
   ;(map.getSource('ruler') as GeoJSONSource).setData(rulerGeoJSON(props.ruler))
   ;(map.getSource('profile-pins') as GeoJSONSource).setData(pointsGeoJSON(props.profilePins, true))
@@ -255,7 +259,8 @@ export default function MapView(props: Props) {
     // Next frame: a panel opened in the same render may have narrowed the map
     const id = requestAnimationFrame(() => {
       map.resize()
-      map.flyTo({ center: [f.lon, f.lat], zoom: f.zoom ?? map.getZoom() })
+      if (f.bounds) map.fitBounds(f.bounds, { padding: 60, maxZoom: 16, duration: 600 })
+      else map.flyTo({ center: [f.lon, f.lat], zoom: f.zoom ?? map.getZoom() })
     })
     return () => cancelAnimationFrame(id)
   }, [props.focus])

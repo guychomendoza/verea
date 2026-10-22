@@ -38,7 +38,13 @@ frontend, DB with users) is planned.
   card per node with its link on the map — from a hidden map in `snapshots.ts` — its profile and
   few figures; node cards are only built when the HTML is requested, after the PDF has been
   downloaded (`onSummary`); Cancelar / ✕ / Esc abort; no e-mail in reports),
-  nodes may carry optional `owner` (titular) and `area_ha` (in `core/project.py` `_NODE_KEYS`), panel borders (`Edge` in `App.tsx`) show an open/close arrow on hover,
+  nodes may carry optional `owner` (titular) and `area_ha` (in `core/project.py` `_NODE_KEYS`),
+  `import/` ("Importar parcelas…", 2026-10-22): KML / KMZ (`@tmcw/togeojson` + JSZip) or XLSX
+  (own reader that keeps cell formats) / CSV → `rules.ts` (column roles, coordinates without the
+  decimal point, areas Excel turned into dates, pin ↔ plot join by location, conflicts flagged,
+  no AI) → reviewed in `ImportDialog.tsx` → `apply.ts` (adds, or updates by name / plot);
+  projects may carry `plots` (GeoJSON polygons, validated in `core/project.py`), drawn on the map
+  and in the reports; nodes link to theirs with `plot`, panel borders (`Edge` in `App.tsx`) show an open/close arrow on hover,
   ruler is a map control (and R), 4G coverage on/off is a map control beside the attribution
   (`CoverageControl`, also in the HTML report, which reads the PMTiles from the app's server — the
   dev server sends CORS headers for that), `shortcuts.ts` (G/Ctrl+G, N = LSE01, R, Ctrl+S;

@@ -327,6 +327,34 @@ def main():
         print("HTML report opens:", charts, "interactive profiles,", snaps.count(), "node maps, no errors")
         rep.close()
 
+        # ── import plots: KML (pins + polygons) then a CSV that updates one and adds one ──
+        page.bring_to_front()
+        side.get_by_role("button", name="Importar parcelas…").click()
+        imp = page.get_by_role("dialog", name="Importar parcelas")
+        imp.get_by_label("Archivo a importar").set_input_files(str(HERE / "import_sample.kml"))
+        expect(imp.get_by_role("status")).to_contain_text("4 filas")
+        expect(imp).to_contain_text("parcela sin pin: sensor propuesto en el centro de la parcela")
+        expect(imp).to_contain_text("la parcela no tiene folio; se tomó el de su pin")
+        imp.get_by_role("button", name="Agregar 4 al proyecto").click()
+        expect(imp).to_have_count(0)
+        expect(page.get_by_role("status").first).to_contain_text("Importado: 4 nodos nuevos")
+        page.wait_for_timeout(800)
+        got = page.evaluate("async () => (await window.__vereaMap.getSource('devices').getData()).features.map(f => f.properties.name)")
+        assert {"TST-D0001", "TST-D0002", "TST-D0003", "TST-D0004"} <= set(got), got
+        n_plots = page.evaluate("async () => (await window.__vereaMap.getSource('plots').getData()).features.length")
+        assert n_plots == 3, n_plots
+        side.get_by_role("button", name="Importar parcelas…").click()
+        imp.get_by_label("Archivo a importar").set_input_files(str(HERE / "import_sample.csv"))
+        expect(imp.get_by_role("status")).to_contain_text("2 filas")
+        expect(imp).to_contain_text("coordenada sin punto decimal (corregida)")
+        imp.get_by_role("button", name="Agregar 1 y actualizar 1").click()
+        side.get_by_role("button", name=re.compile(r"TST-D0001")).click()
+        dev = page.get_by_role("complementary", name="Dispositivo")
+        expect(dev.get_by_label("Titular")).to_have_value("Ana Prueba Uno")
+        expect(dev.get_by_label("Superficie (ha)")).to_have_value("1.5")
+        page.screenshot(path=f"{OUT}/8_import.png")
+        print("import: KML 4 sensors + 3 plots (joined by location), CSV repaired coordinates, updated 1, added 1")
+
         # ── reload, phone ──
         page.reload()
         expect(side.get_by_role("button", name=re.compile(re.escape(new_name)))).to_be_visible(timeout=30000)

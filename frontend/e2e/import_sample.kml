@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Prueba</name>
+<Placemark><name>Ana Prueba Uno (TST-D0001)</name><Polygon><outerBoundaryIs><LinearRing><coordinates>-103.3,19.6,0 -103.29899999999999,19.6,0 -103.29899999999999,19.600900000000003,0 -103.3,19.600900000000003,0 -103.3,19.6,0</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>
+<Placemark><name>Beto Prueba Dos</name><Polygon><outerBoundaryIs><LinearRing><coordinates>-103.31,19.605,0 -103.309,19.605,0 -103.309,19.605900000000002,0 -103.31,19.605900000000002,0 -103.31,19.605,0</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>
+<Placemark><name>Carla Prueba Tres (TST-D0003)</name><Polygon><outerBoundaryIs><LinearRing><coordinates>-103.32,19.61,0 -103.31899999999999,19.61,0 -103.31899999999999,19.6109,0 -103.32,19.6109,0 -103.32,19.61,0</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>
+<Placemark><name>TST-D0001</name><Point><coordinates>-103.2995,19.6004,0</coordinates></Point></Placemark>
+<Placemark><name>Beto Prueba Dos TST-D0002</name><Point><coordinates>-103.3095,19.6054,0</coordinates></Point></Placemark>
+<Placemark><name>Pin suelto TST-D0004</name><Point><coordinates>-103.33,19.62,0</coordinates></Point></Placemark>
+</Document></kml>

@@ -4,6 +4,7 @@
 import maplibregl from 'maplibre-gl'
 import type { StyleSpecification } from 'maplibre-gl'
 import { Protocol } from 'pmtiles'
+import { BRAND } from './brand'
 import { COLORS, COVERAGE_URL } from './colors'
 import { iconImageId, type DeviceKind } from './deviceIcons'
 import { db, distance } from './geo'
@@ -112,6 +113,18 @@ export function devicesGeoJSON(d: MapData): GeoJSON.FeatureCollection {
   }
 }
 
+/** Plots (parcelas); in a report card, the node's own plot is highlighted. */
+export function plotsGeoJSON(d: MapData): GeoJSON.FeatureCollection {
+  const node = d.highlight ? d.project.nodes.find((n) => n.name === d.highlight!.node) : undefined
+  return {
+    type: 'FeatureCollection',
+    features: (d.project.plots ?? []).map((pl) => ({
+      type: 'Feature', geometry: pl.geometry,
+      properties: { id: pl.id, focus: !!node?.plot && node.plot === pl.id, dim: !!d.highlight && node?.plot !== pl.id },
+    })),
+  }
+}
+
 export function linksGeoJSON(d: MapData): GeoJSON.FeatureCollection {
   const gws = new Map(d.project.gateways.map((g) => [g.name, g]))
   const features: GeoJSON.Feature[] = []
@@ -145,6 +158,7 @@ export function buildStyle(): StyleSpecification {
         type: 'raster', url: `pmtiles://${new URL(COVERAGE_URL, window.location.href).href}`, tileSize: 256,
         attribution: 'Cobertura 4G: CRT / datos.gob.mx (CC BY 4.0)',
       },
+      plots: { type: 'geojson', data: EMPTY },
       devices: { type: 'geojson', data: EMPTY },
       links: { type: 'geojson', data: EMPTY },
       ruler: { type: 'geojson', data: EMPTY },
@@ -156,6 +170,18 @@ export function buildStyle(): StyleSpecification {
       { id: 'coverage', type: 'raster', source: 'coverage', layout: { visibility: 'none' }, paint: { 'raster-resampling': 'nearest' } },
       { id: 'roads', type: 'raster', source: 'roads' },
       { id: 'places', type: 'raster', source: 'places' },
+      {
+        id: 'plots-fill', type: 'fill', source: 'plots',
+        paint: { 'fill-color': ['case', isFocus, BRAND.teal, '#ffffff'], 'fill-opacity': ['case', isFocus, 0.22, isDim, 0.04, 0.1] } as never,
+      },
+      {
+        id: 'plots-line', type: 'line', source: 'plots',
+        paint: {
+          'line-color': ['case', isFocus, BRAND.tealLight, '#ffffff'],
+          'line-width': ['case', isFocus, 3, 1.4],
+          'line-opacity': ['case', isDim, 0.35, 0.9],
+        } as never,
+      },
       {
         id: 'links-casing', type: 'line', source: 'links', filter: isFocus as never,
         layout: { 'line-cap': 'round' }, paint: { 'line-color': '#ffffff', 'line-width': 9 },

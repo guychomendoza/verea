@@ -56,6 +56,7 @@ export function buildHtml(d: ReportData): string {
     })),
     sections: d.nodes.map((s, i) => ({ id: `p${i}`, figure: s.figure, coords: s.detail?.profile.coordinates }))
       .filter((s) => s.figure),
+    plots: (d.project.plots ?? []).map((pl) => ({ type: 'Feature', geometry: pl.geometry, properties: { id: pl.id } })),
     icons: glyphPngs(),
     // 4G layer, read from the same server as the app (it must be reachable when the file is opened)
     coverage: { url: new URL(COVERAGE_URL, window.location.href).href, shown: d.showCoverage,
@@ -182,12 +183,15 @@ const map = new maplibregl.Map({
       links: { type: 'geojson', data: { type: 'FeatureCollection', features: D.links.map(l => ({ type: 'Feature',
         geometry: { type: 'LineString', coordinates: [l.from, l.to] }, properties: l })) } },
       cursor: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+      plots: { type: 'geojson', data: { type: 'FeatureCollection', features: D.plots } },
     },
     layers: [
       { id: 'imagery', type: 'raster', source: 'imagery' },
       { id: 'coverage', type: 'raster', source: 'coverage', paint: { 'raster-resampling': 'nearest' },
         layout: { visibility: D.coverage.shown ? 'visible' : 'none' } },
       { id: 'places', type: 'raster', source: 'places' },
+      { id: 'plots-fill', type: 'fill', source: 'plots', paint: { 'fill-color': '#ffffff', 'fill-opacity': 0.1 } },
+      { id: 'plots-line', type: 'line', source: 'plots', paint: { 'line-color': '#ffffff', 'line-width': 1.4, 'line-opacity': 0.9 } },
       { id: 'links', type: 'line', source: 'links', paint: { 'line-color': ['get', 'color'], 'line-width': 3 } },
       { id: 'devices', type: 'circle', source: 'devices', paint: { 'circle-radius': ['match', ['get', 'kind'], 'gateway', 13, 11],
         'circle-color': ['get', 'color'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } },

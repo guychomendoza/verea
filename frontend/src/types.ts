@@ -26,6 +26,20 @@ export interface NodeDevice {
   environment?: string
   owner?: string        // titular of the plot (optional, shown in reports)
   area_ha?: number      // plot area in hectares (optional)
+  plot?: string         // id of the plot (parcela) it monitors
+}
+
+export type PlotGeometry =
+  | { type: 'Polygon'; coordinates: number[][][] }
+  | { type: 'MultiPolygon'; coordinates: number[][][][] }
+
+/** A field (parcela) imported from a KML: drawn on the map and in the reports. */
+export interface Plot {
+  id: string            // folio when known, otherwise a generated id
+  name: string          // as it came in the file
+  owner?: string
+  area_ha?: number      // measured from the polygon
+  geometry: PlotGeometry
 }
 
 export interface Settings {
@@ -43,6 +57,7 @@ export interface Project {
   description: string
   gateways: Gateway[]
   nodes: NodeDevice[]
+  plots?: Plot[]
   name_counters: Record<string, number>
   settings: Settings
 }

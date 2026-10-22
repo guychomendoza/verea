@@ -9,11 +9,12 @@ import { downloadBlob, mapToPng, safeName, type LegendItem } from './exportImage
 import { distance, haversine } from './geo'
 import { mapLegend as buildLegend } from './legend'
 import { Login, Notice, SetPassword } from './Login'
-import MapView, { type MapMode } from './MapView'
+import MapView, { type Focus, type MapMode } from './MapView'
 import ProfilePanel from './ProfilePanel'
 import { profileTitle } from './profilePlot'
 import { emptyProject, isCellular, isStation, PROJECT_VERSION, reduce, rename, selected, type Action } from './project'
 import ProjectsDialog from './ProjectsDialog'
+import ImportDialog from './import/ImportDialog'
 import ReportDialog from './report/ReportDialog'
 import SearchBox from './SearchBox'
 import { shortcutFor } from './shortcuts'
@@ -181,12 +182,21 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
   const [showLabels, setShowLabels] = useState(true)
   const [pin, setPin] = useState<{ lat: number; lon: number } | null>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
-  const [focus, setFocus] = useState<{ lat: number; lon: number; zoom?: number; key: number } | null>(null)
+  const [focus, setFocus] = useState<Focus | null>(null)
+  /** Fit the view to every device of a project (on open and after an import). */
+  const showAll = useCallback((p: Project) => {
+    const pts = [...p.gateways, ...p.nodes]
+    if (!pts.length) return
+    const lons = pts.map((d) => d.lon), lats = pts.map((d) => d.lat)
+    setFocus({ lat: lats[0], lon: lons[0], key: Date.now(),
+      bounds: [[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]] })
+  }, [])
   const [links, setLinks] = useState<Record<string, LinkResult>>({})
   const [cells, setCells] = useState<Record<string, CellStatus>>({})
   const [status, setStatus] = useState('')
   const [ruler, setRuler] = useState<[number, number][]>([])
   const [showReport, setShowReport] = useState(false)
+  const [showImport, setShowImport] = useState(false)
   const dispatch = useCallback((a: Action) => dispatchRaw(a), [])
 
   // ── persistence: browser (local mode) or cloud with optimistic locking ──
@@ -206,9 +216,8 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
     setSaveState('saved')
     setSelection(null)
     store(LAST_PROJECT_KEY, d.id)
-    const first = p.gateways[0] ?? p.nodes[0]
-    if (first) setFocus({ lat: first.lat, lon: first.lon, zoom: 14, key: Date.now() })
-  }, [dispatch])
+    showAll(p)
+  }, [dispatch, showAll])
 
   const openCloud = useCallback(async (id: string) => {
     const r = await cloud.loadProject(id)
@@ -396,7 +405,7 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
   const keyHandler = useRef<(e: KeyboardEvent) => void>(() => {})
   keyHandler.current = (e: KeyboardEvent) => {
     const action = shortcutFor(e)
-    if (!action || showReport || showProjects) return
+    if (!action || showReport || showProjects || showImport) return
     if (action === 'save' || (action === 'addGateway' && (e.ctrlKey || e.metaKey))) e.preventDefault()
     switch (action) {
       case 'addGateway':
@@ -440,8 +449,7 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
       } else {
         dispatch({ type: 'load', project: p })
         setSelection(null)
-        const first = p.gateways[0] ?? p.nodes[0]
-        if (first) setFocus({ lat: first.lat, lon: first.lon, zoom: 14, key: Date.now() })
+        showAll(p)
       }
       setStatus(`Abierto: ${file.name}`)
     } catch (e) {
@@ -501,7 +509,7 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
       onMeta={(meta) => dispatch({ type: 'meta', ...meta })}
       onSelect={select}
       showLabels={showLabels} onShowLabels={setShowLabels}
-      onImport={importFile} onExport={exportFile} onReport={() => setShowReport(true)}
+      onImport={importFile} onExport={exportFile} onReport={() => setShowReport(true)} onImportPlots={() => setShowImport(true)}
       onNew={() => {
         if (cloudMode) {
           createCloud(emptyProject(catalog.defaults)).catch((e) => setStatus(`⚠ ${e.message}`))
@@ -598,6 +606,16 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
             }
           }}
           onClose={() => setShowProjects(false)} />
+      )}
+      {showImport && (
+        <ImportDialog catalog={catalog} project={project} onClose={() => setShowImport(false)}
+          onApply={(next, s) => {
+            dispatch({ type: 'load', project: next })
+            setShowImport(false)
+            setSelection(null)
+            showAll(next)
+            setStatus(`Importado: ${s.added} nodos nuevos, ${s.updated} actualizados${s.plots ? `, ${s.plots} parcelas` : ''}`)
+          }} />
       )}
       {showReport && (
         <ReportDialog catalog={catalog} project={project} links={links} cells={cells} cellular={cellular} stations={stations}

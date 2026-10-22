@@ -213,3 +213,17 @@ def test_legacy_shared_secret(monkeypatch, supabase):
     assert c.get("/api/catalog", headers={"Authorization": f"Bearer {supabase()}"}).status_code == 200
     monkeypatch.delenv("SUPABASE_JWT_SECRET")
     assert c.get("/api/catalog", headers={"Authorization": f"Bearer {good}"}).status_code == 401
+
+
+def test_project_keeps_plots(client):
+    square = [[-103.3, 19.6], [-103.299, 19.6], [-103.299, 19.601], [-103.3, 19.601], [-103.3, 19.6]]
+    plots = [{"id": "AGU-D0248", "name": "Trinidad", "owner": "Trinidad Torres", "area_ha": 1.2,
+              "geometry": {"type": "Polygon", "coordinates": [square]}}]
+    nodes = [dict(NODE, name="AGU-D0248", plot="AGU-D0248")]
+    r = client.post("/api/project/normalize", json={"project": {"gateways": [GW], "nodes": nodes, "plots": plots}})
+    out = r.json()
+    assert out["plots"][0]["id"] == "AGU-D0248" and out["plots"][0]["geometry"]["coordinates"][0][0] == [-103.3, 19.6]
+    assert out["nodes"][0]["plot"] == "AGU-D0248"
+    bad = dict(plots[0], geometry={"type": "Point", "coordinates": [0, 0]})
+    assert client.post("/api/project/normalize",
+                       json={"project": {"gateways": [], "nodes": [], "plots": [bad]}}).status_code == 422

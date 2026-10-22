@@ -30,6 +30,7 @@ interface Props {
   onExport: () => void
   onNew: () => void
   onReport: () => void
+  onImportPlots: () => void
 }
 
 const MODEL_LABELS: Record<string, string> = { itm: 'Longley-Rice (ITM)', simple: 'Simple (espacio libre + difracción)' }
@@ -71,6 +72,7 @@ export default function Sidebar(p: Props) {
         <button className="btn" onClick={p.onNew}>Nuevo</button>
         <button className="btn" onClick={() => file.current?.click()}>{p.user ? 'Importar archivo…' : 'Abrir…'}</button>
         <button className="btn" onClick={p.onExport}>Guardar archivo</button>
+        <button className="btn" onClick={p.onImportPlots} title="KML, KMZ, Excel o CSV con pines y parcelas">Importar parcelas…</button>
         <button className="btn btn-active" onClick={p.onReport}>📄 Reporte</button>
         <input ref={file} type="file" accept=".json,application/json" hidden
           onChange={(e) => { const f = e.target.files?.[0]; if (f) p.onImport(f); e.target.value = '' }} />

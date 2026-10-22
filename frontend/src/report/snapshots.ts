@@ -2,7 +2,8 @@
 // main map), so the user's view does not move while the report is made.
 import maplibregl, { type GeoJSONSource } from 'maplibre-gl'
 import { registerDeviceIcons } from '../deviceIcons'
-import { MAP_LOCALE, buildStyle, devicesGeoJSON, ensurePmtiles, linksGeoJSON, type MapData } from '../mapStyle'
+import { bbox } from '../import/geometry'
+import { MAP_LOCALE, buildStyle, devicesGeoJSON, ensurePmtiles, linksGeoJSON, plotsGeoJSON, type MapData } from '../mapStyle'
 
 export const SNAPSHOT_SIZE: [number, number] = [1000, 620]
 const IDLE_TIMEOUT_MS = 10000
@@ -50,10 +51,20 @@ export class SnapshotMap {
     const gw = h.gateway ? data.project.gateways.find((g) => g.name === h.gateway) : undefined
     ;(m.getSource('devices') as GeoJSONSource).setData(devicesGeoJSON(data))
     ;(m.getSource('links') as GeoJSONSource).setData(linksGeoJSON(data))
+    ;(m.getSource('plots') as GeoJSONSource).setData(plotsGeoJSON(data))
     m.setLayoutProperty('coverage', 'visibility', opts.coverage ? 'visible' : 'none')
-    if (gw) {
-      m.fitBounds([[Math.min(gw.lon, node.lon), Math.min(gw.lat, node.lat)], [Math.max(gw.lon, node.lon), Math.max(gw.lat, node.lat)]],
-        { padding: { top: 90, bottom: 90, left: 120, right: 120 }, maxZoom: 17, duration: 0 })
+    // Frame the link, or the sensor; with its whole plot when it has one
+    const plot = node.plot ? data.project.plots?.find((p) => p.id === node.plot) : undefined
+    const pts: number[][] = [[node.lon, node.lat], ...(gw ? [[gw.lon, gw.lat]] : [])]
+    if (plot) {
+      const [w, s, e, n] = bbox(plot.geometry)
+      pts.push([w, s], [e, n])
+    }
+    if (pts.length > 1) {
+      const lons = pts.map((q) => q[0]), lats = pts.map((q) => q[1])
+      m.fitBounds([[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]],
+        { padding: { top: 90, bottom: 90, left: 120, right: 120 }, maxZoom: gw ? 17 : 16, duration: 0 })
+      if (!gw && m.getZoom() > 15.5 && !plot) m.jumpTo({ zoom: 15 })
     } else {
       m.jumpTo({ center: [node.lon, node.lat], zoom: 15 })
     }
@@ -68,6 +79,7 @@ export class SnapshotMap {
     if (!pts.length) return null
     ;(m.getSource('devices') as GeoJSONSource).setData(devicesGeoJSON(data))
     ;(m.getSource('links') as GeoJSONSource).setData(linksGeoJSON(data))
+    ;(m.getSource('plots') as GeoJSONSource).setData(plotsGeoJSON(data))
     m.setLayoutProperty('coverage', 'visibility', opts.coverage ? 'visible' : 'none')
     const lons = pts.map((q) => q.lon)
     const lats = pts.map((q) => q.lat)
