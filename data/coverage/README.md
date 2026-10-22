@@ -26,11 +26,13 @@ Two kinds of file:
   ≈270 m) that sizes the yellow band: ≈40 m where a hill cuts the signal (sharp edge),
   up to 300 m on flat ground (the edge depends on distance to the tower, and a few dB
   of model error move it far). Made with `scripts/build_relief.py` from the Copernicus
-  DEM GLO-90 (downloads ≈1 GB into `data/dem/` once). Without it the band is a fixed 100 m.
+  DEM GLO-90 (downloads ≈1 GB into `data/dem/` once). Small holes inside coverage
+  (< 0.1 km²) are local obstructions, not distance limits, and always get 40 m.
+  Without the file the band is a fixed 100 m.
 
 **New quarter:** download the new GeoPackage from datos.gob.mx (below), build the
-tiles, publish both as a new release (`gh release create coverage-YYYYQn <files>`),
-and update `RELEASE_TAG` and `FILES` (name, size, sha256) in `scripts/get_coverage.py`.
+tiles, publish them as a new release with the relief grid (it does not change between
+quarters: `gh release create coverage-YYYYQn <files>`), and update `RELEASE_TAG` and `FILES` (name, size, sha256) in `scripts/get_coverage.py`.
 
     python scripts/build_coverage_tiles.py data/coverage/RADIOMOVIL_4G_GARANTIZADA_3T_2026.gpkg \
         data/coverage/telcel_4g_2026q3.pmtiles

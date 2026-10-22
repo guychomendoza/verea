@@ -50,3 +50,20 @@ def test_steep_edges_get_a_narrow_margin(tmp_path, monkeypatch):
 
 def test_fixed_margin_ignores_relief(tmp_path, monkeypatch):
     assert _band_m(tmp_path, monkeypatch, 200, fixed=100) == pytest.approx(100, abs=45)
+
+
+def test_small_holes_get_a_narrow_margin(tmp_path, monkeypatch):
+    west, south, east, north = bct.padded(bct.tile_box(TILE))
+    hole = shapely.box(-103.5, 19.7, -103.5 + 4 * bct.CELL, 19.7 + 4 * bct.CELL)    # ≈170 m
+    cov = shapely.box(west, south, east, north).difference(hole)
+    parts = tmp_path / "parts.bin"
+    with open(parts, "wb") as f:
+        for wkb in shapely.to_wkb(shapely.get_parts(cov)):
+            f.write(struct.pack("<I", len(wkb)) + wkb)
+    relief = tmp_path / "relief.npz"
+    np.savez_compressed(relief, **{"-104_19": np.full((400, 400), 5, dtype=np.uint8)})   # flat
+    monkeypatch.setattr(bct, "_RELIEF", Relief(relief))
+    bct.classify_grid((TILE, str(parts), None, str(tmp_path)))
+    classes = np.load(tmp_path / f"{TILE[0]}_{TILE[1]}.npz")["c"]
+    # 4x4 hole + one cell of edge all around = 6x6 cells, not a 300 m ring
+    assert (classes == 2).sum() == pytest.approx(36 - 16, abs=6)

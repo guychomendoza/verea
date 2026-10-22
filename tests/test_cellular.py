@@ -130,3 +130,20 @@ def test_margin_follows_relief(coverage_file, tmp_path, relief, inside_m, ok):
         assert hit.margin_m == pytest.approx(margin_for_relief(relief))
     else:
         assert hit.edge_m is None          # no edge within the largest margin
+
+
+def test_small_hole_gets_the_steep_margin(tmp_path):
+    """On flat ground a 150 m hole is a local obstruction: 40 m margin, not 300 m."""
+    deg_lon = 111_320 * math.cos(math.radians(19.65))
+    hole = shapely.box(-103.45, 19.65, -103.45 + 150 / deg_lon, 19.65 + 150 / 111_320)
+    area = shapely.box(-103.50, 19.60, -103.40, 19.70).difference(hole)
+    gdf = geopandas.GeoDataFrame({"NIVEL": [-100.0], "REGION": ["R5"]},
+                                 geometry=[shapely.MultiPolygon([area])], crs="EPSG:4326")
+    path = tmp_path / "RADIOMOVIL_4G_GARANTIZADA_2T_2026.gpkg"
+    gdf.to_file(path, driver="GPKG")
+    s = CoverageSource(path, relief=_relief_file(tmp_path, 5))      # flat
+    hit = s.status_at(19.65 + 75 / 111_320, -103.45 - 100 / deg_lon)   # 100 m west of the hole
+    assert hit.covered and hit.margin_ok
+    assert hit.edge_m == pytest.approx(100, abs=3) and hit.margin_m == 40
+    near = s.status_at(19.65 + 75 / 111_320, -103.45 - 25 / deg_lon)
+    assert not near.margin_ok

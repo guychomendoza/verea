@@ -36,6 +36,10 @@ RELIEF_RADIUS_M = 500            # relief = highest minus lowest point within th
 RELIEF_FLAT_M, RELIEF_STEEP_M = 15, 120
 MARGIN_FLAT_M, MARGIN_STEEP_M = 300, 40      # log-interpolated in between
 MARGIN_LEVELS_M = (40, 60, 90, 130, 200, 300)   # steps used by the map tiles
+# A small hole inside coverage is a local obstruction (a building, a hollow), not a
+# distance-limited edge: towers reach all around it, so it gets the steep-terrain margin
+SMALL_GAP_M2 = 100_000           # 0.1 km², ≈40 cells of the operator's 50 m raster
+GAP_WINDOW_M = 900               # half-side of the square where gap sizes are measured
 SEARCH_STEPS_M = (1_000, 5_000, 20_000)  # where to look for the nearest coverage
 
 OPERATORS = {
@@ -229,11 +233,12 @@ class CoverageSource:
         """
         (margin_ok, distance to the nearest gap, margin of the deciding edge) for a covered
         point: every coverage edge within MARGIN_FLAT_M is sampled every ~15 m, and each
-        sample has the margin of the relief where it lies.
+        sample has the margin of the relief where it lies (MARGIN_STEEP_M on small holes).
         """
         radius = max(MARGIN_FLAT_M, EDGE_MARGIN_M)
         disk = shapely.Point(0, 0).buffer(radius, quad_segs=32)
-        cov = shapely.union_all([shapely.intersection(g, disk) for _, g in local])
+        window = shapely.box(-GAP_WINDOW_M, -GAP_WINDOW_M, GAP_WINDOW_M, GAP_WINDOW_M)
+        cov = shapely.union_all([shapely.intersection(g, window) for _, g in local])
         cov = cov.buffer(0.5).buffer(-0.5)          # close slivers between adjacent pieces
         edges = shapely.intersection(cov.boundary, disk.buffer(-1.0))
         if edges.is_empty:
@@ -242,6 +247,12 @@ class CoverageSource:
         d = np.hypot(xy[:, 0], xy[:, 1])
         kx, ky = 111_320 * math.cos(math.radians(lat)), 111_320
         margins = self.relief.margin_at(lon + xy[:, 0] / kx, lat + xy[:, 1] / ky)
+        # Gaps that do not reach the window border have a known size
+        gaps = shapely.get_parts(shapely.difference(window, cov))
+        small = [g for g in gaps if g.area < SMALL_GAP_M2 and not g.intersects(window.exterior)]
+        if small:
+            on_small = shapely.distance(shapely.union_all(small), shapely.points(xy)) < 1.0
+            margins = np.where(on_small, float(MARGIN_STEEP_M), margins)
         i = int(np.argmin(d - margins))
         return bool(d[i] >= margins[i]), float(d.min()), float(margins[i])
 
@@ -253,7 +264,7 @@ class CoverageSource:
         nearest covered area is.
         """
         origin = shapely.Point(0, 0)
-        local = self._local(lat, lon, max(NEARBY_RADIUS_M, MARGIN_FLAT_M))
+        local = self._local(lat, lon, GAP_WINDOW_M)
         hit = next(((level, g) for level, g in local if g.covers(origin)), None)
         circle = origin.buffer(NEARBY_RADIUS_M, quad_segs=16)
         covered_area = sum(shapely.intersection(g, circle).area for _, g in local)

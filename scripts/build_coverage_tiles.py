@@ -47,8 +47,8 @@ import shapely.geometry
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from core.cellular import (EDGE_MARGIN_M, MARGIN_FLAT_M, MARGIN_LEVELS_M, RELIEF_FILE,  # noqa: E402
-                           TILE_DEG, Relief)
+from core.cellular import (EDGE_MARGIN_M, MARGIN_FLAT_M, MARGIN_LEVELS_M, MARGIN_STEEP_M,  # noqa: E402
+                           RELIEF_FILE, SMALL_GAP_M2, TILE_DEG, Relief)
 
 LAND_FILE = ROOT / "data" / "mexico_land.geojson"
 CELL = 0.0004                       # grid cell in degrees (≈44 m N-S), finer than the 50 m source
@@ -151,7 +151,7 @@ def classify_grid(args):
     t, parts_file, fixed_margin, grid_dir = args
     from rasterio.features import rasterize
     from rasterio.transform import from_origin
-    from scipy.ndimage import distance_transform_edt
+    from scipy.ndimage import distance_transform_edt, label
 
     west, south, east, north = padded(tile_box(t))
     n = N + 2 * PAD_CELLS
@@ -181,6 +181,13 @@ def classify_grid(args):
             margins = _relief().margin_at(lon_g, lat_g)
             steps = np.array(MARGIN_LEVELS_M, dtype=float)
             level = steps[np.searchsorted(steps, margins - 1e-6).clip(0, len(steps) - 1)]
+            # Small holes (not reaching the padded border, where their size is unknown)
+            labels, _ = label(gap, structure=np.ones((3, 3)))
+            cell_m2 = CELL * 111_320 * CELL * 111_320 * math.cos(math.radians(lat))
+            small = np.bincount(labels.ravel()) * cell_m2 < SMALL_GAP_M2
+            small[0] = False
+            small[np.unique(np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]]))] = False
+            level[small[labels]] = MARGIN_STEEP_M
         else:
             level = np.full((n, n), float(fixed_margin))
         sampling = (CELL * 111_320, CELL * 111_320 * math.cos(math.radians(lat)))

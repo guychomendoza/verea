@@ -1,7 +1,7 @@
 """
 Download the 4G coverage maps into data/coverage/.
 
-The files (the operator map ≈1.2 GB, its map tiles ≈130 MB) are too big for the repository, so they are published
+The files (the operator map ≈1.2 GB, its map tiles ≈130 MB, the terrain relief grid 22 MB) are too big for the repository, so they are published
 as assets of a GitHub release of this repo. Run once per computer, and again
 when a new quarter is published:
 
@@ -26,9 +26,12 @@ RELEASE_TAG = "coverage-2026Q2"
 FILES = [
     ("RADIOMOVIL_4G_GARANTIZADA_2T_2026.gpkg", 1204379648,
      "dc54d40be2d479102345f314fed6cad95db85a36a24fe54f68059d133eca1463"),
-    # map tiles made by scripts/build_coverage_tiles.py (100 m margin)
-    ("telcel_4g_2026q2.pmtiles", 133852986,
-     "c4042c7b4d4b9f068dd7d88231e757ac7f9716c903236631ebf12b71fc9c2db3"),
+    # map tiles made by scripts/build_coverage_tiles.py (terrain-adaptive margin)
+    ("telcel_4g_2026q2.pmtiles", 130051722,
+     "5b9b5b7c191b36d5b0793fb325eace113a101bce7bf760aa4be9730de6d31ba2"),
+    # relief that sizes the margin (scripts/build_relief.py, Copernicus DEM GLO-90)
+    ("relief_mx.npz", 21978076,
+     "9f541951ebb319fa0df37cc3d3c23d3636b56bdc8fbea4c6426e655757cf1f23"),
 ]
 
 DEST = Path(__file__).resolve().parent.parent / "data" / "coverage"
@@ -54,7 +57,7 @@ def download(name: str, size: int, digest: str) -> bool:
 
     url = f"https://github.com/{REPO}/releases/download/{RELEASE_TAG}/{name}"
     part = target.with_suffix(target.suffix + ".part")
-    print(f"{name}: downloading {size / 1e9:.2f} GB from {url}")
+    print(f"{name}: downloading {size / 1e6:,.0f} MB from {url}")
     h = hashlib.sha256()
     done, last = 0, 0.0
     with urllib.request.urlopen(url) as resp, open(part, "wb") as out:

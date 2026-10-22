@@ -53,7 +53,8 @@ GLOSSARY = [
      "there. Differentiated: there is signal but without that commitment (weaker or variable). "
      "'Uncertain' means covered, but close to an area without signal. How close depends on the "
      "terrain: where a hill cuts the signal the edge is sharp (40 m margin); on flat ground the "
-     "edge is set by distance to the tower and a few dB of error move it a long way (up to 300 m)."),
+     "edge is set by distance to the tower and a few dB of error move it a long way (up to 300 m). "
+     "Small holes inside coverage are local obstructions and get 40 m."),
     ("Continuous coverage / farthest signal", "Along the gateway→node direction: distance "
      "before the first point without signal, and the last point that still has signal."),
 ]

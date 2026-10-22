@@ -8,14 +8,15 @@ frontend, DB with users) is planned.
 
 ## Run and test
 - App: `.venv/bin/streamlit run app.py` (port 8501). Windows: `python -m streamlit run app.py`.
-- Tests: `.venv/bin/python -m pytest -q` (79 tests). Headless app tests use
+- Tests: `.venv/bin/python -m pytest -q` (81 tests). Headless app tests use
   `streamlit.testing.v1.AppTest`; set `VEREA_AUTOSAVE=<tmp file>` so they do not
   overwrite the user's autosave (`~/.verea/autosave.verea.json`).
 - Browser tests: Playwright with Chromium; in WSL run with
   `LD_LIBRARY_PATH=~/.cache/verea-chromium-libs/root/usr/lib/x86_64-linux-gnu`.
   Use a second instance on port 8502 so the user's app on 8501 is untouched.
 - 4G data: `python scripts/get_coverage.py` (downloads the GitHub release
-  `coverage-2026Q2`: operator GeoPackage 1.2 GB + map tiles 134 MB into `data/coverage/`).
+  `coverage-2026Q2`: operator GeoPackage 1.2 GB + map tiles ≈130 MB + relief grid 22 MB
+  into `data/coverage/`).
 
 ## Layout
 - `app.py` — the whole Streamlit UI (sidebar, map, panels, report, projects, autosave).
@@ -31,7 +32,8 @@ frontend, DB with users) is planned.
 - `core/cellular.py` — 4G coverage per point from the CRT GeoPackage (0.2° tile cache on
   disk): covered, declared level, share covered within 300 m, nearest coverage,
   `margin_ok` (no coverage edge within its terrain-adaptive margin: `margin_for_relief`,
-  40 m steep → 300 m flat; fixed `EDGE_MARGIN_M` = 100 m without relief data).
+  40 m steep → 300 m flat; small holes < `SMALL_GAP_M2` (0.1 km²) always 40 m;
+  fixed `EDGE_MARGIN_M` = 100 m without relief data).
 - `scripts/build_relief.py` — Copernicus GLO-90 DEM (→ `data/dem/`, ≈1 GB) → national relief grid
   `data/coverage/relief_mx.npz` (max−min within 500 m, 0.0025° cells, uint8 per 1° tile).
 - `scripts/build_coverage_tiles.py` — GeoPackage → PMTiles of PNG tiles z5–13 with classes
@@ -60,6 +62,10 @@ frontend, DB with users) is planned.
 - datos.gob.mx / repodatos block scripted downloads (403); download in a browser.
   The 4G "Diferenciada" files returned server errors in Oct 2026.
 - Elevation APIs reject > 100 points (falls back to flat terrain silently).
+- Copernicus GLO-90 is a surface model (buildings, canopy): cities and forests read a bit
+  rougher than bare ground, so their margin comes out somewhat smaller.
+- Worker processes must not share an open `np.load` npz from the parent (corrupt reads):
+  `Relief` reopens the file per PID.
 
 ## Current work: realistic 4G uncertainty margin (decided 2026-10-21)
 1. **Terrain-adaptive margin** (done 2026-10-21) — use a national DEM (download once) to measure relief at
