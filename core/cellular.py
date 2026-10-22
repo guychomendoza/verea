@@ -221,6 +221,16 @@ class CoverageSource:
         return out
 
     # ── queries ──
+    def covered_at(self, lats, lons) -> np.ndarray:
+        """Declared coverage (bool) at many points at once, e.g. along a radial."""
+        lats, lons = np.asarray(lats, dtype=float), np.asarray(lons, dtype=float)
+        out = np.zeros(lats.shape, dtype=bool)
+        pad = 1e-4
+        bbox = (lons.min() - pad, lats.min() - pad, lons.max() + pad, lats.max() + pad)
+        for _, g in self.geometries(bbox):
+            out |= shapely.contains_xy(g, lons, lats)
+        return out
+
     def _local(self, lat: float, lon: float, radius_m: float):
         """Pieces within radius_m of the point, in local metres (equirectangular, < 0.1% error)."""
         dlat = radius_m / 111_320

@@ -8,7 +8,7 @@ frontend, DB with users) is planned.
 
 ## Run and test
 - App: `.venv/bin/streamlit run app.py` (port 8501). Windows: `python -m streamlit run app.py`.
-- Tests: `.venv/bin/python -m pytest -q` (81 tests). Headless app tests use
+- Tests: `.venv/bin/python -m pytest -q` (88 tests). Headless app tests use
   `streamlit.testing.v1.AppTest`; set `VEREA_AUTOSAVE=<tmp file>` so they do not
   overwrite the user's autosave (`~/.verea/autosave.verea.json`).
 - Browser tests: Playwright with Chromium; in WSL run with
@@ -34,6 +34,12 @@ frontend, DB with users) is planned.
   `margin_ok` (no coverage edge within its terrain-adaptive margin: `margin_for_relief`,
   40 m steep → 300 m flat; small holes < `SMALL_GAP_M2` (0.1 km²) always 40 m;
   fixed `EDGE_MARGIN_M` = 100 m without relief data).
+- `core/towers.py` — OpenCelliD LTE cells → approximate sites (cells grouped by eNodeB, median
+  position) in `data/coverage/towers_mx.csv` (`scripts/get_towers.py`, needs `OPENCELLID_TOKEN`).
+- `core/cell_signal.py` — 4G sensor estimate: ITM radial from the nearest sites, calibrated on the
+  declared edge that bounds the sensor's own area (first edge past a covered sensor, last one
+  before an uncovered one); P(service) for LTE / LTE-M (+15 dB) / NB-IoT (+20 dB), σ 8 dB.
+  No calibrating edge → no numbers (deliberately; nominal site power is a guess).
 - `scripts/build_relief.py` — Copernicus GLO-90 DEM (→ `data/dem/`, ≈1 GB) → national relief grid
   `data/coverage/relief_mx.npz` (max−min within 500 m, 0.0025° cells, uint8 per 1° tile).
 - `scripts/build_coverage_tiles.py` — GeoPackage → PMTiles of PNG tiles z5–13 with classes
@@ -72,7 +78,7 @@ frontend, DB with users) is planned.
    each coverage edge: sharp terrain-shadow edges get a small margin (~30–50 m),
    flat/open distance-limited edges a wide one (~200–500 m). Integrate into
    `build_coverage_tiles.py` (per-tile grids) and `core/cellular.py` (sensor status).
-2. **Towers + propagation** — approximate tower locations (OpenCelliD, CC BY-SA) and the
+2. **Towers + propagation** (code done 2026-10-21, waiting for OpenCelliD data) — approximate tower locations (OpenCelliD, CC BY-SA) and the
    existing terrain engine to estimate signal and its gradient near edges:
    margin ≈ model uncertainty (~8 dB) / gradient (dB per m). Also estimate how far
    NB-IoT / LTE-M (≈15–20 dB more link budget than phone LTE) can reach into the red.

@@ -18,3 +18,7 @@ data/coverage/.build_*/
 
 # Copernicus DEM tiles (scripts/build_relief.py)
 data/dem/
+
+# OpenCelliD raw export and the derived sites (CC BY-SA)
+data/towers/
+data/coverage/*.csv

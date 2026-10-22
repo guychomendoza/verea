@@ -76,6 +76,8 @@ from core.profiles import (
 )
 from core.project import project_to_dict, project_from_dict
 from core.cellular import find_sources, MARGIN_FLAT_M, MARGIN_STEEP_M
+from core.towers import TowerIndex
+from core.cell_signal import estimate as estimate_cell_signal, SIGMA_DB
 from utils.geo import haversine
 
 # Terrain model actually used for a link (ITM falls back to the short-path model)
@@ -239,6 +241,12 @@ def coverage_sources() -> dict:
 
 
 @st.cache_resource
+def tower_index():
+    """OpenCelliD sites (scripts/get_towers.py), or None."""
+    return TowerIndex.load()
+
+
+@st.cache_resource
 def tiles_base_url() -> str:
     """Local server for the coverage PMTiles (started once per app process)."""
     return start_tile_server(COVERAGE_DIR)
@@ -278,6 +286,21 @@ def cell_status(nd: dict, operator: str | None) -> dict:
                     else "none within 20 km")
             st_ = ("none", f"❌ No {operator} 4G declared ({near})", f"no {operator} 4G")
         cache[key] = {"state": st_[0], "text": st_[1], "short": st_[2], "hit": hit}
+    return cache[key]
+
+
+def cell_signal(nd: dict, operator: str | None, hit):
+    """Signal estimate from the nearest sites, calibrated on the declared map (None if no data)."""
+    srcs = coverage_sources().get(operator) if operator else None
+    towers = tower_index()
+    if not srcs or "guaranteed" not in srcs or towers is None:
+        return None
+    key = (operator, round(nd["lat"], 6), round(nd["lon"], 6))
+    cache = st.session_state.setdefault("cell_signal_cache", {})
+    if key not in cache:
+        thr = hit.level_dbm if hit and hit.covered else None
+        cache[key] = estimate_cell_signal(nd["lat"], nd["lon"], operator, srcs["guaranteed"], towers,
+                                          st.session_state.elevation_api, threshold_dbm=thr)
     return cache[key]
 
 
@@ -1488,6 +1511,35 @@ with col_panel:
                     else:
                         c2.metric("Nearest coverage", f"{hit.nearest_m:,.0f} m"
                                   if hit.nearest_m is not None else "> 20 km")
+                if tower_index() is not None:
+                    with st.spinner("Estimating signal from the nearest sites…"):
+                        sig = cell_signal(sel_nd, cell_operator, hit)
+                    if sig is None:
+                        st.caption(f"📡 No {cell_operator} site known within 15 km (OpenCelliD).")
+                    elif not sig.calibrated:
+                        st.caption(
+                            f"📡 Nearest {cell_operator} site {sig.distance_m / 1000:,.1f} km away. "
+                            + ("Declared coverage continues more than 2 km past the sensor on that "
+                               "path: well inside the operator's area." if sig.covered else
+                               "No declared coverage edge along the path to calibrate an estimate.")
+                            + " Sites: OpenCelliD (CC BY-SA), approximate.")
+                    else:
+                        st.markdown(f"**📡 Signal estimate** — site {sig.distance_m / 1000:,.1f} km away")
+                        s1, s2, s3 = st.columns(3)
+                        s1.metric("LTE", f"{sig.probability['LTE']:.0%}",
+                                  help="Chance of phone-grade 4G here.")
+                        s2.metric("LTE-M", f"{sig.probability['LTE-M']:.0%}",
+                                  help="LTE-M devices work with ≈15 dB weaker signal.")
+                        s3.metric("NB-IoT", f"{sig.probability['NB-IoT']:.0%}",
+                                  help="NB-IoT works with ≈20 dB weaker signal.")
+                        unc = sig.edge_uncertainty_m
+                        st.caption(
+                            f"≈ {sig.rsrp_dbm:.0f} dBm RSRP (declared coverage: {sig.threshold_dbm:.0f} dBm), "
+                            f"calibrated on the declared coverage edge {sig.edge_m:,.0f} m away along the "
+                            f"path. Signal changes {sig.gradient_db_per_100m:.1f} dB per 100 m here"
+                            + (f", so the coverage edge can be off by ≈{unc:,.0f} m" if unc and unc < 5000
+                               else ", so the coverage edge is very uncertain here")
+                            + f" (±{SIGMA_DB:.0f} dB). Sites: OpenCelliD (CC BY-SA), approximate.")
                 st.caption("Sends data over the cell network (NB-IoT / LTE-M), not through a "
                            "LoRaWAN gateway. Coverage = what the operator declares to the regulator "
                            "for outdoor 4G; LTE-M / NB-IoT usually reach as far or a bit farther.")
