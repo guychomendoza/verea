@@ -28,13 +28,13 @@ export default function ProjectsDialog({ me, currentId, onOpen, onDeleted, onClo
   }, [onClose])
 
   const remove = async (r: cloud.ProjectRow) => {
-    if (!confirm(`Delete "${r.name || 'Untitled'}" for the whole team? This cannot be undone.`)) return
+    if (!confirm(`¿Eliminar "${r.name || 'Sin nombre'}" para todo el equipo? No se puede deshacer.`)) return
     try {
       if (await cloud.deleteProject(r.id)) {
         onDeleted(r.id)
         load()
       } else {
-        setError('Only its owner or an admin can delete this project.')
+        setError('Solo su dueño o un administrador puede eliminar este proyecto.')
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -44,27 +44,27 @@ export default function ProjectsDialog({ me, currentId, onOpen, onDeleted, onClo
   const shown = (rows ?? []).filter((r) => r.name.toLowerCase().includes(filter.toLowerCase()))
   return (
     <div className="dialog-backdrop" onClick={onClose}>
-      <div className="dialog" role="dialog" aria-label="Team projects" onClick={(e) => e.stopPropagation()}>
+      <div className="dialog" role="dialog" aria-label="Proyectos del equipo" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold">Team projects</h2>
-          <button className="btn-ghost" onClick={onClose} aria-label="Close">✕</button>
+          <h2 className="text-base font-semibold">Proyectos del equipo</h2>
+          <button className="btn-ghost" onClick={onClose} aria-label="Cerrar">✕</button>
         </div>
-        <input type="search" placeholder="Filter by name" value={filter} onChange={(e) => setFilter(e.target.value)}
-          aria-label="Filter projects" />
+        <input type="search" placeholder="Filtrar por nombre" value={filter} onChange={(e) => setFilter(e.target.value)}
+          aria-label="Filtrar proyectos" />
         {error && <p className="error">{error}</p>}
-        {rows === null ? <p className="hint">Loading…</p> : (
+        {rows === null ? <p className="hint">Cargando…</p> : (
           <ul className="project-list">
-            {shown.length === 0 && <li className="hint">No projects</li>}
+            {shown.length === 0 && <li className="hint">No hay proyectos</li>}
             {shown.map((r) => (
               <li key={r.id} className={r.id === currentId ? 'current' : ''}>
                 <button className="grow text-left" onClick={() => onOpen(r.id)}>
-                  <div className="font-medium">{r.name || 'Untitled project'}{r.id === currentId ? ' · open' : ''}</div>
+                  <div className="font-medium">{r.name || 'Proyecto sin nombre'}{r.id === currentId ? ' · abierto' : ''}</div>
                   <div className="hint">
-                    {new Date(r.updated_at).toLocaleString()} by {who(r.editor)} · owner {who(r.owner)}
+                    {new Date(r.updated_at).toLocaleString('es-MX')} por {who(r.editor)} · dueño: {who(r.owner)}
                   </div>
                 </button>
                 {(r.owner_id === me.id || me.role === 'admin') && (
-                  <button className="btn-danger text-xs" onClick={() => remove(r)} aria-label={`Delete ${r.name}`}>Delete</button>
+                  <button className="btn-danger text-xs" onClick={() => remove(r)} aria-label={`Eliminar ${r.name}`}>Eliminar</button>
                 )}
               </li>
             ))}

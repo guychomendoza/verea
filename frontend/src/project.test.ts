@@ -40,9 +40,9 @@ describe('project', () => {
   it('validates names', () => {
     let p = reduce(emptyProject(settings), { type: 'addGateway', lat: 0, lon: 0, catalog })
     p = reduce(p, { type: 'addNode', lat: 0, lon: 0, catalog })
-    expect(nameError(p, 'Node-1', 'GW-1')).toMatch(/already used/)
-    expect(nameError(p, 'Node-1', '  ')).toMatch(/empty/)
-    expect(nameError(p, 'Node-1', 'x'.repeat(41))).toMatch(/At most/)
+    expect(nameError(p, 'Node-1', 'GW-1')).toMatch(/ya está en uso/)
+    expect(nameError(p, 'Node-1', '  ')).toMatch(/vacío/)
+    expect(nameError(p, 'Node-1', 'x'.repeat(41))).toMatch(/Máximo/)
     expect(nameError(p, 'Node-1', 'Node-1')).toBe('')
   })
 

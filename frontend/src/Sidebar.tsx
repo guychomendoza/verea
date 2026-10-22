@@ -1,7 +1,9 @@
 import { useRef } from 'react'
 import type { MapMode } from './MapView'
 import { COLORS } from './colors'
+import { db } from './geo'
 import { isCellular } from './project'
+import { SHORTCUT_HELP } from './shortcuts'
 import type { Catalog, CellStatus, LinkResult, Project, Selection, Settings } from './types'
 
 interface Props {
@@ -25,9 +27,10 @@ interface Props {
   onImport: (file: File) => void
   onExport: () => void
   onNew: () => void
+  onReport: () => void
 }
 
-const MODEL_LABELS: Record<string, string> = { itm: 'Longley-Rice (ITM)', simple: 'Simple (FSPL + diffraction)' }
+const MODEL_LABELS: Record<string, string> = { itm: 'Longley-Rice (ITM)', simple: 'Simple (espacio libre + difracción)' }
 
 function dot(color: string) {
   return <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />
@@ -49,37 +52,36 @@ export default function Sidebar(p: Props) {
   }
 
   return (
-    <aside className="panel left-panel" aria-label="Project">
+    <aside className="panel side-panel" aria-label="Proyecto">
       {p.user && (
         <div className="flex items-center justify-between gap-2 text-sm">
           <span className="truncate" title={p.user.name}>👤 {p.user.name}</span>
-          <button className="btn-ghost underline" onClick={p.user.onSignOut}>Sign out</button>
+          <button className="btn-ghost underline" onClick={p.user.onSignOut}>Cerrar sesión</button>
         </div>
       )}
-      <div className="flex items-center gap-2">
-        <input className="grow font-semibold" placeholder="Untitled project" value={p.project.name}
-          maxLength={80} onChange={(e) => p.onMeta(e.target.value)} aria-label="Project name" />
-      </div>
+      <input className="font-semibold" placeholder="Proyecto sin nombre" value={p.project.name}
+        maxLength={80} onChange={(e) => p.onMeta(e.target.value)} aria-label="Nombre del proyecto" />
       <div className="flex flex-wrap gap-1.5">
-        {p.user && <button className="btn" onClick={p.user.onProjects}>Projects…</button>}
-        <button className="btn" onClick={p.onNew}>New</button>
-        <button className="btn" onClick={() => file.current?.click()}>{p.user ? 'Import file…' : 'Open…'}</button>
-        <button className="btn" onClick={p.onExport}>Save file</button>
+        {p.user && <button className="btn" onClick={p.user.onProjects}>Proyectos…</button>}
+        <button className="btn" onClick={p.onNew}>Nuevo</button>
+        <button className="btn" onClick={() => file.current?.click()}>{p.user ? 'Importar archivo…' : 'Abrir…'}</button>
+        <button className="btn" onClick={p.onExport}>Guardar archivo</button>
+        <button className="btn btn-active" onClick={p.onReport}>📄 Reporte</button>
         <input ref={file} type="file" accept=".json,application/json" hidden
           onChange={(e) => { const f = e.target.files?.[0]; if (f) p.onImport(f); e.target.value = '' }} />
       </div>
       <p className="hint" role="status">{p.status}</p>
 
-      {/* ── add devices ── */}
+      {/* ── add devices / tools ── */}
       <section>
-        <h3>Add to the map</h3>
+        <h3>Agregar al mapa</h3>
         <div className="flex flex-wrap gap-1.5">
-          <button className={`btn ${p.mode === 'addGateway' ? 'btn-active' : ''}`}
+          <button className={`btn ${p.mode === 'addGateway' ? 'btn-active' : ''}`} title="G"
             onClick={() => p.onMode(p.mode === 'addGateway' ? 'select' : 'addGateway')}>+ Gateway</button>
           <select className="btn" value={p.mode === 'addNode' ? p.addModel : ''}
             onChange={(e) => p.onMode(e.target.value ? 'addNode' : 'select', e.target.value)}
-            aria-label="Add node">
-            <option value="">+ Node…</option>
+            aria-label="Agregar nodo">
+            <option value="">+ Nodo…</option>
             <optgroup label="LoRaWAN">
               {lora.map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </optgroup>
@@ -87,8 +89,10 @@ export default function Sidebar(p: Props) {
               {cellModels.map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </optgroup>
           </select>
+          <button className={`btn ${p.mode === 'ruler' ? 'btn-active' : ''}`} title="R"
+            onClick={() => p.onMode(p.mode === 'ruler' ? 'select' : 'ruler')}>📏 Regla</button>
         </div>
-        {p.mode !== 'select' && <p className="hint">Click the map to place it. Esc to cancel.</p>}
+        {(p.mode === 'addGateway' || p.mode === 'addNode') && <p className="hint">Haz clic en el mapa para colocarlo. Esc para cancelar.</p>}
       </section>
 
       {/* ── devices ── */}
@@ -100,12 +104,12 @@ export default function Sidebar(p: Props) {
               <button className={p.selection?.name === g.name ? 'selected' : ''}
                 onClick={() => p.onSelect({ kind: 'gateway', name: g.name }, true)}>
                 {dot(g.online ? COLORS.gateway : COLORS.none)} {g.name}
-                {!g.online && <span className="hint">offline</span>}
+                {!g.online && <span className="hint">fuera de línea</span>}
               </button>
             </li>
           ))}
         </ul>
-        <h3>Nodes ({p.project.nodes.length})</h3>
+        <h3>Nodos ({p.project.nodes.length})</h3>
         <ul className="device-list">
           {p.project.nodes.map((n) => {
             const cell = isCellular(p.catalog, n)
@@ -116,7 +120,7 @@ export default function Sidebar(p: Props) {
                   onClick={() => p.onSelect({ kind: 'node', name: n.name }, true)}>
                   {dot(nodeColor(n.name, cell))} {n.name}
                   <span className="hint ml-auto">
-                    {cell ? (p.cells[n.name]?.short ?? '4G') : l ? `${l.margin_db.toFixed(1)} dB` : ''}
+                    {cell ? (p.cells[n.name]?.short ?? '4G') : l ? db(l.margin_db) : ''}
                   </span>
                 </button>
               </li>
@@ -128,24 +132,24 @@ export default function Sidebar(p: Props) {
       {/* ── settings ── */}
       <section>
         <h3>Radio</h3>
-        <label className="field"><span>Frequency (MHz)</span>
+        <label className="field"><span>Frecuencia (MHz)</span>
           <select value={s.freq_mhz} onChange={(e) => p.onSettings({ freq_mhz: Number(e.target.value) })}>
             {p.catalog.freq_mhz.map((f) => <option key={f} value={f}>{f}</option>)}
           </select>
         </label>
-        <label className="field"><span>Safety margin: {s.safety_margin} dB</span>
+        <label className="field"><span>Margen de seguridad: {s.safety_margin} dB</span>
           <input type="range" min={0} max={25} step={0.5} value={s.safety_margin}
             onChange={(e) => p.onSettings({ safety_margin: Number(e.target.value) })} />
-          <small className="hint">Reserve for fading, rain, foliage and things not in the map. Link margin is what is left over it.</small>
+          <small className="hint">Reserva para desvanecimientos, lluvia, follaje y lo que el mapa no ve. El margen del enlace es lo que sobra por encima.</small>
         </label>
-        <label className="field"><span>Default environment (new nodes)</span>
+        <label className="field"><span>Entorno por defecto (nodos nuevos)</span>
           <select value={s.environment} onChange={(e) => p.onSettings({ environment: e.target.value })}>
             {Object.entries(p.catalog.environments).map(([k, v]) => (
-              <option key={k} value={k}>{k} (+{v.clutter_loss_db} dB)</option>
+              <option key={k} value={k}>{v.label} (+{v.clutter_loss_db} dB)</option>
             ))}
           </select>
         </label>
-        <label className="field"><span>Propagation model</span>
+        <label className="field"><span>Modelo de propagación</span>
           <select value={s.propagation_model} onChange={(e) => p.onSettings({ propagation_model: e.target.value })}>
             {p.catalog.propagation_models.map((m) => <option key={m} value={m}>{MODEL_LABELS[m] ?? m}</option>)}
           </select>
@@ -153,18 +157,18 @@ export default function Sidebar(p: Props) {
       </section>
 
       <section>
-        <h3>Map</h3>
+        <h3>Mapa</h3>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={p.showLabels} onChange={(e) => p.onShowLabels(e.target.checked)} />
-          Place names, roads and boundaries
+          Nombres de lugares, carreteras y límites
         </label>
       </section>
 
       <section>
-        <h3>4G coverage</h3>
+        <h3>Cobertura 4G</h3>
         {p.catalog.cell_operators.length ? (
           <>
-            <label className="field"><span>Operator</span>
+            <label className="field"><span>Operador</span>
               <select value={s.cell_operator ?? ''} onChange={(e) => p.onSettings({ cell_operator: e.target.value || undefined })}>
                 <option value="">—</option>
                 {p.catalog.cell_operators.map((o) => <option key={o}>{o}</option>)}
@@ -172,15 +176,22 @@ export default function Sidebar(p: Props) {
             </label>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={p.showCoverage} onChange={(e) => p.onShowCoverage(e.target.checked)} />
-              Show on map
+              Mostrar en el mapa
             </label>
             {p.showCoverage && (
               <p className="hint">
-                {dot('#2a9d8f')} guaranteed · {dot('#e9c46a')} near an area without signal (250–500 m by terrain) · {dot('#e63946')} none declared
+                {dot('#2a9d8f')} garantizada · {dot('#e9c46a')} cerca de una zona sin señal (250–500 m según el terreno) · {dot('#e63946')} sin cobertura declarada
               </p>
             )}
           </>
-        ) : <p className="hint">No coverage data on the server.</p>}
+        ) : <p className="hint">El servidor no tiene datos de cobertura.</p>}
+      </section>
+
+      <section>
+        <h3>Atajos de teclado</h3>
+        <dl className="shortcuts">
+          {SHORTCUT_HELP.map(([k, v]) => (<div key={k}><dt><kbd>{k}</kbd></dt><dd>{v}</dd></div>))}
+        </dl>
       </section>
     </aside>
   )

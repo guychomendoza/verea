@@ -68,6 +68,10 @@ export interface Profile {
   los_m: number[]
   fresnel_radius_m: number[]
   clearance_pct: number[]
+  clearance_m: number[]
+  effective_terrain_m: number[]
+  gw_antenna_asl: number
+  node_antenna_asl: number
   worst_point_idx: number
   elevation_source: string
 }
@@ -109,7 +113,7 @@ export interface DeviceProfile {
 export interface Catalog {
   gateway_profiles: Record<string, DeviceProfile>
   node_profiles: Record<string, DeviceProfile>
-  environments: Record<string, { clutter_loss_db: number; description: string }>
+  environments: Record<string, { clutter_loss_db: number; label: string; description: string }>
   freq_mhz: number[]
   propagation_models: string[]
   diffraction_methods: string[]

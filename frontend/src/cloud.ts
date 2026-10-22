@@ -33,7 +33,7 @@ export interface Me {
 }
 
 function db(): SupabaseClient {
-  if (!supabase) throw new Error('Cloud storage is not configured')
+  if (!supabase) throw new Error('El almacenamiento en la nube no está configurado')
   return supabase
 }
 

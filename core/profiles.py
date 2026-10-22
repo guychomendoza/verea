@@ -18,8 +18,8 @@ GATEWAY_PROFILES = {
         "cable_loss": 0.5,
         "height": 2.5,
         "sensitivity": SX1302_SENSITIVITY,
-        "source": "Seeed SenseCAP M2 specs: SX1302, 26 dBm, -125 dBm (SF7) to -139 dBm (SF12), "
-                  "3 dBi external antenna included.",
+        "source": "Especificaciones Seeed SenseCAP M2: SX1302, 26 dBm, -125 dBm (SF7) a -139 dBm (SF12), "
+                  "antena externa de 3 dBi incluida.",
         "estimated": ["cable_loss"],
     },
     "milesight_ug63": {
@@ -29,8 +29,8 @@ GATEWAY_PROFILES = {
         "cable_loss": 0.3,
         "height": 2.5,
         "sensitivity": SX1302_SENSITIVITY,
-        "source": "Milesight UG63 datasheet: SX1302, 27 dBm max, -140 dBm @292 bps, "
-                  "1 external antenna (gain not published).",
+        "source": "Hoja de datos Milesight UG63: SX1302, 27 dBm máx., -140 dBm @292 bps, "
+                  "1 antena externa (ganancia no publicada).",
         "estimated": ["gain", "cable_loss"],
     },
     "milesight_sg50": {
@@ -40,25 +40,25 @@ GATEWAY_PROFILES = {
         "cable_loss": 0.5,
         "height": 2.5,
         "sensitivity": SX1302_SENSITIVITY,
-        "source": "Milesight SG50 datasheet: SX1302, 27 dBm max, -140 dBm @292 bps, "
-                  "N-type connector, 60 cm antenna + 1 m coax (gain not published).",
+        "source": "Hoja de datos Milesight SG50: SX1302, 27 dBm máx., -140 dBm @292 bps, "
+                  "conector tipo N, antena de 60 cm + 1 m de coaxial (ganancia no publicada).",
         "estimated": ["gain", "cable_loss"],
     },
     "custom": {
-        "label": "Custom",
+        "label": "Personalizado",
         "tx_power": 27,
         "gain": 6.0,
         "cable_loss": 1.5,
         "height": 10.0,
         "sensitivity": None,           # falls back to the SX1276 table
-        "source": "Generic outdoor gateway with fiberglass omni antenna.",
+        "source": "Gateway exterior genérico con antena omnidireccional de fibra de vidrio.",
         "estimated": [],
     },
 }
 
 NODE_PROFILES = {
     "dragino_lse01": {
-        "label": "Dragino LSE01 (soil)",
+        "label": "Dragino LSE01 (suelo)",
         "type": "sensor",
         "link": "lora",
         "tx_power": 20,
@@ -66,12 +66,12 @@ NODE_PROFILES = {
         "cable_loss": 0.0,
         "height": 1.5,
         "sf": 10,
-        "source": "Dragino LSE01: LoRaWAN soil moisture/EC, up to +20 dBm, internal antenna "
-                  "(gain not published).",
+        "source": "Dragino LSE01: humedad/CE de suelo LoRaWAN, hasta +20 dBm, antena interna "
+                  "(ganancia no publicada).",
         "estimated": ["gain"],
     },
     "dragino_se0x_lb": {
-        "label": "Dragino SE0X-LB (soil)",
+        "label": "Dragino SE0X-LB (suelo)",
         "type": "sensor",
         "link": "lora",
         "tx_power": 20,
@@ -79,9 +79,9 @@ NODE_PROFILES = {
         "cable_loss": 0.0,
         "height": 1.5,
         "sf": 10,
-        "source": "Dragino SE0X-LB: LoRaWAN soil moisture/EC, radio up to +22 dBm, "
-                  "-139 dBm RX; internal antenna (gain not published). 20 dBm used as "
-                  "the usual configured power.",
+        "source": "Dragino SE0X-LB: humedad/CE de suelo LoRaWAN, radio hasta +22 dBm, "
+                  "-139 dBm RX; antena interna (ganancia no publicada). Se usan 20 dBm, "
+                  "la potencia configurada habitual.",
         "estimated": ["gain", "tx_power"],
     },
     "dragino_se0x_cs": {
@@ -93,12 +93,12 @@ NODE_PROFILES = {
         "cable_loss": 0.0,
         "height": 1.5,
         "sf": 10,
-        "source": "Dragino SE0X-CS: NB-IoT / LTE-M soil sensor with solar panel. "
-                  "Talks to the cell network, not to a LoRaWAN gateway.",
+        "source": "Dragino SE0X-CS: sensor de suelo NB-IoT / LTE-M con panel solar. "
+                  "Usa la red celular, no un gateway LoRaWAN.",
         "estimated": [],
     },
     "sensecap_s2120": {
-        "label": "SenseCAP S2120 (weather)",
+        "label": "SenseCAP S2120 (estación meteorológica)",
         "type": "weather",
         "link": "lora",
         "tx_power": 19,
@@ -106,12 +106,12 @@ NODE_PROFILES = {
         "cable_loss": 0.0,
         "height": 3.0,
         "sf": 10,
-        "source": "SenseCAP S2120 8-in-1 weather station: 19 dBm, 2 dBi integrated antenna, "
-                  "mast mount.",
+        "source": "Estación meteorológica 8 en 1 SenseCAP S2120: 19 dBm, antena integrada de 2 dBi, "
+                  "montaje en mástil.",
         "estimated": [],
     },
     "custom_sensor": {
-        "label": "Custom sensor",
+        "label": "Sensor personalizado",
         "type": "sensor",
         "link": "lora",
         "tx_power": 14,
@@ -119,7 +119,7 @@ NODE_PROFILES = {
         "cable_loss": 0.5,
         "height": 1.5,
         "sf": 7,
-        "source": "Generic LoRaWAN node with quarter-wave whip.",
+        "source": "Nodo LoRaWAN genérico con antena de cuarto de onda.",
         "estimated": [],
     },
 }
@@ -166,4 +166,4 @@ def estimated_note(profile: dict) -> str:
     """Short note listing the estimated fields, for help texts."""
     if not profile["estimated"]:
         return profile["source"]
-    return f"{profile['source']} Estimated: {', '.join(profile['estimated'])}."
+    return f"{profile['source']} Estimados: {', '.join(profile['estimated'])}."

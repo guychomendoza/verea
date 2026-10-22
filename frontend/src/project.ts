@@ -99,9 +99,9 @@ export function reduce(p: Project, a: Action): Project {
 /** Why a new name is not valid ('' when it is). */
 export function nameError(p: Project, current: string, next: string): string {
   const n = next.trim()
-  if (!n) return 'Name cannot be empty'
-  if (n.length > MAX_NAME_LEN) return `At most ${MAX_NAME_LEN} characters`
-  if (n !== current && allNames(p).has(n)) return `"${n}" is already used`
+  if (!n) return 'El nombre no puede estar vacío'
+  if (n.length > MAX_NAME_LEN) return `Máximo ${MAX_NAME_LEN} caracteres`
+  if (n !== current && allNames(p).has(n)) return `"${n}" ya está en uso`
   return ''
 }
 

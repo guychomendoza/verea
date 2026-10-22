@@ -32,10 +32,10 @@ def require_user(authorization: str = Header(default="")) -> dict:
         return {"sub": "dev", "email": "dev@localhost"}
     url = os.environ.get("SUPABASE_URL")
     if not url:
-        raise HTTPException(503, "Login is not configured on this server")
+        raise HTTPException(503, "El inicio de sesión no está configurado en este servidor")
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token:
-        raise HTTPException(401, "Not logged in")
+        raise HTTPException(401, "No has iniciado sesión")
     import jwt
     issuer = f"{url.rstrip('/')}/auth/v1"
     secret = os.environ.get("SUPABASE_JWT_SECRET")
@@ -48,4 +48,4 @@ def require_user(authorization: str = Header(default="")) -> dict:
                           leeway=CLOCK_LEEWAY_S)
     except jwt.PyJWTError as e:
         log.warning("rejected session token: %s: %s", type(e).__name__, e)
-        raise HTTPException(401, "Invalid or expired session")
+        raise HTTPException(401, "Sesión no válida o vencida")

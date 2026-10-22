@@ -148,13 +148,13 @@ def best_link(gateways: list, nd: dict, analyze) -> tuple[Optional[dict], Option
     """
     online = [gw for gw in gateways if gw.get("online", True)]
     if not online:
-        return None, "No gateway online"
+        return None, "Ningún gateway en línea"
     best, error = None, None
     for gw in online:
         try:
             analysis = analyze(gw)
         except Exception as e:
-            error = f"Calculation failed ({type(e).__name__}: {e})"
+            error = f"Falló el cálculo ({type(e).__name__}: {e})"
             continue
         if best is None or analysis["result"].link_margin_db > best["result"].link_margin_db:
             best = analysis
@@ -164,21 +164,21 @@ def best_link(gateways: list, nd: dict, analyze) -> tuple[Optional[dict], Option
 def cell_state(operator: str, hit, diff) -> dict:
     """4G state of a cellular node from its guaranteed (`hit`) and differentiated (`diff`) status."""
     if hit and hit.covered and hit.margin_ok:
-        state = ("ok", f"✅ {operator} 4G guaranteed", f"{operator} 4G ✓")
+        state = ("ok", f"✅ {operator} 4G garantizado", f"{operator} 4G ✓")
     elif hit and hit.covered:
-        terrain = ("small gap" if hit.margin_m <= SMALL_GAP_MARGIN_M
-                   else "steep terrain" if hit.margin_m <= MARGIN_STEEP_M + 20
-                   else "flat terrain" if hit.margin_m >= MARGIN_FLAT_M - 50 else "rolling terrain")
-        state = ("edge", f"⚠️ {operator} 4G uncertain: {hit.edge_m:,.0f} m from an area without "
-                         f"signal (margin there {hit.margin_m:,.0f} m, {terrain})",
-                 f"{operator} 4G uncertain")
+        terrain = ("hueco pequeño" if hit.margin_m <= SMALL_GAP_MARGIN_M
+                   else "terreno abrupto" if hit.margin_m <= MARGIN_STEEP_M + 20
+                   else "terreno plano" if hit.margin_m >= MARGIN_FLAT_M - 50 else "terreno ondulado")
+        state = ("edge", f"⚠️ {operator} 4G incierto: a {hit.edge_m:,.0f} m de una zona sin "
+                         f"señal (margen ahí {hit.margin_m:,.0f} m, {terrain})",
+                 f"{operator} 4G incierto")
     elif diff and diff.covered:
-        state = ("differentiated", f"⚠️ {operator} 4G differentiated only (no guarantee)",
-                 f"{operator} 4G no guarantee")
+        state = ("differentiated", f"⚠️ {operator} 4G solo diferenciado (sin garantía)",
+                 f"{operator} 4G sin garantía")
     else:
-        near = (f"nearest {hit.nearest_m:,.0f} m away" if hit and hit.nearest_m is not None
-                else "none within 20 km")
-        state = ("none", f"❌ No {operator} 4G declared ({near})", f"no {operator} 4G")
+        near = (f"la más cercana a {hit.nearest_m:,.0f} m" if hit and hit.nearest_m is not None
+                else "ninguna en 20 km")
+        state = ("none", f"❌ Sin 4G {operator} declarado ({near})", f"sin 4G {operator}")
     return {"state": state[0], "text": state[1], "short": state[2]}
 
 

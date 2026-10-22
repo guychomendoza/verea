@@ -27,16 +27,23 @@ frontend, DB with users) is planned.
 - `app.py` — the whole Streamlit UI (sidebar, map, panels, report, projects, autosave).
 - `core/network.py` — device dicts → Gateway/EndNode, `RFSettings`, `analyze_link`, `best_link`,
   `cell_state`: the calculations shared by Streamlit and the API (results must stay identical).
-- `frontend/` — React + MapLibre web app: `App.tsx` (state, recalculation, import/export),
-  `MapView.tsx` (map, drag, add), `Sidebar.tsx`, `DevicePanel.tsx`, `project.ts` (pure reducer,
-  device naming like the app), `api.ts`. maplibre-gl.css forces `.maplibregl-map` to
-  position: relative: size the map container with an inline style.
+- `frontend/` — React + MapLibre web app: `App.tsx` (state, recalculation, autosave, shortcuts,
+  resizable/collapsible panels via react-resizable-panels), `MapView.tsx` (map, drag, add, ruler,
+  labels "name / km · dB", profile cursor and pins), `ProfilePanel.tsx` + `profilePlot.ts`
+  ("Perfil de Elevación", Plotly loaded on demand from `plotly.ts`, same traces as
+  `ui/profile_interactive.py`), `Sidebar.tsx`, `DevicePanel.tsx`, `report/` (PDF with jsPDF and
+  interactive HTML, both built in the browser), `shortcuts.ts` (G/Ctrl+G, N = LSE01, R, Ctrl+S;
+  Ctrl+N cannot be captured in Chrome), `project.ts` (pure reducer), `api.ts`.
+  maplibre-gl.css forces `.maplibregl-map` to position: relative: size the map container inline.
+  Map updates apply after the map's own 'load' (a late `once('load')` never fires).
 - `supabase/` — database: `migrations/*.sql` (profiles, projects, RLS: all active members read
   and edit, owner/admin delete, invite-only, optimistic locking on `updated_at`), `tests/` (RLS on a
   real PostgreSQL via pgserver + `supabase_shim.sql`). `scripts/supabase_setup.py` applies it and
   configures auth through the Management API. Frontend `cloud.ts` / `Login.tsx` /
   `ProjectsDialog.tsx`; without `VITE_SUPABASE_*` the app runs in local mode (no login).
-  Cloud-mode browser test with a fake Supabase: `frontend/e2e/cloud.py` (dev server on 5174).
+  Browser tests (docstrings say how to start them): `frontend/e2e/run.py` (local mode, 5174 + dev
+  API 8001), `cloud.py` (fake Supabase, 5175), `live.py` (real Supabase; works only in its own
+  project — on 2026-10-22 an earlier version renamed the team's newest project).
 - `backend/` — FastAPI web API (`main.py`), request limits (`schemas.py`), Supabase JWT check
   (`auth.py`: no `SUPABASE_URL` and no `VEREA_DEV=1` → every protected request is refused).
   Elevations from the local DEM (`core/dem.py`), sampled like Open-Meteo (cell containing the
@@ -130,6 +137,8 @@ Fly.io with a volume for data; Supabase for Auth + Postgres (projects as the JSO
 - Open-Meteo has an hourly request limit (hit on 2026-10-21): the API must use the local DEM.
 
 ## Conventions
-- UI text in English; the user writes in Spanish.
+- UI text in Spanish (since 2026-10-22), keeping technical terms (gateway, dB, SF, RSSI, LoRa…);
+  keys stored in projects (e.g. environment names) stay as they are, with Spanish `label`s.
+  The user writes in Spanish.
 - Commit messages: imperative subject + body explaining why; push to `master`.
 - Keep comments short; match the surrounding style.

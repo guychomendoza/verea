@@ -47,7 +47,7 @@ def test_links_match_core(client):
 
 def test_no_gateway_online(client):
     r = client.post("/api/links", json={"gateways": [{**GW, "online": False}], "nodes": [NODE]})
-    assert r.json()["results"]["N-1"] == {"link": None, "error": "No gateway online"}
+    assert r.json()["results"]["N-1"] == {"link": None, "error": "Ningún gateway en línea"}
 
 
 def test_link_detail_has_profile(client):
@@ -55,6 +55,10 @@ def test_link_detail_has_profile(client):
     prof = r["profile"]
     assert len(prof["distances_m"]) == len(prof["elevations_m"]) == len(prof["los_m"]) >= 30
     assert max(prof["elevations_m"]) == pytest.approx(1860, abs=2)
+    n = len(prof["elevations_m"])
+    assert len(prof["effective_terrain_m"]) == len(prof["clearance_m"]) == n
+    assert prof["gw_antenna_asl"] == pytest.approx(prof["elevations_m"][0] + 6.0)
+    assert min(prof["clearance_m"]) < 0          # the 60 m hill blocks the line of sight
     assert r["budget"]["link_margin_db"] == pytest.approx(r["summary"]["margin_db"])
 
 

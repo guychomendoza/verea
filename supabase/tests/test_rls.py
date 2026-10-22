@@ -141,3 +141,12 @@ def test_project_size_and_shape_are_checked(db, team):
         ana.q("insert into projects (name, data) values ('x', '[]')")
     with pytest.raises(psycopg.errors.CheckViolation):
         ana.q("insert into projects (name, data) values (%s, '{}')", "n" * 121)
+
+
+def test_deleting_an_editor_clears_last_edited_by(db, team):
+    temp = new_user(db, "temp@farm.mx")
+    pid, *_ = create(db, team["ana"])
+    As(db, temp).q("update projects set name = 'touched' where id = %s", pid)
+    with psycopg.connect(db, autocommit=True) as c:
+        c.execute("delete from auth.users where id = %s", (temp,))
+        assert c.execute("select name, updated_by from projects where id = %s", (pid,)).fetchone() == ("touched", None)

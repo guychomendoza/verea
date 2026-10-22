@@ -12,6 +12,7 @@ Needs a development API (accepts any token) and a dev server in cloud mode point
     .venv/bin/python frontend/e2e/cloud.py
 """
 import json
+import os
 import re
 import sys
 import tempfile
@@ -23,7 +24,7 @@ from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import expect, sync_playwright
 
-URL = "http://127.0.0.1:5174/"
+URL = os.environ.get("VEREA_E2E_URL", "http://127.0.0.1:5175/")
 OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(tempfile.mkdtemp(prefix="verea-cloud-"))
 SUPA = "https://fake.supabase.co"
 ME = {"id": str(uuid.uuid4()), "email": "ana@farm.mx", "full_name": "Ana", "role": "member"}
@@ -130,53 +131,53 @@ def main():
         page.route(f"{SUPA}/rest/v1/**", rest)
         page.route(f"{SUPA}/auth/v1/**", auth)
         page.goto(URL)
-        expect(page.get_by_role("button", name="Sign in")).to_be_visible(timeout=20000)
+        expect(page.get_by_role("button", name="Iniciar sesión")).to_be_visible(timeout=20000)
         page.screenshot(path=f"{OUT}/login.png")
         # login
-        page.get_by_label("Email").fill(ME["email"])
-        page.get_by_label("Password").fill("wrong")
-        page.get_by_role("button", name="Sign in").click()
-        expect(page.get_by_role("alert")).to_contain_text("Wrong email or password")
-        page.get_by_label("Password").fill("correct-horse-battery")
-        page.get_by_role("button", name="Sign in").click()
-        side = page.get_by_role("complementary", name="Project", exact=True)
+        page.get_by_label("Correo").fill(ME["email"])
+        page.get_by_label("Contraseña").fill("wrong")
+        page.get_by_role("button", name="Iniciar sesión").click()
+        expect(page.get_by_role("alert")).to_contain_text("Correo o contraseña incorrectos")
+        page.get_by_label("Contraseña").fill("correct-horse-battery")
+        page.get_by_role("button", name="Iniciar sesión").click()
+        side = page.get_by_role("complementary", name="Proyecto", exact=True)
         expect(side).to_contain_text("Ana", timeout=20000)
         # opens the most recent team project (Beto's)
-        expect(page.get_by_label("Project name")).to_have_value("Beto's orchard", timeout=20000)
-        print("opened most recent:", page.get_by_label("Project name").input_value())
+        expect(page.get_by_label("Nombre del proyecto")).to_have_value("Beto's orchard", timeout=20000)
+        print("opened most recent:", page.get_by_label("Nombre del proyecto").input_value())
         # edit -> autosaved
-        page.get_by_label("Project name").fill("Beto's orchard v2")
-        expect(page.get_by_role("status")).to_contain_text("Saved", timeout=10000)
+        page.get_by_label("Nombre del proyecto").fill("Beto's orchard v2")
+        expect(page.get_by_role("status")).to_contain_text("Guardado", timeout=10000)
         pid = next(k for k, v in PROJECTS.items() if v["name"] == "Beto's orchard v2")
         print("autosaved name:", PROJECTS[pid]["name"], "updated_by Ana:", PROJECTS[pid]["updated_by"] == ME["id"])
         # someone else saves meanwhile -> my next save is refused, not overwritten
         PROJECTS[pid].update(name="Beto's edit", data={**PROJECTS[pid]["data"], "name": "Beto's edit"},
                              updated_at=now(), updated_by=OTHER["id"])
-        page.get_by_label("Project name").fill("Ana's late edit")
-        expect(page.get_by_role("alert").filter(has_text="Someone else saved")).to_be_visible(timeout=10000)
+        page.get_by_label("Nombre del proyecto").fill("Ana's late edit")
+        expect(page.get_by_role("alert").filter(has_text="Alguien más guardó")).to_be_visible(timeout=10000)
         assert PROJECTS[pid]["name"] == "Beto's edit"
         print("conflict detected, their version kept:", PROJECTS[pid]["name"])
-        page.get_by_role("button", name="Save mine as a copy").click()
-        expect(page.get_by_label("Project name")).to_have_value("Ana's late edit (my copy)", timeout=10000)
-        assert any(v["name"] == "Ana's late edit (my copy)" and v["owner_id"] == ME["id"] for v in PROJECTS.values())
+        page.get_by_role("button", name="Guardar la mía como copia").click()
+        expect(page.get_by_label("Nombre del proyecto")).to_have_value("Ana's late edit (mi copia)", timeout=10000)
+        assert any(v["name"] == "Ana's late edit (mi copia)" and v["owner_id"] == ME["id"] for v in PROJECTS.values())
         print("copy saved:", len(PROJECTS), "projects")
         # projects dialog: list, no delete on someone else's, delete own
-        side.get_by_role("button", name="Projects…").click()
-        dialog = page.get_by_role("dialog", name="Team projects")
+        side.get_by_role("button", name="Proyectos…").click()
+        dialog = page.get_by_role("dialog", name="Proyectos del equipo")
         expect(dialog).to_contain_text("Beto's edit")
         page.screenshot(path=f"{OUT}/projects.png")
-        assert dialog.get_by_role("button", name="Delete Beto's edit").count() == 0
+        assert dialog.get_by_role("button", name="Eliminar Beto's edit").count() == 0
         page.on("dialog", lambda d: d.accept())
-        dialog.get_by_role("button", name=re.compile("Delete Ana's late edit")).click()
-        expect(dialog).not_to_contain_text("Ana's late edit (my copy)", timeout=10000)
+        dialog.get_by_role("button", name=re.compile("Eliminar Ana's late edit")).click()
+        expect(dialog).not_to_contain_text("Ana's late edit (mi copia)", timeout=10000)
         dialog.get_by_role("button", name=re.compile("Beto's edit")).click()
-        expect(page.get_by_label("Project name")).to_have_value("Beto's edit", timeout=10000)
+        expect(page.get_by_label("Nombre del proyecto")).to_have_value("Beto's edit", timeout=10000)
         # reload: session kept, last project reopened
         page.reload()
-        expect(page.get_by_label("Project name")).to_have_value("Beto's edit", timeout=20000)
+        expect(page.get_by_label("Nombre del proyecto")).to_have_value("Beto's edit", timeout=20000)
         print("reload keeps session and project: ok")
-        side.get_by_role("button", name="Sign out").click()
-        expect(page.get_by_role("button", name="Sign in")).to_be_visible(timeout=10000)
+        side.get_by_role("button", name="Cerrar sesión").click()
+        expect(page.get_by_role("button", name="Iniciar sesión")).to_be_visible(timeout=10000)
         print("signed out: ok")
         b.close()
     print("page errors:", errors)

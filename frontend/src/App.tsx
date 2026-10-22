@@ -1,23 +1,31 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import type maplibregl from 'maplibre-gl'
+import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels'
 import type { Session } from '@supabase/supabase-js'
 import { api, ApiError, setToken } from './api'
 import * as cloud from './cloud'
 import { COLORS } from './colors'
 import DevicePanel from './DevicePanel'
-import { Login, Notice, SetPassword } from './Login'
-import ProjectsDialog from './ProjectsDialog'
 import { downloadBlob, mapToPng, safeName, type LegendItem } from './exportImage'
+import { distance, haversine } from './geo'
+import { Login, Notice, SetPassword } from './Login'
 import MapView, { type MapMode } from './MapView'
+import ProfilePanel from './ProfilePanel'
+import { profileTitle } from './profilePlot'
 import { emptyProject, isCellular, PROJECT_VERSION, reduce, rename, selected, type Action } from './project'
+import ProjectsDialog from './ProjectsDialog'
+import ReportDialog from './report/ReportDialog'
 import SearchBox from './SearchBox'
+import { shortcutFor } from './shortcuts'
 import Sidebar from './Sidebar'
-import type { Catalog, CellStatus, LinkResult, Project, Selection } from './types'
+import type { Catalog, CellStatus, LinkDetail, LinkResult, NodeDevice, Project, Selection } from './types'
 
 const STORAGE_KEY = 'verea.project'     // local mode (no Supabase configured)
 const LAST_PROJECT_KEY = 'verea.lastProject'
 const RECALC_DELAY_MS = 400
 const SAVE_DELAY_MS = 1500
+const SHORTCUT_NODE_MODEL = 'dragino_lse01'
+const NARROW_PX = 900
 
 function loadLocal(): Project | null {
   try {
@@ -54,21 +62,32 @@ function useDebounced<T>(value: T, ms: number): T {
   return v
 }
 
+function useNarrow(): boolean {
+  const [narrow, setNarrow] = useState(() => window.innerWidth < NARROW_PX)
+  useEffect(() => {
+    const onResize = () => setNarrow(window.innerWidth < NARROW_PX)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  return narrow
+}
+
+const apiError = (e: unknown) => (e instanceof ApiError ? `${e.status}: ${e.message}` : 'No se puede conectar con el servidor de Verea')
+
 export default function App() {
   const [catalog, setCatalog] = useState<Catalog | null>(null)
   const [error, setError] = useState('')
   useEffect(() => {
-    api.catalog().then(setCatalog).catch((e) =>
-      setError(e instanceof ApiError ? `${e.status}: ${e.message}` : 'Cannot reach the Verea server'))
+    api.catalog().then(setCatalog).catch((e) => setError(apiError(e)))
   }, [])
   if (!cloud.cloudEnabled) {
     if (error) return <div className="p-6 text-red-600">⚠ {error}</div>
-    if (!catalog) return <div className="p-6">Loading…</div>
+    if (!catalog) return <div className="p-6">Cargando…</div>
     return <Workspace catalog={catalog} />
   }
   return <CloudGate catalog={catalog} error={error} onSession={() => {
     setError('')
-    api.catalog().then(setCatalog).catch((e) => setError(e instanceof ApiError ? `${e.status}: ${e.message}` : 'Cannot reach the Verea server'))
+    api.catalog().then(setCatalog).catch((e) => setError(apiError(e)))
   }} />
 }
 
@@ -103,20 +122,20 @@ function CloudGate({ catalog, error, onSession }: { catalog: Catalog | null; err
 
   const signOut = () => { cloud.supabase!.auth.signOut(); store(LAST_PROJECT_KEY, null) }
 
-  if (session === undefined) return <div className="p-6">Loading…</div>
+  if (session === undefined) return <div className="p-6">Cargando…</div>
   if (!session) return <Login />
   if (mustSetPassword) return <SetPassword email={session.user.email ?? ''} onDone={() => setMustSetPassword(false)} />
-  if (me === undefined) return <div className="p-6">Loading…</div>
+  if (me === undefined) return <div className="p-6">Cargando…</div>
   if (me === null) {
     return (
-      <Notice title="This account is not active">
-        <p className="hint">Ask your team admin to (re)activate {session.user.email}.</p>
-        <button className="btn" onClick={signOut}>Sign out</button>
+      <Notice title="Esta cuenta no está activa">
+        <p className="hint">Pide al administrador de tu equipo que (re)active {session.user.email}.</p>
+        <button className="btn" onClick={signOut}>Cerrar sesión</button>
       </Notice>
     )
   }
   if (error) return <div className="p-6 text-red-600">⚠ {error}</div>
-  if (!catalog) return <div className="p-6">Loading…</div>
+  if (!catalog) return <div className="p-6">Cargando…</div>
   return <Workspace catalog={catalog} user={{ me, signOut }} />
 }
 
@@ -130,6 +149,7 @@ type SaveState = 'saved' | 'saving' | 'pending' | 'conflict' | 'error'
 
 function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me; signOut: () => void } }) {
   const cloudMode = !!user
+  const narrow = useNarrow()
   const [project, dispatchRaw] = useReducer(reduce, null, () =>
     (cloudMode ? null : loadLocal()) ?? emptyProject(catalog.defaults))
   const [selection, setSelection] = useState<Selection>(null)
@@ -143,6 +163,8 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
   const [links, setLinks] = useState<Record<string, LinkResult>>({})
   const [cells, setCells] = useState<Record<string, CellStatus>>({})
   const [status, setStatus] = useState('')
+  const [ruler, setRuler] = useState<[number, number][]>([])
+  const [showReport, setShowReport] = useState(false)
   const dispatch = useCallback((a: Action) => dispatchRaw(a), [])
 
   // ── persistence: browser (local mode) or cloud with optimistic locking ──
@@ -151,6 +173,7 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
   const [saveError, setSaveError] = useState('')
   const [showProjects, setShowProjects] = useState(false)
   const savedRef = useRef<Project | null>(null)       // the project as last loaded / saved
+  const savingRef = useRef(false)
 
   useEffect(() => { if (!cloudMode) store(STORAGE_KEY, JSON.stringify(project)) }, [project, cloudMode])
 
@@ -193,26 +216,39 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
     })().catch((e) => { setSaveState('error'); setSaveError(e.message) })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  /** Save the current project to the cloud now (autosave timer and Ctrl+S). */
+  const projectRef = useRef(project)
+  projectRef.current = project
+  const docRef = useRef(doc)
+  docRef.current = doc
+  const saveNow = useCallback(async () => {
+    const d = docRef.current
+    const p = projectRef.current
+    if (!d || savingRef.current || p === savedRef.current) return
+    savingRef.current = true
+    setSaveState('saving')
+    try {
+      const updated = await cloud.saveProject(d.id, p, d.updated_at)
+      if (updated === null) {
+        setSaveState('conflict')
+        return
+      }
+      savedRef.current = p
+      setDoc({ ...d, updated_at: updated })
+      setSaveState(projectRef.current === p ? 'saved' : 'pending')
+    } catch (e) {
+      setSaveState('error')
+      setSaveError(e instanceof Error ? e.message : String(e))
+    } finally {
+      savingRef.current = false
+    }
+  }, [])
+
   // Autosave shortly after the last change
   useEffect(() => {
     if (!cloudMode || !doc || project === savedRef.current || saveState === 'conflict') return
     setSaveState('pending')
-    const t = setTimeout(async () => {
-      setSaveState('saving')
-      try {
-        const updated = await cloud.saveProject(doc.id, project, doc.updated_at)
-        if (updated === null) {
-          setSaveState('conflict')
-          return
-        }
-        savedRef.current = project
-        setDoc({ ...doc, updated_at: updated })
-        setSaveState('saved')
-      } catch (e) {
-        setSaveState('error')
-        setSaveError(e instanceof Error ? e.message : String(e))
-      }
-    }, SAVE_DELAY_MS)
+    const t = setTimeout(saveNow, SAVE_DELAY_MS)
     return () => clearTimeout(t)
   }, [project, doc, cloudMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -225,8 +261,8 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
   }, [cloudMode, saveState])
 
   const saveText = !cloudMode ? '' : {
-    saved: '☁ Saved', saving: '☁ Saving…', pending: '☁ Unsaved changes…',
-    conflict: '⚠ Not saved: changed by someone else', error: `⚠ Not saved: ${saveError}`,
+    saved: '☁ Guardado', saving: '☁ Guardando…', pending: '☁ Cambios sin guardar…',
+    conflict: '⚠ Sin guardar: alguien más lo modificó', error: `⚠ Sin guardar: ${saveError}`,
   }[saveState]
 
   const cellular = useMemo(
@@ -244,13 +280,13 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
       return
     }
     const ctrl = new AbortController()
-    setStatus('Calculating links…')
+    setStatus('Calculando enlaces…')
     api.links(gateways, nodes, settings, ctrl.signal)
       .then((r) => {
         setLinks(r.results)
-        setStatus(`Links up to date · terrain: ${r.elevation}`)
+        setStatus(`Enlaces al día · terreno: ${r.elevation}`)
       })
-      .catch((e) => { if (e.name !== 'AbortError') setStatus(`⚠ Link calculation failed: ${e.message}`) })
+      .catch((e) => { if (e.name !== 'AbortError') setStatus(`⚠ Falló el cálculo de enlaces: ${e.message}`) })
     return () => ctrl.abort()
   }, [linkInput])
 
@@ -267,16 +303,48 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
     const ctrl = new AbortController()
     api.cellStatus(operator, points, ctrl.signal)
       .then((r) => setCells(Object.fromEntries(r.points.map((c) => [c.name ?? '', c]))))
-      .catch((e) => { if (e.name !== 'AbortError') setStatus(`⚠ 4G check failed: ${e.message}`) })
+      .catch((e) => { if (e.name !== 'AbortError') setStatus(`⚠ Falló la revisión 4G: ${e.message}`) })
     return () => ctrl.abort()
   }, [cellInput])
 
-  // Esc leaves the add mode
+  // ── elevation profile of the selected node's best link ──
+  const dev = selected(project, selection)
+  const selNode = selection?.kind === 'node' && dev && !cellular.has(dev.name) ? (dev as NodeDevice) : null
+  const best = selNode ? links[selNode.name]?.link : undefined
+  const bestGw = best ? project.gateways.find((g) => g.name === best.gateway) : undefined
+  const [detail, setDetail] = useState<LinkDetail | null>(null)
+  const [pins, setPins] = useState<number[]>([])
+  const [cursorIdx, setCursorIdx] = useState<number | null>(null)
+  const detailKey = selNode && bestGw ? JSON.stringify([bestGw, selNode, rf]) : ''
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMode('select') }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+    setDetail(null)
+    setPins([])
+    setCursorIdx(null)
+    if (!detailKey) return
+    const [g, n, settings] = JSON.parse(detailKey)
+    const ctrl = new AbortController()
+    api.link(g, n, settings, ctrl.signal).then(setDetail).catch(() => {})
+    return () => ctrl.abort()
+  }, [detailKey])
+  const profileStatus = !selNode
+    ? 'Selecciona un nodo LoRa (en el mapa o en la lista) para ver el perfil de elevación de su enlace.'
+    : !bestGw ? (links[selNode.name]?.error ?? 'Calculando el enlace…') : 'Cargando el terreno…'
+  const title = detail && selNode && best
+    ? profileTitle(detail.profile, { gateway: best.gateway, node: selNode.name, sf: selNode.sf, freqMhz: project.settings.freq_mhz })
+    : ''
+  const coordAt = (i: number) => detail?.profile.coordinates[i] as [number, number] | undefined
+
+  // ── panels ──
+  const leftRef = useRef<ImperativePanelHandle>(null)
+  const profileRef = useRef<ImperativePanelHandle>(null)
+  const rightRef = useRef<ImperativePanelHandle>(null)
+  const [collapsed, setCollapsed] = useState({ left: false, profile: false, right: false })
+  const toggle = (which: 'left' | 'profile' | 'right') => {
+    const ref = { left: leftRef, profile: profileRef, right: rightRef }[which].current
+    if (!ref) return
+    if (ref.isCollapsed()) ref.expand()
+    else ref.collapse()
+  }
 
   const select = (s: Selection, fly = false) => {
     setSelection(s)
@@ -297,6 +365,44 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
     setMode('select')
   }
 
+  // ── keyboard shortcuts ──
+  const keyHandler = useRef<(e: KeyboardEvent) => void>(() => {})
+  keyHandler.current = (e: KeyboardEvent) => {
+    const action = shortcutFor(e)
+    if (!action || showReport || showProjects) return
+    if (action === 'save' || (action === 'addGateway' && (e.ctrlKey || e.metaKey))) e.preventDefault()
+    switch (action) {
+      case 'addGateway':
+        setMode('addGateway')
+        break
+      case 'addNode':
+        setAddModel(SHORTCUT_NODE_MODEL)
+        setMode('addNode')
+        break
+      case 'ruler':
+        if (mode === 'ruler') setMode('select')
+        else { setRuler([]); setMode('ruler') }
+        break
+      case 'cancel':
+        setMode('select')
+        break
+      case 'save':
+        if (cloudMode) {
+          if (saveState === 'saved') setStatus('Todo está guardado')
+          else saveNow()
+        } else {
+          store(STORAGE_KEY, JSON.stringify(project))
+          setStatus('Guardado en este navegador')
+        }
+        break
+    }
+  }
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => keyHandler.current(e)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   const importFile = async (file: File) => {
     try {
       const raw = JSON.parse(await file.text())
@@ -310,112 +416,169 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
         const first = p.gateways[0] ?? p.nodes[0]
         if (first) setFocus({ lat: first.lat, lon: first.lon, zoom: 14, key: Date.now() })
       }
-      setStatus(`Opened ${file.name}`)
+      setStatus(`Abierto: ${file.name}`)
     } catch (e) {
-      setStatus(`⚠ Could not open ${file.name}: ${e instanceof Error ? e.message : e}`)
+      setStatus(`⚠ No se pudo abrir ${file.name}: ${e instanceof Error ? e.message : e}`)
     }
+  }
+
+  const mapLegend = (): LegendItem[] => {
+    const legend: LegendItem[] = []
+    if (project.gateways.length) legend.push({ color: COLORS.gateway, label: 'Gateway' })
+    if (Object.keys(links).length) {
+      legend.push({ color: COLORS.viable, label: 'Enlace viable', line: true },
+        { color: COLORS.marginal, label: 'Marginal', line: true },
+        { color: COLORS.fail, label: 'No viable', line: true })
+    }
+    if (showCoverage) {
+      legend.push({ color: COLORS.cellOk, label: '4G garantizado' },
+        { color: COLORS.cellEdge, label: '4G incierto (cerca de una zona sin señal)' },
+        { color: COLORS.cellNone, label: 'Sin 4G declarado' })
+    }
+    return legend
   }
 
   const exportMap = async () => {
     const map = mapRef.current
     if (!map) return
-    const legend: LegendItem[] = []
-    if (project.gateways.length) legend.push({ color: COLORS.gateway, label: 'Gateway' })
-    if (Object.keys(links).length) {
-      legend.push({ color: COLORS.viable, label: 'Viable link', line: true },
-        { color: COLORS.marginal, label: 'Marginal', line: true },
-        { color: COLORS.fail, label: 'Not viable', line: true })
-    }
-    if (showCoverage) {
-      legend.push({ color: COLORS.cellOk, label: '4G guaranteed' },
-        { color: COLORS.cellEdge, label: '4G uncertain (near a gap)' },
-        { color: COLORS.cellNone, label: 'No 4G declared' })
-    }
     const center = map.getCenter()
     try {
       const blob = await mapToPng(map.getCanvas(), {
-        title: project.name.trim() || 'Verea project',
-        subtitle: `${new Date().toLocaleString()} · centre ${center.lat.toFixed(5)}, ${center.lng.toFixed(5)}`,
-        legend,
-        attribution: 'Imagery and labels © Esri' + (showCoverage ? ' · 4G coverage: CRT / datos.gob.mx (CC BY 4.0)' : ''),
+        title: project.name.trim() || 'Proyecto Verea',
+        subtitle: `${new Date().toLocaleString('es-MX')} · centro ${center.lat.toFixed(5)}, ${center.lng.toFixed(5)}`,
+        legend: mapLegend(),
+        attribution: 'Imágenes y nombres © Esri' + (showCoverage ? ' · Cobertura 4G: CRT / datos.gob.mx (CC BY 4.0)' : ''),
       })
-      downloadBlob(blob, `${safeName(project.name)}_map.png`)
+      downloadBlob(blob, `${safeName(project.name)}_mapa.png`)
     } catch (e) {
-      setStatus(`⚠ Could not create the map image: ${e instanceof Error ? e.message : e}`)
+      setStatus(`⚠ No se pudo crear la imagen del mapa: ${e instanceof Error ? e.message : e}`)
     }
   }
 
   const exportFile = () => {
     const blob = new Blob([JSON.stringify({ ...project, saved_at: new Date().toISOString() }, null, 1)],
       { type: 'application/json' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `${(project.name.trim() || 'verea_project').replace(/[^\w-]+/g, '_').slice(0, 60)}.verea.json`
-    a.click()
-    URL.revokeObjectURL(a.href)
+    downloadBlob(blob, `${safeName(project.name || 'proyecto_verea')}.verea.json`)
   }
 
   // Cloud: nothing is editable until the project is open, so no edit is lost to the load
   if (cloudMode && !doc) {
     return saveState === 'error'
-      ? <Notice title="Could not open your projects"><p className="hint">{saveError}</p>
-          <button className="btn" onClick={() => window.location.reload()}>Try again</button></Notice>
-      : <div className="p-6">Opening project…</div>
+      ? <Notice title="No se pudieron abrir tus proyectos"><p className="hint">{saveError}</p>
+          <button className="btn" onClick={() => window.location.reload()}>Reintentar</button></Notice>
+      : <div className="p-6">Abriendo el proyecto…</div>
   }
 
-  const dev = selected(project, selection)
-  return (
-    <div className="app">
-      <Sidebar catalog={catalog} project={project} selection={selection} links={links} cells={cells}
-        mode={mode} addModel={addModel} showCoverage={showCoverage}
-        status={[saveText, status].filter(Boolean).join(' · ')}
-        user={user ? { name: user.me.full_name || user.me.email, onSignOut: user.signOut,
-          onProjects: () => setShowProjects(true) } : undefined}
-        onMode={(m, model) => { setMode(m); if (model) setAddModel(model) }}
-        onSettings={(patch) => dispatch({ type: 'settings', patch })}
-        onMeta={(name) => dispatch({ type: 'meta', name })}
-        onSelect={select} onShowCoverage={setShowCoverage}
-        showLabels={showLabels} onShowLabels={setShowLabels}
-        onImport={importFile} onExport={exportFile}
-        onNew={() => {
-          if (cloudMode) {
-            createCloud(emptyProject(catalog.defaults)).catch((e) => setStatus(`⚠ ${e.message}`))
-            return
-          }
-          if (!confirm('Start a new empty project? Save the current one to a file first if you need it.')) return
-          dispatch({ type: 'load', project: emptyProject(catalog.defaults) })
-          setSelection(null)
+  const rulerTotal = ruler.slice(1).reduce((sum, pt, i) => sum + haversine(ruler[i], pt), 0)
+  const served = selection?.kind === 'gateway'
+    ? Object.values(links).filter((r) => r.link?.gateway === selection.name).length : 0
+
+  const sidebar = (
+    <Sidebar catalog={catalog} project={project} selection={selection} links={links} cells={cells}
+      mode={mode} addModel={addModel} showCoverage={showCoverage}
+      status={[saveText, status].filter(Boolean).join(' · ')}
+      user={user ? { name: user.me.full_name || user.me.email, onSignOut: user.signOut,
+        onProjects: () => setShowProjects(true) } : undefined}
+      onMode={(m, model) => {
+        if (m === 'ruler' && mode !== 'ruler') setRuler([])
+        setMode(m)
+        if (model) setAddModel(model)
+      }}
+      onSettings={(patch) => dispatch({ type: 'settings', patch })}
+      onMeta={(name) => dispatch({ type: 'meta', name })}
+      onSelect={select} onShowCoverage={setShowCoverage}
+      showLabels={showLabels} onShowLabels={setShowLabels}
+      onImport={importFile} onExport={exportFile} onReport={() => setShowReport(true)}
+      onNew={() => {
+        if (cloudMode) {
+          createCloud(emptyProject(catalog.defaults)).catch((e) => setStatus(`⚠ ${e.message}`))
+          return
+        }
+        if (!confirm('¿Empezar un proyecto vacío? Guarda antes el actual en un archivo si lo necesitas.')) return
+        dispatch({ type: 'load', project: emptyProject(catalog.defaults) })
+        setSelection(null)
+      }} />
+  )
+
+  const mapArea = (
+    <main className="map-area">
+      <MapView project={project} selection={selection} links={links} cells={cells} cellular={cellular}
+        mode={mode} showCoverage={showCoverage} showLabels={showLabels} pin={pin} focus={focus}
+        cursor={cursorIdx !== null ? coordAt(cursorIdx) ?? null : null}
+        profilePins={pins.map((i) => coordAt(i)).filter((c): c is [number, number] => !!c)}
+        ruler={ruler}
+        onReady={(m) => { mapRef.current = m }}
+        onSelect={(s) => setSelection(s)}
+        onMove={(kind, name, lat, lon) => dispatch({ type: 'move', kind, name, lat, lon })}
+        onAdd={add}
+        onRulerPoint={(lat, lon) => setRuler((r) => [...r, [lat, lon]])}
+        onRulerDone={() => setMode('select')} />
+      <div className="map-tools">
+        <SearchBox onPick={(pl) => {
+          setPin({ lat: pl.lat, lon: pl.lon })
+          setFocus({ lat: pl.lat, lon: pl.lon, zoom: pl.kind === 'coordinates' ? 16 : 14, key: Date.now() })
         }} />
-      <main className="map-area">
-        <MapView project={project} selection={selection} links={links} cells={cells} cellular={cellular}
-          mode={mode} showCoverage={showCoverage} showLabels={showLabels} pin={pin} focus={focus}
-          onReady={(m) => { mapRef.current = m }}
-          onSelect={(s) => setSelection(s)}
-          onMove={(kind, name, lat, lon) => dispatch({ type: 'move', kind, name, lat, lon })}
-          onAdd={add} />
-        <div className="map-tools">
-          <SearchBox onPick={(pl) => {
-            setPin({ lat: pl.lat, lon: pl.lon })
-            setFocus({ lat: pl.lat, lon: pl.lon, zoom: pl.kind === 'coordinates' ? 16 : 14, key: Date.now() })
-          }} />
-          <button className="btn map-btn" onClick={exportMap} title="Download the map as a PNG image">📷 Map image</button>
+        <button className="btn map-btn" onClick={exportMap} title="Descargar el mapa como imagen PNG">📷 Imagen del mapa</button>
+      </div>
+      {!narrow && (
+        <div className="panel-toggles">
+          <button className="btn map-btn" onClick={() => toggle('left')} aria-pressed={!collapsed.left}
+            title="Mostrar u ocultar el panel del proyecto">{collapsed.left ? '▶' : '◀'} Proyecto</button>
+          <button className="btn map-btn" onClick={() => toggle('profile')} aria-pressed={!collapsed.profile}
+            title="Mostrar u ocultar el Perfil de Elevación">{collapsed.profile ? '▲' : '▼'} Perfil</button>
+          {dev && <button className="btn map-btn" onClick={() => toggle('right')} aria-pressed={!collapsed.right}
+            title="Mostrar u ocultar los detalles del dispositivo">Detalles {collapsed.right ? '◀' : '▶'}</button>}
         </div>
-        {saveState === 'conflict' && doc && (
-          <div className="conflict-banner" role="alert">
-            Someone else saved this project after you opened it. Your latest changes are not saved.
-            <div className="flex gap-2 mt-2">
-              <button className="btn" onClick={() => openCloud(doc.id)}>Load their version</button>
-              <button className="btn btn-active" onClick={() =>
-                createCloud({ ...project, name: `${project.name || 'Untitled'} (my copy)` })}>
-                Save mine as a copy
-              </button>
-            </div>
+      )}
+      {(mode === 'ruler' || ruler.length > 0) && (
+        <div className="ruler-box" role="region" aria-label="Regla">
+          <strong>📏 Regla</strong>{' '}
+          {ruler.length < 2 ? <span>Haz clic en el mapa para medir</span> : (
+            <span>Total <b data-testid="ruler-total">{distance(rulerTotal)}</b> · {ruler.length - 1} tramo{ruler.length > 2 ? 's' : ''}</span>
+          )}
+          <span className="hint"> {mode === 'ruler' ? '· doble clic o Esc para terminar' : ''}</span>
+          <button className="btn-ghost underline ml-2" onClick={() => { setRuler([]); setMode('select') }}>Borrar</button>
+        </div>
+      )}
+      {saveState === 'conflict' && doc && (
+        <div className="conflict-banner" role="alert">
+          Alguien más guardó este proyecto después de que lo abriste. Tus últimos cambios no están guardados.
+          <div className="flex gap-2 mt-2">
+            <button className="btn" onClick={() => openCloud(doc.id)}>Cargar su versión</button>
+            <button className="btn btn-active" onClick={() =>
+              createCloud({ ...project, name: `${project.name || 'Sin nombre'} (mi copia)` })}>
+              Guardar la mía como copia
+            </button>
           </div>
-        )}
-        {mode !== 'select' && (
-          <div className="mode-banner">Click the map to place the {mode === 'addGateway' ? 'gateway' : 'node'} · Esc to cancel</div>
-        )}
-      </main>
+        </div>
+      )}
+      {(mode === 'addGateway' || mode === 'addNode') && (
+        <div className="mode-banner">Haz clic en el mapa para colocar el {mode === 'addGateway' ? 'gateway' : 'sensor'} · Esc para cancelar</div>
+      )}
+    </main>
+  )
+
+  const profile = (
+    <ProfilePanel profile={detail?.profile ?? null} title={title} status={profileStatus}
+      pins={pins} onPins={setPins} onHover={setCursorIdx} />
+  )
+
+  const devicePanel = dev && selection ? (
+    <DevicePanel key={`${selection.kind}:${selection.name}`} catalog={catalog} project={project}
+      kind={selection.kind} device={dev} link={links[dev.name]} cell={cells[dev.name]} served={served}
+      onRename={(next) => {
+        dispatch({ type: 'load', project: rename(project, selection.kind, dev.name, next) })
+        setSelection({ kind: selection.kind, name: next.trim() })
+      }}
+      onPatch={(patch) => dispatch(selection.kind === 'gateway'
+        ? { type: 'updateGateway', name: dev.name, patch }
+        : { type: 'updateNode', name: dev.name, patch })}
+      onRemove={() => { dispatch({ type: 'remove', kind: selection.kind, name: dev.name }); setSelection(null) }}
+      onClose={() => setSelection(null)} />
+  ) : null
+
+  const dialogs = (
+    <>
       {showProjects && user && (
         <ProjectsDialog me={user.me} currentId={doc?.id ?? null}
           onOpen={(id) => { setShowProjects(false); openCloud(id).catch((e) => setStatus(`⚠ ${e.message}`)) }}
@@ -428,19 +591,58 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
           }}
           onClose={() => setShowProjects(false)} />
       )}
-      {dev && selection && (
-        <DevicePanel key={`${selection.kind}:${selection.name}`} catalog={catalog} project={project}
-          kind={selection.kind} device={dev} link={links[dev.name]} cell={cells[dev.name]}
-          onRename={(next) => {
-            dispatch({ type: 'load', project: rename(project, selection.kind, dev.name, next) })
-            setSelection({ kind: selection.kind, name: next.trim() })
-          }}
-          onPatch={(patch) => dispatch(selection.kind === 'gateway'
-            ? { type: 'updateGateway', name: dev.name, patch }
-            : { type: 'updateNode', name: dev.name, patch })}
-          onRemove={() => { dispatch({ type: 'remove', kind: selection.kind, name: dev.name }); setSelection(null) }}
-          onClose={() => setSelection(null)} />
+      {showReport && (
+        <ReportDialog catalog={catalog} project={project} links={links} cells={cells} cellular={cellular}
+          author={user ? user.me.full_name || user.me.email : ''} map={mapRef.current}
+          legend={mapLegend()} showCoverage={showCoverage} onClose={() => setShowReport(false)} />
       )}
+    </>
+  )
+
+  if (narrow) {
+    return (
+      <div className="app-narrow">
+        <div className="narrow-map">{mapArea}</div>
+        {selNode && <div className="narrow-profile">{profile}</div>}
+        {sidebar}
+        {devicePanel && <div className="narrow-device">{devicePanel}</div>}
+        {dialogs}
+      </div>
+    )
+  }
+
+  return (
+    <div className="app">
+      <PanelGroup direction="horizontal" autoSaveId="verea-layout-h">
+        <Panel id="left" order={1} ref={leftRef} defaultSize={22} minSize={14} collapsible collapsedSize={0}
+          onCollapse={() => setCollapsed((c) => ({ ...c, left: true }))}
+          onExpand={() => setCollapsed((c) => ({ ...c, left: false }))}>
+          {sidebar}
+        </Panel>
+        <PanelResizeHandle className="resize-handle resize-x" />
+        <Panel id="center" order={2} minSize={30}>
+          <PanelGroup direction="vertical" autoSaveId="verea-layout-v">
+            <Panel id="map" order={1} minSize={25}>{mapArea}</Panel>
+            <PanelResizeHandle className="resize-handle resize-y" />
+            <Panel id="profile" order={2} ref={profileRef} defaultSize={34} minSize={14} collapsible collapsedSize={0}
+              onCollapse={() => setCollapsed((c) => ({ ...c, profile: true }))}
+              onExpand={() => setCollapsed((c) => ({ ...c, profile: false }))}>
+              {profile}
+            </Panel>
+          </PanelGroup>
+        </Panel>
+        {devicePanel && (
+          <>
+            <PanelResizeHandle className="resize-handle resize-x" />
+            <Panel id="right" order={3} ref={rightRef} defaultSize={24} minSize={16} collapsible collapsedSize={0}
+              onCollapse={() => setCollapsed((c) => ({ ...c, right: true }))}
+              onExpand={() => setCollapsed((c) => ({ ...c, right: false }))}>
+              {devicePanel}
+            </Panel>
+          </>
+        )}
+      </PanelGroup>
+      {dialogs}
     </div>
   )
 }

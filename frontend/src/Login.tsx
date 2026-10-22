@@ -28,35 +28,35 @@ export function Login() {
     setMsg('')
     if (forgot) {
       const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin })
-      setMsg(error ? error.message : 'If that email belongs to the team, a link to set a new password is on its way.')
+      setMsg(error ? error.message : 'Si ese correo pertenece al equipo, te llegará un enlace para crear una nueva contraseña.')
     } else {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error) setMsg(error.message === 'Invalid login credentials' ? 'Wrong email or password.' : error.message)
+      if (error) setMsg(error.message === 'Invalid login credentials' ? 'Correo o contraseña incorrectos.' : error.message)
     }
     setBusy(false)
   }
 
   return (
-    <Card title={forgot ? 'Reset your password' : 'Sign in to your team workspace'}>
+    <Card title={forgot ? 'Restablecer tu contraseña' : 'Inicia sesión en el espacio de tu equipo'}>
       <form onSubmit={submit} className="flex flex-col gap-3">
-        <label className="field"><span>Email</span>
+        <label className="field"><span>Correo</span>
           <input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
         {!forgot && (
-          <label className="field"><span>Password</span>
+          <label className="field"><span>Contraseña</span>
             <input type="password" autoComplete="current-password" required value={password}
               onChange={(e) => setPassword(e.target.value)} />
           </label>
         )}
         <button className="btn btn-active" type="submit" disabled={busy}>
-          {busy ? '…' : forgot ? 'Send reset link' : 'Sign in'}
+          {busy ? '…' : forgot ? 'Enviar enlace' : 'Iniciar sesión'}
         </button>
         {msg && <p className="hint" role="alert">{msg}</p>}
         <button type="button" className="btn-ghost text-sm underline self-start"
           onClick={() => { setForgot(!forgot); setMsg('') }}>
-          {forgot ? 'Back to sign in' : 'Forgot your password?'}
+          {forgot ? 'Volver a iniciar sesión' : '¿Olvidaste tu contraseña?'}
         </button>
-        <p className="hint">Accounts are by invitation. Ask your team admin for access.</p>
+        <p className="hint">Las cuentas son por invitación. Pide acceso al administrador de tu equipo.</p>
       </form>
     </Card>
   )
@@ -72,8 +72,8 @@ export function SetPassword({ email, onDone }: { email: string; onDone: () => vo
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!supabase) return
-    if (password.length < 10) return setMsg('Use at least 10 characters.')
-    if (password !== repeat) return setMsg('The passwords do not match.')
+    if (password.length < 10) return setMsg('Usa al menos 10 caracteres.')
+    if (password !== repeat) return setMsg('Las contraseñas no coinciden.')
     setBusy(true)
     const { error } = await supabase.auth.updateUser({ password })
     setBusy(false)
@@ -85,15 +85,15 @@ export function SetPassword({ email, onDone }: { email: string; onDone: () => vo
   }
 
   return (
-    <Card title={`Choose a password for ${email}`}>
+    <Card title={`Elige una contraseña para ${email}`}>
       <form onSubmit={submit} className="flex flex-col gap-3">
-        <label className="field"><span>New password (10+ characters)</span>
+        <label className="field"><span>Nueva contraseña (10+ caracteres)</span>
           <input type="password" autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
         </label>
-        <label className="field"><span>Repeat it</span>
+        <label className="field"><span>Repítela</span>
           <input type="password" autoComplete="new-password" required value={repeat} onChange={(e) => setRepeat(e.target.value)} />
         </label>
-        <button className="btn btn-active" type="submit" disabled={busy}>{busy ? '…' : 'Save password'}</button>
+        <button className="btn btn-active" type="submit" disabled={busy}>{busy ? '…' : 'Guardar contraseña'}</button>
         {msg && <p className="hint" role="alert">{msg}</p>}
       </form>
     </Card>

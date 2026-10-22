@@ -105,13 +105,21 @@ DEFAULT_PROPAGATION_MODEL = "itm"
 
 # ─── Environment Profiles (Clutter Loss per ITU-R P.833 + agricultural) ──
 ENVIRONMENT_PROFILES = {
-    "Rural / Open":           {"clutter_loss_db": 0.0,  "description": "Open fields, no obstructions"},
-    "Cultivo bajo":           {"clutter_loss_db": 5.0,  "description": "Low crops: alfalfa, vegetables, stubble (<1m)"},
-    "Orchard / Trees":        {"clutter_loss_db": 12.0, "description": "Orchards, vineyards, scattered trees"},
-    "Huerta densa":           {"clutter_loss_db": 15.0, "description": "Dense orchard: avocado, mango, citrus canopy"},
-    "Cultivo alto / Milpa":   {"clutter_loss_db": 20.0, "description": "Tall crops: corn/milpa >2m, sugarcane, sorghum"},
-    "Suburban":               {"clutter_loss_db": 15.0, "description": "Low-density residential areas"},
-    "Urban":                  {"clutter_loss_db": 18.0, "description": "Dense urban, buildings"},
+# Keys are stored in projects: never rename them; "label" is what the UI shows
+    "Rural / Open":           {"clutter_loss_db": 0.0,  "label": "Rural / abierto",
+                               "description": "Campo abierto, sin obstáculos"},
+    "Cultivo bajo":           {"clutter_loss_db": 5.0,  "label": "Cultivo bajo",
+                               "description": "Cultivos bajos: alfalfa, hortalizas, rastrojo (<1 m)"},
+    "Orchard / Trees":        {"clutter_loss_db": 12.0, "label": "Huerto / árboles",
+                               "description": "Huertos, viñedos, árboles dispersos"},
+    "Huerta densa":           {"clutter_loss_db": 15.0, "label": "Huerta densa",
+                               "description": "Huerta densa: aguacate, mango, cítricos"},
+    "Cultivo alto / Milpa":   {"clutter_loss_db": 20.0, "label": "Cultivo alto / milpa",
+                               "description": "Cultivos altos: maíz/milpa >2 m, caña, sorgo"},
+    "Suburban":               {"clutter_loss_db": 15.0, "label": "Suburbano",
+                               "description": "Zonas residenciales de baja densidad"},
+    "Urban":                  {"clutter_loss_db": 18.0, "label": "Urbano",
+                               "description": "Urbano denso, edificios"},
 }
 
 # ─── Fading Margin ───────────────────────────────────────────

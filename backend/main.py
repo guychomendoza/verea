@@ -135,7 +135,7 @@ def normalize_project(body: ProjectBody, user=Depends(require_user)):
     try:
         return project_from_dict(body.project)
     except (ValueError, TypeError, KeyError) as e:
-        raise HTTPException(422, f"Invalid project: {e}")
+        raise HTTPException(422, f"Proyecto no válido: {e}")
 
 
 @app.post("/api/links")
@@ -175,6 +175,10 @@ def link(req: LinkRequest, user=Depends(require_user)):
             "coordinates": [list(c) for c in t.coordinates],
             "los_m": _clean(los["los_heights"]), "fresnel_radius_m": _clean(los["fresnel_radii"]),
             "clearance_pct": _clean(los["clearance_pct"]),
+            "clearance_m": _clean(los["clearance_m"]),
+            "effective_terrain_m": _clean(los["effective_terrain"]),
+            "gw_antenna_asl": float(a["gw_dev"].antenna_height_asl),
+            "node_antenna_asl": float(a["node_dev"].antenna_height_asl),
             "worst_point_idx": int(los["worst_point_idx"]),
             "elevation_source": t.elevation_source,
         },
@@ -221,7 +225,7 @@ def cell_status(req: CellRequest, user=Depends(require_user)):
     """4G coverage declared by the operator at each point."""
     srcs = coverage_sources().get(req.operator)
     if not srcs:
-        raise HTTPException(404, f"No coverage data for {req.operator}")
+        raise HTTPException(404, f"No hay datos de cobertura de {req.operator}")
     out = []
     with _SOURCES_LOCK:
         for p in req.points:
@@ -284,4 +288,4 @@ def geocode(q: str = Query(min_length=2, max_length=120), user=Depends(require_u
     try:
         return {"results": GEOCODER.search(q)}
     except OSError:
-        raise HTTPException(502, "Place search is not available right now")
+        raise HTTPException(502, "La búsqueda de lugares no está disponible en este momento")

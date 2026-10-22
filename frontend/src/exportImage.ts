@@ -1,5 +1,5 @@
-// PNG downloads of the terrain chart and the map, with a title, a legend and the
-// data attribution drawn around them.
+// PNG download of the map inside a dark frame with title, legend and attribution, in the
+// same style as the elevation profile (Plotly, profilePlot.ts).
 
 export interface LegendItem {
   color: string
@@ -16,6 +16,10 @@ interface Frame {
 
 const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'
 const PAD = 16
+const BG = '#0e1117'
+const INK = '#e9ecef'
+const MUTED = '#adb5bd'
+const FAINT = '#868e96'
 
 export function downloadBlob(blob: Blob, filename: string) {
   const a = document.createElement('a')
@@ -50,7 +54,8 @@ function legendRows(items: LegendItem[], width: number): LegendItem[][] {
 }
 
 /** Draws `content` (w × h CSS pixels) inside a white frame with title, legend and attribution. */
-function framed(content: CanvasImageSource, w: number, h: number, f: Frame, scale: number): Promise<Blob> {
+function framed(content: CanvasImageSource, w: number, h: number, f: Frame, scale: number,
+  type = 'image/png', quality?: number): Promise<Blob> {
   const rows = f.legend?.length ? legendRows(f.legend, w) : []
   const legendH = rows.length * 22 + (rows.length ? 4 : 0)
   const headH = f.subtitle ? 50 : 34
@@ -62,16 +67,18 @@ function framed(content: CanvasImageSource, w: number, h: number, f: Frame, scal
   c.height = Math.round(H * scale)
   const g = c.getContext('2d')!
   g.scale(scale, scale)
-  g.fillStyle = '#ffffff'
+  g.fillStyle = BG
   g.fillRect(0, 0, W, H)
-  g.fillStyle = '#1d2433'
+  g.textAlign = 'center'
+  g.fillStyle = INK
   g.font = `600 16px ${FONT}`
-  g.fillText(f.title, PAD, 24)
+  g.fillText(f.title, W / 2, 24)
   if (f.subtitle) {
-    g.fillStyle = '#5b6475'
+    g.fillStyle = MUTED
     g.font = `13px ${FONT}`
-    g.fillText(f.subtitle, PAD, 42)
+    g.fillText(f.subtitle, W / 2, 42)
   }
+  g.textAlign = 'left'
   g.drawImage(content, PAD, headH, w, h)
   let y = headH + h
   g.font = `12px ${FONT}`
@@ -91,7 +98,7 @@ function framed(content: CanvasImageSource, w: number, h: number, f: Frame, scal
         g.arc(x + 6, y + 15, 5, 0, 2 * Math.PI)
         g.fill()
       }
-      g.fillStyle = '#1d2433'
+      g.fillStyle = INK
       g.fillText(item.label, x + 21, y + 19)
       x += 21 + g.measureText(item.label).width + 16
     }
@@ -99,45 +106,16 @@ function framed(content: CanvasImageSource, w: number, h: number, f: Frame, scal
   }
   if (rows.length) y += 4
   if (f.attribution) {
-    g.fillStyle = '#5b6475'
+    g.fillStyle = FAINT
     g.font = `11px ${FONT}`
     g.fillText(f.attribution, PAD, y + 16)
   }
   return new Promise((resolve, reject) =>
-    c.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not create the image'))), 'image/png'))
-}
-
-/** Copy the computed colours and fonts into a clone, so the SVG renders the same outside the page. */
-function inlineStyles(src: Element, dst: Element) {
-  const cs = getComputedStyle(src)
-  const el = dst as SVGElement
-  for (const prop of ['fill', 'stroke', 'stroke-width', 'stroke-dasharray', 'opacity', 'font-size', 'font-family', 'font-weight']) {
-    el.style.setProperty(prop, cs.getPropertyValue(prop))
-  }
-  for (let i = 0; i < src.children.length; i++) inlineStyles(src.children[i], dst.children[i])
-}
-
-export async function svgToPng(svg: SVGSVGElement, f: Frame, width = 640): Promise<Blob> {
-  const clone = svg.cloneNode(true) as SVGSVGElement
-  inlineStyles(svg, clone)
-  const vb = svg.viewBox.baseVal
-  const height = Math.round((width * vb.height) / vb.width)
-  clone.setAttribute('width', String(width))
-  clone.setAttribute('height', String(height))
-  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
-  const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml' }))
-  try {
-    const img = new Image()
-    img.src = url
-    await img.decode()
-    return await framed(img, width, height, f, 2)
-  } finally {
-    URL.revokeObjectURL(url)
-  }
+    c.toBlob((b) => (b ? resolve(b) : reject(new Error('No se pudo crear la imagen'))), type, quality))
 }
 
 /** The map as it is on screen (needs preserveDrawingBuffer on the map). */
-export function mapToPng(canvas: HTMLCanvasElement, f: Frame): Promise<Blob> {
+export function mapToPng(canvas: HTMLCanvasElement, f: Frame, type = 'image/png', quality?: number): Promise<Blob> {
   const ratio = canvas.width / canvas.clientWidth || 1
-  return framed(canvas, canvas.clientWidth, canvas.clientHeight, f, ratio)
+  return framed(canvas, canvas.clientWidth, canvas.clientHeight, f, ratio, type, quality)
 }

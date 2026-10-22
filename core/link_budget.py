@@ -247,30 +247,31 @@ def calculate_link_budget(
     # The diffraction penalty is already in the margin calculation.
     reasons = []
     viable = True
+    model_name = {"itm": "ITM", "short": "ITU-R P.526", "simple": "simple"}.get(model_used, model_used)
 
     if link_margin < margin_threshold:
         viable = False
         reasons.append(
-            f"Insufficient margin: {link_margin:.1f} dB < {margin_threshold:.1f} dB threshold"
+            f"Margen insuficiente: {link_margin:.1f} dB < umbral de {margin_threshold:.1f} dB"
         )
 
     if snr - fading_margin_db < snr_required:
         viable = False
         reasons.append(
-            f"SNR too low: {snr:.1f} dB - {fading_margin_db:.1f} dB fading "
-            f"< {snr_required:.1f} dB for SF{sf}"
+            f"SNR demasiado baja: {snr:.1f} dB - {fading_margin_db:.1f} dB de reserva "
+            f"< {snr_required:.1f} dB requeridos en SF{sf}"
         )
 
     # LOS obstruction is informational only
     if los_obstructed:
         reasons.append(
-            f"LOS obstructed (terrain loss of {terrain_loss:.1f} dB already applied, {model_used})"
+            f"Línea de vista obstruida (pérdida por terreno de {terrain_loss:.1f} dB ya aplicada, {model_name})"
         )
 
     if fresnel_clearance < MIN_FRESNEL_CLEARANCE_PCT:
         reasons.append(
-            f"Fresnel clearance {fresnel_clearance:.0f}% < {MIN_FRESNEL_CLEARANCE_PCT:.0f}% "
-            f"(+{terrain_loss:.1f} dB terrain loss applied, {model_used})"
+            f"Despeje de Fresnel {fresnel_clearance:.0f}% < {MIN_FRESNEL_CLEARANCE_PCT:.0f}% "
+            f"(+{terrain_loss:.1f} dB de pérdida por terreno aplicados, {model_name})"
         )
 
     return LinkBudgetResult(
