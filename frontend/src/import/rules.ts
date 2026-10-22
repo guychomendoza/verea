@@ -170,7 +170,18 @@ export function rowsFromTable(table: Table, roles: Role[]): ImportRow[] {
 }
 
 // ── KML → rows: pins and plots joined by location ──
-interface Mark { name: string; folio?: string; owner?: string; props: Record<string, unknown> }
+interface Mark { name: string; folio?: string; owner?: string; listed?: string; declaredHa?: number; props: Record<string, unknown> }
+
+/** "Folio: X<br>Nombre (lista): Y<br>Superficie aprox.: 5.06 ha" → {folio: X, ...} (Google Earth descriptions). */
+export function descriptionFields(html: string): Record<string, string> {
+  const text = html.replace(/<br\s*\/?>|<\/(p|div|tr|li)>/gi, '\n').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ')
+  const out: Record<string, string> = {}
+  for (const line of text.split('\n')) {
+    const m = line.match(/^\s*([^:]{1,40}):\s*(.+?)\s*$/)
+    if (m) out[norm(m[1])] = m[2]
+  }
+  return out
+}
 
 function describe(props: Record<string, unknown>, ownerKeys: string[]): Mark {
   const name = String(props.name ?? '').trim()
@@ -181,7 +192,11 @@ function describe(props: Record<string, unknown>, ownerKeys: string[]): Mark {
   // Owner: an owner-like property, else the name without the folio and its brackets / dashes
   const fromName = name.replace(FOLIO_RE, '').replace(/[()[\]]/g, ' ').replace(/^\s*[-–:,·]\s*|\s*[-–:,·]\s*$/g, '').replace(/\s+/g, ' ').trim()
   const owner = ownerProp?.trim() || (fromName && !/^(pin|punto|marcador|placemark|untitled|sin t[ií]tulo)\b/i.test(fromName) ? fromName : undefined)
-  return { name, folio, owner, props }
+  const fields = typeof props.description === 'string' ? descriptionFields(props.description) : {}
+  const listed = Object.entries(fields).find(([k]) => /(nombre|titular|propietario|beneficiario)/.test(k))?.[1]
+  const areaText = Object.entries(fields).find(([k]) => /(superficie|hectar|area)/.test(k))?.[1]
+  const declaredHa = areaText ? parseArea({ v: areaText }).value : undefined
+  return { name, folio, owner, listed, declaredHa, props }
 }
 
 function parts(g: Geometry): { points: Position[]; polys: number[][][][] } {
@@ -258,6 +273,17 @@ export function rowsFromFeatures(features: Feature[]): { rows: ImportRow[]; igno
       const s = sameName(pin.mark.owner, pl.mark.owner)
       if (s === 'close') notes.push(`ortografía distinta entre pin ("${pin.mark.owner}") y parcela ("${pl.mark.owner}")`)
       if (s === 'different') issues.push(`el pin dice "${pin.mark.owner}" y la parcela "${pl.mark.owner}": confirmar titular`)
+    }
+    // What the file declares, against what the polygon measures / the name it shows
+    const declared = pl.mark.declaredHa ?? pin?.mark.declaredHa
+    if (declared && Math.abs(area - declared) / declared > 0.1) {
+      issues.push(`superficie declarada ${declared} ha, medida del polígono ${area} ha`)
+    }
+    const listed = pl.mark.listed ?? pin?.mark.listed
+    if (listed && owner) {
+      const s = sameName(listed, owner)
+      if (s === 'close') notes.push(`ortografía distinta con la lista ("${listed}")`)
+      if (s === 'different') issues.push(`en la lista aparece "${listed}": confirmar titular`)
     }
     if (!folio) issues.push('sin folio')
     if (!(inLat(lat) && inLon(lon))) issues.push('fuera de México')

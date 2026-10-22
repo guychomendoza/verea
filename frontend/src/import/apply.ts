@@ -45,5 +45,8 @@ export function applyImport(p: Project, catalog: Catalog, rows: ImportRow[], o: 
     })
     sum.added++
   }
-  return [{ ...p, nodes, plots: [...plots.values()] }, sum]
+  // 4G sensors and no operator chosen yet: the only (or first) operator with coverage data
+  const settings = prof.link === 'cellular' && !p.settings.cell_operator && catalog.cell_operators?.length
+    ? { ...p.settings, cell_operator: catalog.cell_operators[0] } : p.settings
+  return [{ ...p, nodes, plots: [...plots.values()], settings }, sum]
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { areaHa, interiorPoint } from './geometry'
 import { readCsv } from './readers'
-import { detectRoles, fixCoord, nodeName, parseArea, parsePair, rowsFromFeatures, rowsFromTable, sameName } from './rules'
+import { descriptionFields, detectRoles, fixCoord, nodeName, parseArea, parsePair, rowsFromFeatures, rowsFromTable, sameName } from './rules'
 import type { Feature } from 'geojson'
 
 // ≈100 m × 100 m square (1 ha) at Tamazula
@@ -130,5 +130,20 @@ describe('apply', () => {
     expect(p.nodes[0]).toMatchObject({ name: 'AGU-D0248', owner: 'Trinidad', lat: 19.7, plot: 'AGU-D0248' })   // not moved
     expect(p.nodes[1]).toMatchObject({ name: 'AGU-D0277', owner: 'Liliana', type: 'cellular', tx_power: 23 })
     expect(p.plots).toHaveLength(1)
+  })
+})
+
+describe('KML descriptions', () => {
+  it('reads key: value lines and checks the declared area and the listed name', () => {
+    expect(descriptionFields('Folio: AGU-D0248<br>Nombre (lista): TRINIDAD TORRES<br>Superficie aprox.: 5.06 ha'))
+      .toEqual({ folio: 'AGU-D0248', 'nombre (lista)': 'TRINIDAD TORRES', 'superficie aprox.': '5.06 ha' })
+    const rows = rowsFromFeatures([
+      poly('Ana Lopez (AGU-D0001)', -103.30, 19.60, { description: 'Nombre (lista): ANA LOPES<br>Superficie aprox.: 1.0 ha' }),
+      poly('Beto Ruiz (AGU-D0002)', -103.32, 19.60, { description: 'Nombre (lista): CARLOS DIAZ<br>Superficie aprox.: 3 ha' }),
+    ]).rows
+    expect(rows[0].issues).toEqual([])
+    expect(rows[0].notes.join()).toContain('ortografía distinta con la lista')
+    expect(rows[1].issues.join()).toContain('superficie declarada 3 ha, medida del polígono 1 ha')
+    expect(rows[1].issues.join()).toContain('en la lista aparece "CARLOS DIAZ"')
   })
 })
