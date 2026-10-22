@@ -175,6 +175,11 @@ def cell_state(operator: str, hit, diff) -> dict:
     elif diff and diff.covered:
         state = ("differentiated", f"⚠️ {operator} 4G solo diferenciado (sin garantía)",
                  f"{operator} 4G sin garantía")
+    elif hit and hit.possible:
+        where = ("en un hueco pequeño de la cobertura" if hit.reach_m is None
+                 else f"a {hit.nearest_m:,.0f} m de la cobertura (alcance estimado ahí {hit.reach_m:,.0f} m)")
+        state = ("possible", f"🟠 {operator} 4G posible con LTE-M / NB-IoT: {where}; verificar en campo",
+                 f"{operator} 4G posible")
     else:
         near = (f"la más cercana a {hit.nearest_m:,.0f} m" if hit and hit.nearest_m is not None
                 else "ninguna en 20 km")

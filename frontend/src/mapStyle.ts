@@ -53,7 +53,8 @@ export function linkColor(r?: LinkResult): string {
 
 export function cellColor(c?: CellStatus): string {
   if (!c) return COLORS.none
-  return c.state === 'ok' ? COLORS.cellOk : c.state === 'none' ? COLORS.cellNone : COLORS.cellEdge
+  return c.state === 'ok' ? COLORS.cellOk : c.state === 'none' ? COLORS.cellNone
+    : c.state === 'possible' ? COLORS.cellPossible : COLORS.cellEdge
 }
 
 /** Second label line: distance and margin of LoRa nodes, 4G state, nodes served by a gateway. */

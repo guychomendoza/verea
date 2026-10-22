@@ -29,8 +29,11 @@ const ALL_TERMS: [string, string][] = [
     + 'LoRaWAN. Se revisan contra la cobertura 4G que el operador declara al regulador (LTE exterior).'],
   ['Cobertura garantizada / diferenciada', 'Garantizada: el operador se compromete con la calidad del '
     + 'servicio ahí. Diferenciada: hay señal pero sin ese compromiso. "Incierto" significa cubierto, pero '
-    + 'cerca de una zona sin señal: al menos 250 m donde un cerro corta la señal y hasta 500 m en terreno '
-    + 'plano, donde el borde depende de la distancia a la torre. Los huecos pequeños se toman con 100 m.'],
+    + 'cerca del borde: 125 m donde un cerro corta la señal y hasta 250 m en terreno plano, donde el borde '
+    + 'depende de la distancia a la torre (huecos pequeños: 50 m). "Posible" significa fuera de la cobertura '
+    + 'declarada pero a menos de 100–300 m de ella (o en un hueco pequeño): los sensores LTE-M / NB-IoT tienen '
+    + '15–20 dB más de alcance que un teléfono, aunque un cultivo alto que los cubra (como la caña) les quita '
+    + 'buena parte; hay que verificarlo en campo.'],
 ]
 
 export const GLOSSARY = ALL_TERMS.filter(([k]) => ["Margen de seguridad", "Margen del enlace", "Spreading factor (SF)", "Despeje de Fresnel", "Modelo de propagación", "Sensores 4G", "Cobertura garantizada / diferenciada"].includes(k))
@@ -57,9 +60,12 @@ export function summary(d: ReportData): string[][] {
     if (lora.length) rows.push(['Enlaces viables', `${viable} de ${lora.length}`])
   }
   if (cells.length) {
+    const count = (...st: (string | undefined)[]) => String(cells.filter((s) => st.includes(s)).length)
     rows.push(['Sensores 4G', String(cells.length)],
-      ['4G garantizado / incierto / sin 4G',
-        `${cells.filter((s) => s === 'ok').length} / ${cells.filter((s) => s === 'edge' || s === 'differentiated').length} / ${cells.filter((s) => s === 'none').length}`])
+      ['4G garantizado', count('ok')],
+      ['4G incierto (cerca del borde de la cobertura)', count('edge', 'differentiated')],
+      ['4G posible con LTE-M / NB-IoT (verificar en campo)', count('possible')],
+      ['Sin 4G', count('none')])
     const unchecked = cells.filter((s) => !s).length
     if (unchecked) rows.push(['4G sin revisar (elige un operador)', String(unchecked)])
   }

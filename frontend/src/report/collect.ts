@@ -54,11 +54,13 @@ export async function collectReport(args: {
   signal?: AbortSignal          // Cancel in the dialog
   links: Record<string, LinkResult>; cells: Record<string, CellStatus>; cellular: Set<string>; stations: Set<string>
   legend: LegendItem[]; showCoverage: boolean; onProgress: (text: string, fraction: number) => void
+  onSummary?: (data: ReportData) => Promise<void>   // general map ready (the PDF), before the node cards
 }): Promise<ReportData> {
   const { project, signal } = args
   const stopped = () => { if (signal?.aborted) throw new DOMException('Reporte cancelado', 'AbortError') }
   const onProgress = (text: string, fraction: number) => { stopped(); args.onProgress(text, fraction) }
   const base = { project, links: args.links, cells: args.cells, cellular: args.cellular, stations: args.stations }
+  const generatedAt = new Date()
   onProgress('Preparando el mapa…', 0.02)
   const snap = await SnapshotMap.create()
   const holder = document.createElement('div')
@@ -79,6 +81,11 @@ export async function collectReport(args: {
         attribution: 'Imágenes y nombres © Esri' + (args.showCoverage ? ' · Cobertura 4G: CRT / datos.gob.mx (CC BY 4.0)' : ''),
       }, 'image/jpeg', 0.85))
     }
+    const report = (): ReportData => ({
+      ...base, catalog: args.catalog, generatedAt, mapImg, mapSize: SNAPSHOT_SIZE, legend: args.legend, nodes,
+      showCoverage: args.showCoverage,
+    })
+    await args.onSummary?.(report())
     for (const [i, node] of (args.details ? project.nodes : []).entries()) {
       const cellular = isCellular(args.catalog, node)
       const link = cellular ? null : args.links[node.name]?.link
@@ -104,8 +111,6 @@ export async function collectReport(args: {
     snap.destroy()
   }
   onProgress('Armando el documento…', 0.97)
-  return {
-    ...base, catalog: args.catalog, generatedAt: new Date(),
-    mapImg, mapSize: SNAPSHOT_SIZE, legend: args.legend, nodes, showCoverage: args.showCoverage,
-  }
+  return { ...base, catalog: args.catalog, generatedAt, mapImg, mapSize: SNAPSHOT_SIZE, legend: args.legend, nodes,
+    showCoverage: args.showCoverage }
 }

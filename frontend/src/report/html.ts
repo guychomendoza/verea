@@ -4,7 +4,7 @@ import { BRAND, logoSvg } from '../brand'
 import { COLORS } from '../colors'
 import { deviceIconSvg, glyphPngs, iconImageId } from '../deviceIcons'
 import type { LegendItem } from '../legend'
-import { nodeKindOf } from '../mapStyle'
+import { cellColor, nodeKindOf } from '../mapStyle'
 import { PLOTLY_CONFIG, PLOTLY_LOCALE } from '../profilePlot'
 import type { ReportData } from './collect'
 import { GLOSSARY, SOURCES, byOwner, cellTable, loraTable, nodeFacts, nodeTitle, settingsLine, summary, type Table } from './content'
@@ -39,10 +39,7 @@ function legendHtml(items: LegendItem[]): string {
 export function buildHtml(d: ReportData): string {
   const title = d.project.name.trim() || 'Proyecto Verea'
   const nodeColor = (name: string) => {
-    if (d.cellular.has(name)) {
-      const s = d.cells[name]?.state
-      return !s ? COLORS.none : s === 'ok' ? COLORS.cellOk : s === 'none' ? COLORS.cellNone : COLORS.cellEdge
-    }
+    if (d.cellular.has(name)) return cellColor(d.cells[name])
     const l = d.links[name]?.link
     return !l ? COLORS.none : l.viable ? COLORS.viable : l.margin_db > -5 ? COLORS.marginal : COLORS.fail
   }

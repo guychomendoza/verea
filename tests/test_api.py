@@ -97,7 +97,7 @@ def test_cell_status(client):
     if "Telcel" not in api.coverage_sources():
         pytest.skip("no coverage data")
     r = client.post("/api/cell-status", json={"operator": "Telcel", "points": [CELL]}).json()
-    assert r["points"][0]["state"] in {"ok", "edge", "differentiated", "none"}
+    assert r["points"][0]["state"] in {"ok", "edge", "differentiated", "possible", "none"}
     assert client.post("/api/cell-status", json={"operator": "Nope", "points": [CELL]}).status_code == 404
 
 

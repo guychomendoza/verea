@@ -23,7 +23,7 @@ import shapely
 
 TILE_DEG = 0.2
 NEARBY_RADIUS_M = 300            # surroundings checked for the coverage share
-EDGE_MARGIN_M = 250              # next to an area without coverage, signal is not certain
+EDGE_MARGIN_M = 125              # next to an area without coverage, signal is not certain
 #                                  (the operator maps are rasters of 50 m pixels); used where
 #                                  there is no relief data
 
@@ -34,11 +34,18 @@ RELIEF_FILE = Path(__file__).resolve().parent.parent / "data" / "coverage" / "re
 RELIEF_CELL_DEG = 0.0025         # relief grid (scripts/build_relief.py), ≈270 m
 RELIEF_RADIUS_M = 500            # relief = highest minus lowest point within this radius
 RELIEF_FLAT_M, RELIEF_STEEP_M = 15, 120
-# Raised 2026-10-21 (user: green looked optimistic; tower model validation found flat-ground
-# edges uncertain by ~1 km): 250 m where steep, 500 m on flat ground.
-MARGIN_FLAT_M, MARGIN_STEEP_M = 500, 250     # log-interpolated in between
-SMALL_GAP_MARGIN_M = 100         # small holes inside coverage (see below)
-MARGIN_LEVELS_M = (100, 250, 300, 350, 400, 450, 500)   # steps used by the map tiles
+# The operator maps are for a phone outdoors at ~1.5 m. The sensors (Dragino SE0X-CS, LTE-M /
+# NB-IoT) have +15–20 dB of link budget over a phone and sit at ~2.5 m, but in a sugar-cane
+# field the grown crop covers them (−10 to −20 dB): net ≈ 0 to +10 dB in the worst season.
+# So since 2026-10-22 (user's decision) the uncertainty band straddles the declared edge:
+# inside, half the earlier margin (250 m flat, 125 m steep); outside, a "possible" band
+# (LTE-M / NB-IoT may still connect: 300 m flat, 100 m steep). Field RSSI should calibrate it.
+MARGIN_FLAT_M, MARGIN_STEEP_M = 250, 125     # log-interpolated in between
+SMALL_GAP_MARGIN_M = 50          # small holes inside coverage (see below)
+MARGIN_LEVELS_M = (50, 125, 150, 175, 200, 225, 250)   # steps used by the map tiles
+REACH_FLAT_M, REACH_STEEP_M = 300, 100       # "possible" band outside the declared coverage
+EDGE_REACH_M = 150               # its width without relief data
+REACH_LEVELS_M = (100, 150, 200, 250, 300)
 # A small hole inside coverage is a local obstruction (a building, a hollow), not a
 # distance-limited edge: towers reach all around it, so it gets a small margin
 SMALL_GAP_M2 = 100_000           # 0.1 km², ≈40 cells of the operator's 50 m raster
@@ -71,15 +78,27 @@ class CoverageHit:
     margin_ok: bool = False                  # covered and no gap within the edge margin (certain)
     edge_m: Optional[float] = None           # covered: distance to the nearest gap (None = > 500 m)
     margin_m: Optional[float] = None         # covered: margin of the edge that decides margin_ok
+    possible: bool = False                   # outside, but within reach for LTE-M / NB-IoT
+    reach_m: Optional[float] = None          # outside: that reach here (m)
 
 
-def margin_for_relief(relief):
-    """Edge margin (m) for the local relief (m); NaN relief (no data) -> EDGE_MARGIN_M."""
+def _by_relief(relief, flat: float, steep: float, nodata: float):
+    """Distance log-interpolated between flat and steep ground; NaN relief -> nodata."""
     r = np.asarray(relief, dtype=float)
     f = (np.log(np.maximum(r, 1.0)) - math.log(RELIEF_FLAT_M)) / math.log(RELIEF_STEEP_M / RELIEF_FLAT_M)
     f = np.clip(f, 0.0, 1.0)
-    m = np.exp(math.log(MARGIN_FLAT_M) + f * math.log(MARGIN_STEEP_M / MARGIN_FLAT_M))
-    return np.where(np.isnan(r), float(EDGE_MARGIN_M), m)
+    m = np.exp(math.log(flat) + f * math.log(steep / flat))
+    return np.where(np.isnan(r), float(nodata), m)
+
+
+def margin_for_relief(relief):
+    """Edge margin (m) inside the coverage for the local relief (m)."""
+    return _by_relief(relief, MARGIN_FLAT_M, MARGIN_STEEP_M, EDGE_MARGIN_M)
+
+
+def reach_for_relief(relief):
+    """Width (m) of the "possible" band outside the coverage for the local relief (m)."""
+    return _by_relief(relief, REACH_FLAT_M, REACH_STEEP_M, EDGE_REACH_M)
 
 
 class Relief:
@@ -123,6 +142,9 @@ class Relief:
 
     def margin_at(self, lon, lat) -> np.ndarray:
         return margin_for_relief(self.at(lon, lat))
+
+    def reach_at(self, lon, lat) -> np.ndarray:
+        return reach_for_relief(self.at(lon, lat))
 
 
 _DEFAULT_RELIEF = None
@@ -285,6 +307,27 @@ class CoverageSource:
         if hit:
             ok, edge_m, margin_m = self._edge_check(lat, lon, local)
             return CoverageHit(True, hit[0], share, 0.0, margin_ok=ok, edge_m=edge_m, margin_m=margin_m)
+        if self._in_small_hole(local):
+            return CoverageHit(False, None, share, self._nearest(lat, lon, local), possible=True, reach_m=None)
+        nearest = self._nearest(lat, lon, local)
+        reach = float(self.relief.reach_at(lon, lat))
+        return CoverageHit(False, None, share, nearest, possible=nearest is not None and nearest <= reach,
+                           reach_m=reach)
+
+    @staticmethod
+    def _in_small_hole(local) -> bool:
+        """The point lies in a small hole of the coverage (towers reach all around it)."""
+        window = shapely.box(-GAP_WINDOW_M, -GAP_WINDOW_M, GAP_WINDOW_M, GAP_WINDOW_M)
+        if not local:
+            return False
+        cov = shapely.union_all([shapely.intersection(g, window) for _, g in local]).buffer(0.5).buffer(-0.5)
+        origin = shapely.Point(0, 0)
+        hole = next((g for g in shapely.get_parts(shapely.difference(window, cov)) if g.covers(origin)), None)
+        return bool(hole is not None and hole.area < SMALL_GAP_M2 and not hole.intersects(window.exterior))
+
+    def _nearest(self, lat: float, lon: float, local) -> Optional[float]:
+        """Distance (m) to the nearest coverage, None beyond 20 km."""
+        origin = shapely.Point(0, 0)
         nearest = None
         for radius in SEARCH_STEPS_M:
             pieces = self._local(lat, lon, radius) if radius > NEARBY_RADIUS_M else local
@@ -293,7 +336,7 @@ class CoverageSource:
                 if d <= radius:
                     nearest = float(d)
                     break
-        return CoverageHit(False, None, share, nearest)
+        return nearest
 
 
 def split_by_margin(covered, margin_m: float = EDGE_MARGIN_M):

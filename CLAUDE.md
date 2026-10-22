@@ -36,7 +36,8 @@ frontend, DB with users) is planned.
   `report/` (built in the browser; PDF with jsPDF = summary: whole-project map + separate LoRa
   and 4G tables with owner/area, alphabetical, status dot; interactive HTML = the same plus one
   card per node with its link on the map — from a hidden map in `snapshots.ts` — its profile and
-  few figures; node cards are only built when the HTML is requested; no e-mail in reports),
+  few figures; node cards are only built when the HTML is requested, after the PDF has been
+  downloaded (`onSummary`); Cancelar / ✕ / Esc abort; no e-mail in reports),
   nodes may carry optional `owner` (titular) and `area_ha` (in `core/project.py` `_NODE_KEYS`), panel borders (`Edge` in `App.tsx`) show an open/close arrow on hover,
   ruler is a map control (and R), `shortcuts.ts` (G/Ctrl+G, N = LSE01, R, Ctrl+S;
   Ctrl+N cannot be captured in Chrome), `project.ts` (pure reducer), `api.ts`.
@@ -75,9 +76,11 @@ frontend, DB with users) is planned.
 - `core/cellular.py` — 4G coverage per point from the CRT GeoPackage (0.2° tile cache on
   disk): covered, declared level, share covered within 300 m, nearest coverage,
   `margin_ok` (no coverage edge within its terrain-adaptive margin: `margin_for_relief`,
-  250 m steep → 500 m flat (raised 2026-10-21: green looked optimistic); small holes
-  < `SMALL_GAP_M2` (0.1 km²) 100 m;
-  fixed `EDGE_MARGIN_M` = 100 m without relief data).
+  125 m steep → 250 m flat; small holes < `SMALL_GAP_M2` (0.1 km²) 50 m; 125 m without relief),
+  and outside it `possible` (within `reach_for_relief` 100 m steep → 300 m flat, or in a small
+  hole): since 2026-10-22 the band straddles the declared edge because LTE-M / NB-IoT sensors
+  have +15–20 dB over a phone, partly lost under a grown sugar-cane crop (user's decision;
+  uncalibrated until field RSSI). States: ok / edge / differentiated / possible / none.
 - `core/towers.py` — OpenCelliD LTE cells → approximate sites (cells grouped by eNodeB, median
   position) in `data/coverage/towers_mx.csv` (`scripts/get_towers.py`; token, or `--from-file`).
 - `core/cell_signal.py` — 4G estimate from the nearest sites: ITM radial, probit fit (offset, σ)
@@ -87,7 +90,7 @@ frontend, DB with users) is planned.
 - `scripts/build_relief.py` — Copernicus GLO-90 DEM (→ `data/dem/`, ≈1 GB) → national relief grid
   `data/coverage/relief_mx.npz` (max−min within 500 m, 0.0025° cells, uint8 per 1° tile).
 - `scripts/build_coverage_tiles.py` — GeoPackage → PMTiles of PNG tiles z5–13 with classes
-  certain / edge (within the margin) / none. Raster pipeline: rasterize 0.2° tiles on a
+  certain / edge (within the margin) / possible (outside, within reach) / none. Raster pipeline: rasterize 0.2° tiles on a
   0.0004° grid, margin per gap cell from the relief (one distance transform per
   `MARGIN_LEVELS_M` step), render Web-Mercator tiles (Mexico ≈ 23 min).
   Needs `requirements-build.txt`.

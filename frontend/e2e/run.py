@@ -259,9 +259,10 @@ def main():
         downloads = []
         page.on("download", lambda d: downloads.append(d))
         dialog.get_by_role("button", name="Generar y descargar").click()
-        expect(dialog).to_contain_text("Descargado", timeout=120000)
+        expect(dialog.get_by_text("Listo", exact=True)).to_be_visible(timeout=120000)
         page.wait_for_timeout(500)
         names = [d.suggested_filename for d in downloads]
+        assert names[0].endswith(".pdf") and names[1].endswith(".html"), names    # the PDF first, not waiting for the HTML
         pdf = next(d for d in downloads if d.suggested_filename.endswith(".pdf"))
         html = next(d for d in downloads if d.suggested_filename.endswith(".html"))
         pdf_bytes = Path(pdf.path()).read_bytes()

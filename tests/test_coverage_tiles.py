@@ -36,15 +36,18 @@ def _band_m(tmp_path, monkeypatch, relief_value, fixed=None):
     row = classes[bct.N // 2]
     col_gap = round((gap_lon - TILE[0] * bct.TILE_DEG) / bct.CELL)
     edge_cells = int((row[:col_gap] == 2).sum())
+    _band_m.possible = int((row == 4).sum()) * bct.CELL * 111_320 * math.cos(math.radians(19.7))
     return edge_cells * bct.CELL * 111_320 * math.cos(math.radians(19.7))
 
 
 def test_flat_edges_get_a_wide_margin(tmp_path, monkeypatch):
-    assert _band_m(tmp_path, monkeypatch, 5) == pytest.approx(500, abs=45)
+    assert _band_m(tmp_path, monkeypatch, 5) == pytest.approx(250, abs=45)
+    assert _band_m.possible == pytest.approx(2 * 300, abs=90)      # both sides of the 1 km gap
 
 
 def test_steep_edges_get_a_narrow_margin(tmp_path, monkeypatch):
-    assert _band_m(tmp_path, monkeypatch, 200) == pytest.approx(250, abs=45)
+    assert _band_m(tmp_path, monkeypatch, 200) == pytest.approx(125, abs=45)
+    assert _band_m.possible == pytest.approx(2 * 100, abs=90)
 
 
 def test_fixed_margin_ignores_relief(tmp_path, monkeypatch):
@@ -64,5 +67,6 @@ def test_small_holes_get_a_narrow_margin(tmp_path, monkeypatch):
     monkeypatch.setattr(bct, "_RELIEF", Relief(relief))
     bct.classify_grid((TILE, str(parts), None, str(tmp_path)))
     classes = np.load(tmp_path / f"{TILE[0]}_{TILE[1]}.npz")["c"]
-    # 4x4 hole: a ~100 m ring around it
-    assert 30 < (classes == 2).sum() < 70        # ring of ~2 cells (~100 m), not 500 m
+    # 4x4 hole: a ~50 m ring around it, the hole itself "possible"
+    assert 10 < (classes == 2).sum() < 45        # ring of ~1 cell (~50 m), not 250 m
+    assert (classes == 4).sum() >= 12

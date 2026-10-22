@@ -53,28 +53,31 @@ export default function ReportDialog(p: Props) {
     setBusy(true)
     setError('')
     setDone([])
+    const files: string[] = []
+    const fileBase = (d: Date) => `${safeName(p.project.name || 'proyecto_verea')}_reporte_${d.toISOString().slice(0, 16).replace(/[-:T]/g, '')}`
     try {
       const data = await collectReport({
         project: p.project, catalog: p.catalog, details: html, signal: c.signal, links: p.links,
         cells: p.cells, cellular: p.cellular, stations: p.stations, legend: p.legend, showCoverage: p.showCoverage,
         onProgress: (text, fraction) => setProgress({ text, fraction }),
+        // The PDF only needs the general map: download it right away, the HTML follows
+        onSummary: async (summary) => {
+          if (!pdf) return
+          const { buildPdf } = await import('./pdf')
+          const blob = await buildPdf(summary)
+          if (c.signal.aborted) return
+          downloadBlob(blob, `${fileBase(summary.generatedAt)}.pdf`)
+          files.push(`${fileBase(summary.generatedAt)}.pdf`)
+          setDone([...files])
+        },
       })
-      const stamp = data.generatedAt.toISOString().slice(0, 16).replace(/[-:T]/g, '')
-      const base = `${safeName(p.project.name || 'proyecto_verea')}_reporte_${stamp}`
-      const files: string[] = []
-      if (pdf) {
-        const { buildPdf } = await import('./pdf')
-        const blob = await buildPdf(data)
-        if (c.signal.aborted) return
-        downloadBlob(blob, `${base}.pdf`)
-        files.push(`${base}.pdf`)
-      }
+      const base = fileBase(data.generatedAt)
       if (html && !c.signal.aborted) {
         const { buildHtml } = await import('./html')
         downloadBlob(new Blob([buildHtml(data)], { type: 'text/html;charset=utf-8' }), `${base}.html`)
         files.push(`${base}.html`)
       }
-      setDone(files)
+      setDone([...files])
       setProgress({ text: 'Listo', fraction: 1 })
     } catch (e) {
       if (c.signal.aborted) setProgress(null)
@@ -112,7 +115,7 @@ export default function ReportDialog(p: Props) {
             <p className="hint" role="status">{progress.text}</p>
           </div>
         )}
-        {done.length > 0 && <p className="hint">Descargado: {done.join(', ')}</p>}
+        {done.length > 0 && <p className="hint">Descargado: {done.join(', ')}{busy ? ' · el HTML sigue generándose…' : ''}</p>}
         {cellPending && !busy && <p className="hint" role="status">Calculando la cobertura 4G de los sensores… el reporte se habilita al terminar.</p>}
         {error && <p className="error" role="alert">⚠ {error}</p>}
         <div className="flex gap-2 justify-end">

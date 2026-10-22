@@ -84,7 +84,7 @@ export interface LinkDetail {
   profile: Profile
 }
 
-export type CellState = 'ok' | 'edge' | 'differentiated' | 'none'
+export type CellState = 'ok' | 'edge' | 'differentiated' | 'possible' | 'none'
 
 export interface CellStatus {
   name: string | null

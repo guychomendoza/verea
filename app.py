@@ -653,7 +653,7 @@ def rename_device(kind: str, old: str, new: str) -> str | None:
     return None
 
 
-CELL_COLORS = {"ok": "green", "edge": "orange", "differentiated": "orange", "none": "red",
+CELL_COLORS = {"ok": "green", "edge": "orange", "differentiated": "orange", "possible": "orange", "none": "red",
                "unknown": "purple"}
 
 

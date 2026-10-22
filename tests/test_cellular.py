@@ -8,7 +8,7 @@ import shapely
 
 geopandas = pytest.importorskip("geopandas")
 
-from core.cellular import CoverageSource, Relief, find_sources, margin_for_relief
+from core.cellular import CoverageSource, Relief, find_sources, margin_for_relief, reach_for_relief
 
 
 @pytest.fixture
@@ -68,15 +68,39 @@ def test_geometries_clip_to_bbox(coverage_file):
 
 
 def test_margin_near_a_gap(coverage_file):
-    """Without relief data, covered points closer than EDGE_MARGIN_M (250 m) to a gap are not certain."""
+    """Without relief data, covered points closer than EDGE_MARGIN_M (125 m) to a gap are not certain."""
     from core.cellular import EDGE_MARGIN_M
     s = CoverageSource(coverage_file, relief=Relief(None))
     deg_lon = 111_320 * math.cos(math.radians(19.62))
-    near = s.status_at(19.62, -103.50 + 200 / deg_lon)    # 200 m inside the west edge
-    far = s.status_at(19.62, -103.50 + 300 / deg_lon)     # 300 m inside
+    near = s.status_at(19.62, -103.50 + 100 / deg_lon)    # 100 m inside the west edge
+    far = s.status_at(19.62, -103.50 + 160 / deg_lon)     # 160 m inside
     assert near.covered and not near.margin_ok
     assert far.covered and far.margin_ok
-    assert EDGE_MARGIN_M == 250
+    assert EDGE_MARGIN_M == 125
+
+
+@pytest.mark.parametrize("relief, outside_m, possible", [
+    (5, 250, True),       # flat: 300 m reach for LTE-M / NB-IoT
+    (5, 350, False),
+    (200, 80, True),      # steep: 100 m
+    (200, 150, False),
+])
+def test_possible_band_outside(coverage_file, tmp_path, relief, outside_m, possible):
+    s = CoverageSource(coverage_file, relief=_relief_file(tmp_path, relief))
+    deg_lon = 111_320 * math.cos(math.radians(19.62))
+    hit = s.status_at(19.62, -103.50 - outside_m / deg_lon)       # west of the coverage
+    assert not hit.covered and hit.possible is possible
+    assert hit.nearest_m == pytest.approx(outside_m, abs=3)
+    assert hit.reach_m == pytest.approx(reach_for_relief(relief))
+
+
+def test_cell_state_possible(coverage_file, tmp_path):
+    from core.network import cell_state
+    s = CoverageSource(coverage_file, relief=_relief_file(tmp_path, 5))
+    deg_lon = 111_320 * math.cos(math.radians(19.62))
+    st = cell_state("Telcel", s.status_at(19.62, -103.50 - 200 / deg_lon), None)
+    assert st["state"] == "possible" and st["short"] == "Telcel 4G posible"
+    assert cell_state("Telcel", s.status_at(19.62, -103.50 - 1000 / deg_lon), None)["state"] == "none"
 
 
 def test_split_by_margin_partitions_coverage():
@@ -90,13 +114,15 @@ def test_split_by_margin_partitions_coverage():
 
 
 def test_margin_for_relief():
-    assert margin_for_relief(0) == pytest.approx(500)
-    assert margin_for_relief(15) == pytest.approx(500)
-    assert margin_for_relief(120) == pytest.approx(250)
-    assert margin_for_relief(255) == pytest.approx(250)
+    assert margin_for_relief(0) == pytest.approx(250)
+    assert margin_for_relief(15) == pytest.approx(250)
+    assert margin_for_relief(120) == pytest.approx(125)
+    assert margin_for_relief(255) == pytest.approx(125)
     m = margin_for_relief([20, 40, 80])
-    assert 500 > m[0] > m[1] > m[2] > 250
-    assert margin_for_relief(np.nan) == 250
+    assert 250 > m[0] > m[1] > m[2] > 125
+    assert margin_for_relief(np.nan) == 125
+    assert reach_for_relief(5) == pytest.approx(300) and reach_for_relief(200) == pytest.approx(100)
+    assert reach_for_relief(np.nan) == 150
 
 
 def _relief_file(tmp_path, value):
@@ -115,17 +141,17 @@ def test_relief_lookup(tmp_path):
 
 
 @pytest.mark.parametrize("relief, inside_m, ok", [
-    (5, 450, False),      # flat: 500 m margin
-    (5, 530, True),
-    (200, 280, True),     # steep: 250 m margin
-    (200, 220, False),
+    (5, 220, False),      # flat: 250 m margin
+    (5, 280, True),
+    (200, 150, True),     # steep: 125 m margin
+    (200, 100, False),
 ])
 def test_margin_follows_relief(coverage_file, tmp_path, relief, inside_m, ok):
     s = CoverageSource(coverage_file, relief=_relief_file(tmp_path, relief))
     deg_lon = 111_320 * math.cos(math.radians(19.62))
     hit = s.status_at(19.62, -103.50 + inside_m / deg_lon)
     assert hit.covered and hit.margin_ok is ok
-    if inside_m < 500:
+    if inside_m < 250:
         assert hit.edge_m == pytest.approx(inside_m, abs=3)
         assert hit.margin_m == pytest.approx(margin_for_relief(relief))
     else:
@@ -133,7 +159,7 @@ def test_margin_follows_relief(coverage_file, tmp_path, relief, inside_m, ok):
 
 
 def test_small_hole_gets_the_steep_margin(tmp_path):
-    """On flat ground a 150 m hole is a local obstruction: 100 m margin, not 500 m."""
+    """On flat ground a 150 m hole is a local obstruction: 50 m margin, not 250 m; inside it, "possible"."""
     deg_lon = 111_320 * math.cos(math.radians(19.65))
     hole = shapely.box(-103.45, 19.65, -103.45 + 150 / deg_lon, 19.65 + 150 / 111_320)
     area = shapely.box(-103.50, 19.60, -103.40, 19.70).difference(hole)
@@ -142,8 +168,10 @@ def test_small_hole_gets_the_steep_margin(tmp_path):
     path = tmp_path / "RADIOMOVIL_4G_GARANTIZADA_2T_2026.gpkg"
     gdf.to_file(path, driver="GPKG")
     s = CoverageSource(path, relief=_relief_file(tmp_path, 5))      # flat
-    hit = s.status_at(19.65 + 75 / 111_320, -103.45 - 130 / deg_lon)   # 130 m west of the hole
+    hit = s.status_at(19.65 + 75 / 111_320, -103.45 - 70 / deg_lon)    # 70 m west of the hole
     assert hit.covered and hit.margin_ok
-    assert hit.edge_m == pytest.approx(130, abs=3) and hit.margin_m == 100
-    near = s.status_at(19.65 + 75 / 111_320, -103.45 - 70 / deg_lon)
+    assert hit.edge_m == pytest.approx(70, abs=3) and hit.margin_m == 50
+    near = s.status_at(19.65 + 75 / 111_320, -103.45 - 30 / deg_lon)
     assert not near.margin_ok
+    inside = s.status_at(19.65 + 75 / 111_320, -103.45 + 75 / deg_lon)
+    assert not inside.covered and inside.possible

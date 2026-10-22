@@ -2,9 +2,11 @@
 Build the 4G coverage map tiles shown in the app (PMTiles of PNG images).
 
 From an operator coverage GeoPackage (CRT open data) every map pixel gets a class:
-  certain - covered and farther than the edge margin from any area without coverage
-  edge    - covered, but within the edge margin of an area without coverage
-  none    - Mexican land without declared coverage
+  certain  - covered and farther than the edge margin from any area without coverage
+  edge     - covered, but within the edge margin of an area without coverage
+  possible - not covered, but within reach of the coverage for LTE-M / NB-IoT sensors (or in a
+             small hole of it)
+  none     - Mexican land without declared coverage
 (transparent: sea / outside Mexico)
 
 Run once per quarter:
@@ -13,9 +15,10 @@ Run once per quarter:
         data/coverage/telcel_4g_2026q2.pmtiles
 
 Needs requirements-build.txt (scipy, rasterio, pmtiles) besides the app requirements.
-The margin follows the terrain (core.cellular.margin_for_relief: 250 m where the relief is
-steep, 500 m on flat ground; 100 m around small holes) when data/coverage/relief_mx.npz exists
-(scripts/build_relief.py); otherwise, or with --fixed-margin, it is the same everywhere.
+The margin follows the terrain (core.cellular.margin_for_relief: 125 m where the relief is
+steep, 250 m on flat ground; 50 m around small holes) and so does the reach outside
+(core.cellular.reach_for_relief: 100–300 m) when data/coverage/relief_mx.npz exists
+(scripts/build_relief.py); otherwise, or with --fixed-margin, they are the same everywhere.
 
 The operator maps are rasters of 50 m cells published as polygons, so they are
 handled as images again:
@@ -47,8 +50,9 @@ import shapely.geometry
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from core.cellular import (EDGE_MARGIN_M, MARGIN_FLAT_M, MARGIN_LEVELS_M, RELIEF_FILE,  # noqa: E402
-                           SMALL_GAP_M2, SMALL_GAP_MARGIN_M, TILE_DEG, Relief)
+from core.cellular import (EDGE_MARGIN_M, EDGE_REACH_M, MARGIN_FLAT_M, MARGIN_LEVELS_M,  # noqa: E402
+                           REACH_FLAT_M, REACH_LEVELS_M, RELIEF_FILE, SMALL_GAP_M2, SMALL_GAP_MARGIN_M,
+                           TILE_DEG, Relief)
 
 LAND_FILE = ROOT / "data" / "mexico_land.geojson"
 CELL = 0.0004                       # grid cell in degrees (≈44 m N-S), finer than the 50 m source
@@ -64,8 +68,9 @@ PALETTE = {
     1: (230, 57, 70, 95),           # none
     2: (233, 196, 106, 140),        # edge
     3: (42, 157, 143, 85),          # certain
+    4: (244, 162, 97, 130),         # possible
 }
-CLASS_NAMES = {1: "none", 2: "edge", 3: "certain"}
+CLASS_NAMES = {1: "none", 2: "edge", 3: "certain", 4: "possible"}
 
 
 def tile_box(t):
@@ -174,7 +179,9 @@ def classify_grid(args):
     lat = (south + north) / 2
     gap = ~cov
     edge = np.zeros_like(cov)
+    possible = np.zeros_like(cov)
     if cov.any() and gap.any():
+        small_gap = np.zeros_like(cov)
         if fixed_margin is None:
             centres = west + (np.arange(n) + 0.5) * CELL, north - (np.arange(n) + 0.5) * CELL
             lon_g, lat_g = np.meshgrid(*centres)
@@ -187,18 +194,27 @@ def classify_grid(args):
             small = np.bincount(labels.ravel()) * cell_m2 < SMALL_GAP_M2
             small[0] = False
             small[np.unique(np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]]))] = False
-            level[small[labels]] = SMALL_GAP_MARGIN_M
+            small_gap = small[labels]
+            level[small_gap] = SMALL_GAP_MARGIN_M
+            reach_steps = np.array(REACH_LEVELS_M, dtype=float)
+            reach = _relief().reach_at(lon_g, lat_g)
+            reach = reach_steps[np.searchsorted(reach_steps, reach - 1e-6).clip(0, len(reach_steps) - 1)]
         else:
             level = np.full((n, n), float(fixed_margin))
+            reach = np.full((n, n), float(EDGE_REACH_M))
         sampling = (CELL * 111_320, CELL * 111_320 * math.cos(math.radians(lat)))
         half_cell = sum(sampling) / 4           # centre-to-centre -> distance to the gap's border
         for m in np.unique(level[gap]):
             dist = distance_transform_edt(~(gap & (level == m)), sampling=sampling)
             edge |= cov & (dist - half_cell <= m)
+        # Outside: gap cells within reach of the coverage, and small holes
+        to_cov = distance_transform_edt(gap, sampling=sampling)
+        possible = gap & ((to_cov - half_cell <= reach) | small_gap)
     certain = cov & ~edge
 
     classes = np.zeros((n, n), dtype=np.uint8)
     classes[land & ~cov] = 1
+    classes[land & possible] = 4
     classes[cov & ~certain] = 2
     classes[certain] = 3
     classes = classes[PAD_CELLS:-PAD_CELLS, PAD_CELLS:-PAD_CELLS]
@@ -260,9 +276,9 @@ def render_tile(zxy):
         return zxy, None
     from PIL import Image
     img = Image.fromarray(out, mode="P")
-    img.putpalette([c for k in range(4) for c in PALETTE[k][:3]])
+    img.putpalette([c for k in range(len(PALETTE)) for c in PALETTE[k][:3]])
     buf = io.BytesIO()
-    img.save(buf, format="PNG", transparency=bytes(PALETTE[k][3] for k in range(4)))
+    img.save(buf, format="PNG", transparency=bytes(PALETTE[k][3] for k in range(len(PALETTE))))
     return zxy, buf.getvalue()
 
 
@@ -326,8 +342,9 @@ def main():
     if margin is None and not _relief().available:
         print(f"  no {RELIEF_FILE.name} (scripts/build_relief.py): fixed {EDGE_MARGIN_M} m margin", flush=True)
         margin = EDGE_MARGIN_M
-    margin_text = (f"{margin:g} m" if margin is not None
-                   else f"terrain-adaptive {MARGIN_LEVELS_M[1]}–{MARGIN_FLAT_M} m, small holes {SMALL_GAP_MARGIN_M} m")
+    margin_text = (f"{margin:g} m, reach {EDGE_REACH_M} m" if margin is not None
+                   else f"terrain-adaptive {MARGIN_LEVELS_M[1]}–{MARGIN_FLAT_M} m, small holes {SMALL_GAP_MARGIN_M} m; "
+                        f"reach outside {REACH_LEVELS_M[0]}–{REACH_FLAT_M} m")
     print(f"Pass 2/3: classifying {len(tiles)} tiles on a {CELL}° grid (margin {margin_text})",
           flush=True)
     jobs = [(t, str(parts_dir / f"{t[0]}_{t[1]}.bin") if t in cov_tiles else None, margin,
@@ -396,6 +413,7 @@ def main():
                 "name": args.out.stem, "source": args.gpkg.name, "margin": margin_text,
                 "classes": {"certain": "covered, farther than the margin from any gap",
                             "edge": "covered, within the margin of a gap",
+                            "possible": "not covered, within reach for LTE-M / NB-IoT sensors",
                             "none": "land without declared coverage"},
                 "area_km2": {k: round(v) for k, v in areas.items()},
                 "regions": regions, "built": time.strftime("%Y-%m-%d %H:%M"),

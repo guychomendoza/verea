@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import type { MapMode } from './MapView'
 import { COLORS } from './colors'
+import { cellColor } from './mapStyle'
 import { KIND_LABELS, type DeviceKind } from './deviceIcons'
 import { DeviceIcon, Logo } from './Logo'
 import { db } from './geo'
@@ -45,10 +46,7 @@ export default function Sidebar(p: Props) {
   const cellModels = Object.entries(p.catalog.node_profiles).filter(([, v]) => v.link === 'cellular')
 
   const nodeColor = (name: string, cellular: boolean) => {
-    if (cellular) {
-      const c = p.cells[name]
-      return !c ? COLORS.none : c.state === 'ok' ? COLORS.cellOk : c.state === 'none' ? COLORS.cellNone : COLORS.cellEdge
-    }
+    if (cellular) return cellColor(p.cells[name])
     const l = p.links[name]?.link
     return !l ? COLORS.none : l.viable ? COLORS.viable : l.margin_db > -5 ? COLORS.marginal : COLORS.fail
   }
@@ -196,7 +194,8 @@ export default function Sidebar(p: Props) {
             </label>
             {p.showCoverage && (
               <p className="hint">
-                {dot('#2a9d8f')} garantizada · {dot('#e9c46a')} cerca de una zona sin señal (250–500 m según el terreno) · {dot('#e63946')} sin cobertura declarada
+                {dot(COLORS.cellOk)} garantizada · {dot(COLORS.cellEdge)} incierta: cerca del borde (125–250 m según el terreno) ·{' '}
+                {dot(COLORS.cellPossible)} posible para sensores LTE-M / NB-IoT (hasta 100–300 m fuera) · {dot(COLORS.cellNone)} sin cobertura
               </p>
             )}
           </>
