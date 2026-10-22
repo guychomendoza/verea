@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { supabase } from './cloud'
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
@@ -8,6 +8,29 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
         <div className="text-2xl font-semibold">📡 Verea</div>
         <h1 className="text-base text-[var(--muted)]">{title}</h1>
         {children}
+      </div>
+    </div>
+  )
+}
+
+/** Password input with a button to show what was typed. */
+function PasswordField({ label, value, onChange, autoComplete }: {
+  label: string; value: string; onChange: (v: string) => void; autoComplete: string
+}) {
+  const [visible, setVisible] = useState(false)
+  const id = useId()
+  return (
+    <div className="field">
+      <label htmlFor={id}>{label}</label>
+      <div className="password-field">
+        <input id={id} type={visible ? 'text' : 'password'} autoComplete={autoComplete} required value={value}
+          autoCapitalize="off" autoCorrect="off" spellCheck={false} onChange={(e) => onChange(e.target.value)} />
+        <button type="button" className="btn-ghost" aria-pressed={visible}
+          aria-label={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+          title={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+          onClick={() => setVisible(!visible)}>
+          {visible ? '🙈' : '👁'}
+        </button>
       </div>
     </div>
   )
@@ -43,10 +66,7 @@ export function Login() {
           <input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
         {!forgot && (
-          <label className="field"><span>Contraseña</span>
-            <input type="password" autoComplete="current-password" required value={password}
-              onChange={(e) => setPassword(e.target.value)} />
-          </label>
+          <PasswordField label="Contraseña" autoComplete="current-password" value={password} onChange={setPassword} />
         )}
         <button className="btn btn-active" type="submit" disabled={busy}>
           {busy ? '…' : forgot ? 'Enviar enlace' : 'Iniciar sesión'}
@@ -87,12 +107,8 @@ export function SetPassword({ email, onDone }: { email: string; onDone: () => vo
   return (
     <Card title={`Elige una contraseña para ${email}`}>
       <form onSubmit={submit} className="flex flex-col gap-3">
-        <label className="field"><span>Nueva contraseña (10+ caracteres)</span>
-          <input type="password" autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
-        </label>
-        <label className="field"><span>Repítela</span>
-          <input type="password" autoComplete="new-password" required value={repeat} onChange={(e) => setRepeat(e.target.value)} />
-        </label>
+        <PasswordField label="Nueva contraseña (10+ caracteres)" autoComplete="new-password" value={password} onChange={setPassword} />
+        <PasswordField label="Repítela" autoComplete="new-password" value={repeat} onChange={setRepeat} />
         <button className="btn btn-active" type="submit" disabled={busy}>{busy ? '…' : 'Guardar contraseña'}</button>
         {msg && <p className="hint" role="alert">{msg}</p>}
       </form>

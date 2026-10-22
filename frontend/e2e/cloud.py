@@ -135,10 +135,17 @@ def main():
         page.screenshot(path=f"{OUT}/login.png")
         # login
         page.get_by_label("Correo").fill(ME["email"])
-        page.get_by_label("Contraseña").fill("wrong")
+        page.get_by_label("Contraseña", exact=True).fill("wrong")
+        pw_input = page.get_by_label("Contraseña", exact=True)
+        assert pw_input.get_attribute("type") == "password"
+        page.get_by_role("button", name="Mostrar contraseña").click()
+        assert pw_input.get_attribute("type") == "text" and pw_input.input_value() == "wrong"
+        page.get_by_role("button", name="Ocultar contraseña").click()
+        assert pw_input.get_attribute("type") == "password"
+        print("login: show / hide password ok")
         page.get_by_role("button", name="Iniciar sesión").click()
         expect(page.get_by_role("alert")).to_contain_text("Correo o contraseña incorrectos")
-        page.get_by_label("Contraseña").fill("correct-horse-battery")
+        page.get_by_label("Contraseña", exact=True).fill("correct-horse-battery")
         page.get_by_role("button", name="Iniciar sesión").click()
         side = page.get_by_role("complementary", name="Proyecto", exact=True)
         expect(side).to_contain_text("Ana", timeout=20000)

@@ -77,8 +77,10 @@ const apiError = (e: unknown) => (e instanceof ApiError ? `${e.status}: ${e.mess
 export default function App() {
   const [catalog, setCatalog] = useState<Catalog | null>(null)
   const [error, setError] = useState('')
+  // Cloud mode asks only once logged in (CloudGate): a request without the session token
+  // would answer 401, and could arrive after the good one and leave the error on screen
   useEffect(() => {
-    api.catalog().then(setCatalog).catch((e) => setError(apiError(e)))
+    if (!cloud.cloudEnabled) api.catalog().then(setCatalog).catch((e) => setError(apiError(e)))
   }, [])
   if (!cloud.cloudEnabled) {
     if (error) return <div className="p-6 text-red-600">⚠ {error}</div>
@@ -87,7 +89,7 @@ export default function App() {
   }
   return <CloudGate catalog={catalog} error={error} onSession={() => {
     setError('')
-    api.catalog().then(setCatalog).catch((e) => setError(apiError(e)))
+    api.catalog().then((c) => { setCatalog(c); setError('') }).catch((e) => setError(apiError(e)))
   }} />
 }
 

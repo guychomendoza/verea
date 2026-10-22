@@ -186,3 +186,7 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
 kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: var(--bg); }
 .progress { height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; }
 .progress div { height: 100%; background: var(--accent); transition: width .2s; }
+
+.password-field { display: flex; align-items: stretch; gap: 0; }
+.password-field input { flex: 1; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.password-field button { border: 1px solid var(--line); border-left: 0; border-radius: 0 6px 6px 0; padding: 0 10px; background: var(--bg); cursor: pointer; }

@@ -43,6 +43,10 @@ try:
         expect(page.get_by_text("Elige una contraseña")).to_be_visible(timeout=30000)
         print("invite link -> set password screen: ok")
         page.get_by_label("Nueva contraseña (10+ caracteres)").fill("short")
+        page.get_by_role("button", name="Mostrar contraseña").first.click()
+        assert page.get_by_label("Nueva contraseña (10+ caracteres)").get_attribute("type") == "text"
+        assert page.get_by_label("Repítela").get_attribute("type") == "password"
+        print("set password: show / hide ok")
         page.get_by_label("Repítela").fill("short")
         page.get_by_role("button", name="Guardar contraseña").click()
         expect(page.get_by_role("alert")).to_contain_text("10 caracteres")
@@ -78,7 +82,7 @@ try:
         # sign out, sign in with the new password
         page.get_by_role("button", name="Cerrar sesión").click()
         page.get_by_label("Correo").fill(EMAIL)
-        page.get_by_label("Contraseña").fill("selftest-Passw0rd-xyz")
+        page.get_by_label("Contraseña", exact=True).fill("selftest-Passw0rd-xyz")
         page.get_by_role("button", name="Iniciar sesión").click()
         expect(page.get_by_label("Nombre del proyecto")).to_have_value("Self-test project", timeout=30000)
         print("sign in again, last project reopened: ok")
