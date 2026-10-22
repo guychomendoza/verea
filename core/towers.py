@@ -24,7 +24,7 @@ MCC_MEXICO = 334
 OPERATOR_MNC = {            # Mexican mobile network codes
     "Telcel": (20,),
     "AT&T": (40, 50, 90),
-    "Movistar": (30,),
+    "Movistar": (3, 30),
     "Altán": (140,),
 }
 _MNC_OPERATOR = {m: op for op, mncs in OPERATOR_MNC.items() for m in mncs}

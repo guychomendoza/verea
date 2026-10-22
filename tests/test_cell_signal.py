@@ -6,7 +6,7 @@ import math
 import numpy as np
 import pytest
 
-from core.cell_signal import SIGMA_DB, calibration_edge, estimate
+from core.cell_signal import SIGMA_DB, estimate, fit_probit
 from core.towers import Tower, TowerIndex, read_opencellid, sites_from_cells
 
 SITE = (20.50, -100.80)
@@ -76,27 +76,27 @@ def test_nearest(towers):
     assert towers.nearest("Altán", *SITE, radius_m=5000) == []
 
 
-def test_calibration_edge_bounds_the_sensor_area():
-    cov = np.array([1, 1, 1, 0, 0, 1, 1, 1, 0, 0], dtype=bool)
-    x = np.arange(10) * 1000.0
-    assert calibration_edge(cov, x, sensor_i=5) == 7        # covered: first edge beyond
-    assert calibration_edge(cov, x, sensor_i=4) == 2        # uncovered: last edge before
-    assert calibration_edge(cov, x, sensor_i=9) == 7
-    assert calibration_edge(np.ones(10, bool), x, sensor_i=5) is None
+def test_fit_probit_recovers_offset_and_spread():
+    rng = np.random.default_rng(0)
+    signal = rng.uniform(-130, -70, 4000)
+    covered = rng.random(4000) < 0.5 * (1 + np.vectorize(math.erf)((signal + 10 + 100) / (6 * math.sqrt(2))))
+    offset, sigma = fit_probit(signal, covered, -100.0)
+    assert offset == pytest.approx(10, abs=1.5) and sigma in (4.0, 6.0, 8.0)
+    assert fit_probit(signal, np.ones(4000, bool), -100.0) is None
 
 
 def test_calibrated_on_the_declared_edge(towers):
-    """At the declared edge the estimate is the threshold; inside it is higher, outside lower."""
+    """At the declared edge P(LTE) is about one half; inside it is higher, outside lower."""
     src = DiskCoverage(4000)
     at_edge = estimate(*point_east(4000), "Telcel", src, towers, FlatAPI())
-    inside = estimate(*point_east(3500), "Telcel", src, towers, FlatAPI())
-    outside = estimate(*point_east(4600), "Telcel", src, towers, FlatAPI())
-    assert at_edge.calibrated and at_edge.edge_m < 100
-    assert inside.edge_m == pytest.approx(500, abs=100)
-    assert at_edge.rsrp_dbm == pytest.approx(-100, abs=1.5)
+    inside = estimate(*point_east(3000), "Telcel", src, towers, FlatAPI())
+    outside = estimate(*point_east(5000), "Telcel", src, towers, FlatAPI())
+    assert at_edge.calibrated and at_edge.probability["LTE"] == pytest.approx(0.5, abs=0.15)
     assert inside.rsrp_dbm > -100 > outside.rsrp_dbm
     assert inside.probability["LTE"] > 0.5 > outside.probability["LTE"]
     assert outside.probability["NB-IoT"] > outside.probability["LTE-M"] > outside.probability["LTE"]
+    # Distance-limited edge: a sharp map edge is explained with a small spread
+    assert at_edge.sigma_db <= 4
     # Flat ground: the signal falls slowly, so the edge is uncertain by hundreds of metres
     assert 0.05 < at_edge.gradient_db_per_100m < 2
     assert at_edge.edge_uncertainty_m > 400
@@ -108,13 +108,13 @@ def test_ridge_makes_a_sharp_edge(towers):
     # The operator's coverage ends at the ridge top; the sensor is 100 m behind it
     est = estimate(*point_east(3100), "Telcel", DiskCoverage(3000), towers, FlatAPI(ridge))
     flat = estimate(*point_east(3100), "Telcel", DiskCoverage(3000), towers, FlatAPI())
-    assert est.calibrated and est.probability["LTE"] < flat.probability["LTE"]
+    assert est.calibrated and est.probability["LTE"] < 0.1
     assert est.gradient_db_per_100m > 3 * flat.gradient_db_per_100m
     assert est.edge_uncertainty_m < flat.edge_uncertainty_m
 
 
 def test_no_edge_no_numbers(towers):
-    """Coverage continues past the radial: no calibration, so no RSRP or probabilities."""
+    """The whole radial is covered: nothing to fit, so no RSRP or probabilities."""
     est = estimate(*point_east(2000), "Telcel", DiskCoverage(50_000), towers, FlatAPI())
     assert not est.calibrated and est.covered and est.rsrp_dbm is None and est.probability == {}
     assert est.gradient_db_per_100m > 0

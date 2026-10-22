@@ -6,16 +6,20 @@ Estimated 4G signal (RSRP) at a sensor from the nearest operator sites
 declared coverage.
 
 The absolute power of a site is unknown (sector, tilt, band, real mast position),
-so it is not guessed: along the radial from the site through the sensor, every
-place where the declared coverage ends going outward is where the operator's own
-model puts the signal at the coverage threshold. The offset that makes our model
-agree there is applied at the sensor. What the terrain model contributes is the
-shape: how fast the signal falls around the sensor (flat ground: slowly, so the
-declared edge is uncertain by hundreds of metres; behind a ridge: tens of dB in
-a few metres).
+so it is not guessed. Along the radial from the site through the sensor, the
+declared map says, sample by sample, whether the operator's own model puts the
+signal above its coverage threshold. Our model is fitted to those answers as a
+probit: P(covered) = Φ((S + offset − threshold) / σ), by maximum likelihood over
+offset and σ. The offset absorbs the unknown site power; σ says how well the
+terrain explains the map along that path (small: sharp, terrain-driven edges;
+large: the map follows things the 90 m DEM does not see, such as trees and
+buildings, and the estimate is correspondingly vague).
 
-The result is a probability of service with the usual location variability
-(SIGMA_DB), for phone LTE and for LTE-M / NB-IoT, which reach further.
+The result is a probability of service for phone LTE and for LTE-M / NB-IoT,
+which work with weaker signal, plus how fast the signal changes around the sensor.
+
+Not shown in the app: scripts/validate_cell_signal.py found it does not predict
+the declared map better than the map's own neighbourhood. Kept for field RSSI.
 """
 
 import math
@@ -42,7 +46,11 @@ BEYOND_M = 2_000                 # radial continues past the sensor (edges beyon
 STEP_M = 90.0                    # one sample per DEM cell
 MAX_POINTS = 400
 GRADIENT_WINDOW_M = 300
-MAX_OFFSET_DB = 25.0             # beyond this the site is probably not the serving one
+MAX_OFFSET_DB = 30.0             # beyond this the site is probably not the serving one
+FIT_FROM_M = 500                 # radial samples used for the fit start here
+MIN_CLASS_SAMPLES = 3            # covered and uncovered samples needed to fit
+FIT_OFFSETS = np.arange(-60.0, 60.5, 0.5)
+FIT_SIGMAS = np.array([2.0, 3.0, 4.0, 6.0, 8.0, 11.0, 15.0, 20.0])
 
 
 @dataclass
@@ -52,18 +60,19 @@ class CellSignal:
     rsrp_dbm: Optional[float]            # calibrated estimate at the sensor (None: not calibrated)
     threshold_dbm: float                 # declared coverage level
     offset_db: Optional[float]           # applied to the nominal model
-    calibrated: bool                     # a declared edge bounds the sensor's area on the radial
+    calibrated: bool                     # the radial had covered and uncovered samples to fit
     covered: bool                        # declared coverage at the sensor
-    edge_m: Optional[float]              # distance sensor -> calibration edge along the radial
+    sigma_db: Optional[float]            # fitted spread: how well terrain explains the map
     gradient_db_per_100m: float          # signal drop per 100 m moving away from the site
     probability: dict = field(default_factory=dict)   # tech -> P(service) 0-1 (empty: not calibrated)
     elevation_source: str = ""
 
     @property
     def edge_uncertainty_m(self) -> Optional[float]:
-        """How far the coverage edge can move for SIGMA_DB of model error."""
+        """How far the coverage edge can move for one σ of model error."""
         g = abs(self.gradient_db_per_100m) / 100
-        return SIGMA_DB / g if g > 1e-4 else None
+        sigma = max(self.sigma_db or SIGMA_DB, SIGMA_DB)
+        return sigma / g if g > 1e-4 else None
 
 
 def _phi(z: float) -> float:
@@ -111,25 +120,44 @@ def _distance(lat1, lon1, lat2, lon2) -> float:
     return math.hypot((lat2 - lat1) * 111_320, (lon2 - lon1) * kx)
 
 
-def calibration_edge(covered: np.ndarray, x: np.ndarray, sensor_i: int,
-                     min_x: float = 500.0) -> Optional[int]:
+def fit_probit(signal: np.ndarray, covered: np.ndarray, threshold: float
+               ) -> Optional[tuple[float, float]]:
     """
-    Sample i where declared coverage ends (i covered, i+1 not) that bounds the sensor's
-    own area: the first one past a covered sensor, the last one before an uncovered
-    sensor. Edges on the other side belong to other islands, often other sites.
+    (offset, σ) maximising the likelihood of the declared coverage given the model
+    signal, P(covered) = Φ((signal + offset − threshold) / σ). None without enough
+    covered and uncovered samples.
     """
-    idx = [int(i) for i in np.where(covered[:-1] & ~covered[1:])[0] if x[i] >= min_x]
-    if covered[sensor_i]:
-        beyond = [i for i in idx if i >= sensor_i]
-        return beyond[0] if beyond else None
-    before = [i for i in idx if i < sensor_i]
-    return before[-1] if before else None
+    covered = np.asarray(covered, dtype=bool)
+    if covered.sum() < MIN_CLASS_SAMPLES or (~covered).sum() < MIN_CLASS_SAMPLES:
+        return None
+    # Logistic approximation of Φ (max error 0.01), vectorised over the whole grid
+    z = (signal[None, None, :] + FIT_OFFSETS[:, None, None] - threshold) / FIT_SIGMAS[None, :, None]
+    t = 1.702 * z
+    log_p = -np.logaddexp(0, -t)          # log Φ
+    log_q = -np.logaddexp(0, t)           # log (1 − Φ)
+    ll = np.where(covered[None, None, :], log_p, log_q).sum(axis=2)
+    i, j = np.unravel_index(int(np.argmax(ll)), ll.shape)
+    return float(FIT_OFFSETS[i]), float(FIT_SIGMAS[j])
+
+
+def site_estimate(r: "Radial", covered: np.ndarray, thr: float, exclude_m: float = 0.0):
+    """
+    Fit along one radial: (offset, σ) or None. Samples within exclude_m of the sensor
+    are left out (used to validate the method against the declared map).
+    """
+    step = max(1, len(r.x) // 200)                     # ≤ ~200 model evaluations
+    idx = [i for i in range(1, len(r.x), step)
+           if r.x[i] >= FIT_FROM_M and abs(r.x[i] - r.distance_m) >= exclude_m]
+    if not idx:
+        return None
+    sig = np.array([r.signal(i) for i in idx])
+    return fit_probit(sig, covered[idx], thr)
 
 
 def estimate(lat: float, lon: float, operator: str, source, towers: TowerIndex, api,
-             threshold_dbm: Optional[float] = None) -> Optional[CellSignal]:
+             threshold_dbm: Optional[float] = None, exclude_m: float = 0.0) -> Optional[CellSignal]:
     """
-    Best-server signal estimate at (lat, lon), calibrated on the declared coverage of
+    Best-server signal estimate at (lat, lon), fitted to the declared coverage of
     `source` (a core.cellular.CoverageSource). None when there is no site within
     SEARCH_RADIUS_M.
     """
@@ -144,27 +172,23 @@ def estimate(lat: float, lon: float, operator: str, source, towers: TowerIndex, 
         lats = np.array([c[0] for c in r.coords])
         lons = np.array([c[1] for c in r.coords])
         covered = source.covered_at(lats, lons)
-        edge = calibration_edge(covered, r.x, r.sensor_i)
-        s_nominal = r.signal(r.sensor_i)
-        offset, calibrated = 0.0, edge is not None
-        if calibrated:
-            # Edge between sample i (covered) and i+1: the model there equals the threshold
-            offset = thr - (r.signal(edge) + r.signal(edge + 1)) / 2
-        # Too large an offset: the edge is probably another site's, not this one's
-        calibrated = calibrated and abs(offset) <= MAX_OFFSET_DB
-        edge_m = abs(r.x[edge] + (r.x[1] - r.x[0]) / 2 - r.distance_m) if calibrated else None
-        results.append((calibrated, s_nominal + offset if calibrated else -math.inf, r,
-                        offset if calibrated else None, edge_m, bool(covered[r.sensor_i])))
+        fit = site_estimate(r, covered, thr, exclude_m)
+        if fit is not None and abs(fit[0]) > MAX_OFFSET_DB:
+            fit = None                                  # probably not this site's footprint
+        rsrp = r.signal(r.sensor_i, fit[0]) if fit else -math.inf
+        results.append((fit is not None, rsrp, r, fit, bool(covered[r.sensor_i])))
 
-    # Best server: the strongest calibrated site (else the nearest, for its terrain gradient)
-    calibrated, rsrp, r, offset, edge_m, cov = max(results, key=lambda t: (t[0], t[1]))
+    # Best server: the strongest fitted site (else the nearest, for its terrain gradient)
+    calibrated, rsrp, r, fit, cov = max(results, key=lambda t: (t[0], t[1]))
     if not calibrated:
-        calibrated, rsrp, r, offset, edge_m, cov = results[0]
-        rsrp = None
+        calibrated, rsrp, r, fit, cov = results[0]
     w = max(1, int(round(GRADIENT_WINDOW_M / (r.x[1] - r.x[0]))))
     idx = [i for i in range(r.sensor_i - w, r.sensor_i + w + 1) if 1 <= i < len(r.x)]
     slope = np.polyfit(r.x[idx], [r.signal(i) for i in idx], 1)[0] if len(idx) >= 3 else 0.0
-    prob = ({tech: _phi((rsrp - (thr - extra)) / SIGMA_DB) for tech, extra in EXTRA_DB.items()}
-            if calibrated else {})
-    return CellSignal(r.tower, r.distance_m, rsrp, thr, offset, calibrated, cov, edge_m,
-                      -float(slope) * 100, prob, r.source)
+    prob = {}
+    if calibrated:
+        sigma = max(fit[1], SIGMA_DB)
+        prob = {tech: _phi((rsrp - (thr - extra)) / sigma) for tech, extra in EXTRA_DB.items()}
+    return CellSignal(r.tower, r.distance_m, rsrp if calibrated else None, thr,
+                      fit[0] if calibrated else None, calibrated, cov,
+                      fit[1] if calibrated else None, -float(slope) * 100, prob, r.source)

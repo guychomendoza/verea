@@ -35,11 +35,11 @@ frontend, DB with users) is planned.
   40 m steep → 300 m flat; small holes < `SMALL_GAP_M2` (0.1 km²) always 40 m;
   fixed `EDGE_MARGIN_M` = 100 m without relief data).
 - `core/towers.py` — OpenCelliD LTE cells → approximate sites (cells grouped by eNodeB, median
-  position) in `data/coverage/towers_mx.csv` (`scripts/get_towers.py`, needs `OPENCELLID_TOKEN`).
-- `core/cell_signal.py` — 4G sensor estimate: ITM radial from the nearest sites, calibrated on the
-  declared edge that bounds the sensor's own area (first edge past a covered sensor, last one
-  before an uncovered one); P(service) for LTE / LTE-M (+15 dB) / NB-IoT (+20 dB), σ 8 dB.
-  No calibrating edge → no numbers (deliberately; nominal site power is a guess).
+  position) in `data/coverage/towers_mx.csv` (`scripts/get_towers.py`; token, or `--from-file`).
+- `core/cell_signal.py` — 4G estimate from the nearest sites: ITM radial, probit fit (offset, σ)
+  to the declared map along it; P(service) for LTE / LTE-M (+15 dB) / NB-IoT (+20 dB).
+  NOT used by the app: see `scripts/validate_cell_signal.py` (it does not beat the map's own
+  neighbourhood). `core/dem.py` — local GLO-90 elevations (`fetch_elevations` like ElevationAPI).
 - `scripts/build_relief.py` — Copernicus GLO-90 DEM (→ `data/dem/`, ≈1 GB) → national relief grid
   `data/coverage/relief_mx.npz` (max−min within 500 m, 0.0025° cells, uint8 per 1° tile).
 - `scripts/build_coverage_tiles.py` — GeoPackage → PMTiles of PNG tiles z5–13 with classes
@@ -78,10 +78,16 @@ frontend, DB with users) is planned.
    each coverage edge: sharp terrain-shadow edges get a small margin (~30–50 m),
    flat/open distance-limited edges a wide one (~200–500 m). Integrate into
    `build_coverage_tiles.py` (per-tile grids) and `core/cellular.py` (sensor status).
-2. **Towers + propagation** (code done 2026-10-21, waiting for OpenCelliD data) — approximate tower locations (OpenCelliD, CC BY-SA) and the
+2. **Towers + propagation** (tried 2026-10-21, shelved) — approximate tower locations (OpenCelliD, CC BY-SA) and the
    existing terrain engine to estimate signal and its gradient near edges:
    margin ≈ model uncertainty (~8 dB) / gradient (dB per m). Also estimate how far
    NB-IoT / LTE-M (≈15–20 dB more link budget than phone LTE) can reach into the red.
+   Result: with OpenCelliD sites (opencellid.org was down; data from the CC BY-SA mirror
+   github.com/NorthveilSystems/treadstone-celldata, release 2026-10) the terrain model explains the
+   declared map better than distance alone but worse than the map's own neighbourhood (leave-out
+   Brier 0.14–0.16 vs 0.09–0.15), fitted σ ≈ 20 dB. Approximate site positions without sectors
+   cannot add to the operator's map, so no per-sensor probabilities are shown. The 40–300 m relief
+   margins of step 1 are also unvalidated: only field RSSI can calibrate them.
 Field calibration with sensor RSSI comes later (no 4G sensors installed yet; they will
 report to the company's own server).
 
