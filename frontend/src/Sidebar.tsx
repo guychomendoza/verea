@@ -120,7 +120,7 @@ export default function Sidebar(p: Props) {
             const l = p.links[n.name]?.link
             return (
               <li key={n.name}>
-                <button className={p.selection?.name === n.name ? 'selected' : ''}
+                <button className={p.selection?.name === n.name ? 'selected' : ''} title={n.owner}
                   onClick={() => p.onSelect({ kind: 'node', name: n.name }, true)}>
                   <DeviceIcon kind={kind} color={nodeColor(n.name, cell)} /> {n.name}
                   <span className="hint ml-auto">

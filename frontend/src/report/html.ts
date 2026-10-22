@@ -7,7 +7,7 @@ import type { LegendItem } from '../legend'
 import { nodeKindOf } from '../mapStyle'
 import { PLOTLY_CONFIG, PLOTLY_LOCALE } from '../profilePlot'
 import type { ReportData } from './collect'
-import { GLOSSARY, SOURCES, nodeFacts, overviewTable, settingsLine, summary } from './content'
+import { GLOSSARY, SOURCES, byOwner, cellTable, loraTable, nodeFacts, nodeTitle, settingsLine, summary, type Table } from './content'
 
 const MAPLIBRE = 'https://unpkg.com/maplibre-gl@5.24.0/dist'
 const PLOTLY = 'https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js'
@@ -16,10 +16,14 @@ function esc(s: unknown): string {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 }
 
-function tableHtml(head: string[], rows: string[][]): string {
+function tableHtml(head: string[], rows: string[][], colors: string[] = []): string {
+  const cell = (c: string, i: number, r: number) => (colors[r] && i === head.length - 1
+    ? `<td><i class="dt" style="background:${colors[r]}"></i> ${esc(c)}</td>` : `<td>${esc(c)}</td>`)
   return `<div class="tbl"><table><thead><tr>${head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>`
-    + `<tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
+    + `<tbody>${rows.map((r, ri) => `<tr>${r.map((c, i) => cell(c, i, ri)).join('')}</tr>`).join('')}</tbody></table></div>`
 }
+
+const statusTable = (tb: Table | null) => (tb ? `<h2>${esc(tb.title)}</h2>${tableHtml(tb.head, tb.rows, tb.colors)}` : '')
 
 /** Symbology under a map: device symbols, line samples, dots and group titles. */
 function legendHtml(items: LegendItem[]): string {
@@ -69,11 +73,12 @@ export function buildHtml(d: ReportData): string {
     return [l ? (l.viable ? 'Enlace viable' : 'Enlace no viable') : (r?.error ?? 'Sin resultado'),
       !l ? 'muted' : l.viable ? 'ok' : l.margin_db > -5 ? 'warn' : 'bad']
   }
-  const cards = d.nodes.map((s, i) => {
+  const order = new Map([...d.project.nodes].sort(byOwner).map((n, i) => [n.name, i]))
+  const cards = d.nodes.map((s, i) => [s, i] as const).sort(([a], [b]) => order.get(a.node.name)! - order.get(b.node.name)!).map(([s, i]) => {
     const l = s.cellular ? null : d.links[s.node.name]?.link
     const [text, cls] = verdict(s.node.name, s.cellular)
     return `<section class="card">
-  <h3>${esc(s.node.name)} <small>${esc(s.cellular ? 'Sensor 4G' : l ? `Nodo LoRa · enlace con ${l.gateway}` : 'Nodo LoRa')}</small></h3>
+  <h3>${esc(nodeTitle(s.node))} <small>${esc(s.cellular ? 'Sensor 4G' : l ? `Nodo LoRa · enlace con ${l.gateway}` : 'Nodo LoRa')}</small></h3>
   <p class="verdict ${cls}">${esc(text)}</p>
   <img class="snap" alt="${esc(s.node.name)} en el mapa" src="${s.mapJpg}">
   ${legendHtml(s.legend)}
@@ -82,7 +87,6 @@ export function buildHtml(d: ReportData): string {
   ${l && !l.viable && l.reasons.length ? `<p class="muted"><b>Por qué no es viable:</b> ${l.reasons.map(esc).join(' · ')}</p>` : ''}
 </section>`
   }).join('\n')
-  const ov = overviewTable(d)
 
   return `<!doctype html>
 <html lang="es">
@@ -101,6 +105,7 @@ export function buildHtml(d: ReportData): string {
   h2 { color:var(--navy); }
   .symbology { display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; font-size:12px; color:var(--muted); margin:8px 0 12px; }
   .symbology span { display:inline-flex; align-items:center; gap:5px; } .symbology b { color:var(--ink); }
+  td .dt { width:10px; height:10px; border-radius:50%; display:inline-block; vertical-align:-1px; margin-right:4px; }
   .symbology .dt { width:10px; height:10px; border-radius:50%; display:inline-block; }
   .symbology .ln { width:18px; height:4px; border-radius:2px; display:inline-block; }
   main { max-width:1150px; margin:0 auto; padding:16px 16px 48px; }
@@ -124,7 +129,7 @@ export function buildHtml(d: ReportData): string {
 </style>
 </head>
 <body>
-<header><div class="logo">${logoSvg('#ffffff', BRAND.teal, ' role="img" aria-label="Verea"')}</div><div><h1>${esc(title)}</h1><p>Reporte de red · ${esc(d.generatedAt.toLocaleString('es-MX'))}${d.author ? ` · ${esc(d.author)}` : ''}</p></div></header>
+<header><div class="logo">${logoSvg('#ffffff', BRAND.teal, ' role="img" aria-label="Verea"')}</div><div><h1>${esc(title)}</h1><p>Reporte de red · ${esc(d.generatedAt.toLocaleString('es-MX'))}</p></div></header>
 <main>
 ${d.project.description.trim() ? `<p>${esc(d.project.description)}</p>` : ''}
 <h2>Resumen</h2>${tableHtml(['Concepto', 'Valor'], summary(d))}
@@ -132,7 +137,8 @@ ${d.project.description.trim() ? `<p>${esc(d.project.description)}</p>` : ''}
 <h2>Mapa</h2><div id="map"></div>
 ${legendHtml(d.legend)}
 <p class="muted">Pasa el mouse sobre un Perfil de Elevación para ver el punto en este mapa.</p>
-<h2>${esc(ov.title)}</h2>${tableHtml(ov.head, ov.rows)}
+${statusTable(loraTable(d))}
+${statusTable(cellTable(d))}
 ${d.nodes.length ? '<h2>Nodos</h2>' : ''}
 ${cards}
 <h2>Glosario</h2><dl>${GLOSSARY.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>

@@ -13,7 +13,8 @@ PROJECT_VERSION = 1
 
 _GW_KEYS = ("name", "lat", "lon", "model", "height", "tx_power", "gain", "cable_loss", "online")
 _NODE_KEYS = ("name", "lat", "lon", "model", "type", "sf", "tx_power", "height", "gain",
-              "cable_loss", "environment")
+              "cable_loss", "environment", "owner", "area_ha")
+MAX_OWNER_LEN = 80
 
 
 def project_to_dict(name: str, description: str, gateways: list, nodes: list,
@@ -32,6 +33,19 @@ def project_to_dict(name: str, description: str, gateways: list, nodes: list,
 def _num(d: dict, key: str, kind=float):
     if key in d:
         d[key] = kind(d[key])
+
+
+def _optional_info(n: dict) -> None:
+    """Owner (titular) and area of the plot: optional, dropped when empty or invalid."""
+    owner = str(n.pop("owner", "") or "").strip()[:MAX_OWNER_LEN]
+    if owner:
+        n["owner"] = owner
+    try:
+        area = float(n.pop("area_ha", ""))
+    except (TypeError, ValueError):
+        return
+    if area >= 0 and area == area and area != float("inf"):
+        n["area_ha"] = area
 
 
 def project_from_dict(data: dict) -> dict:
@@ -65,6 +79,7 @@ def project_from_dict(data: dict) -> dict:
             n["model"] = LEGACY_NODE_PROFILE.get(n.get("type"), "custom_sensor")
         n["type"] = NODE_PROFILES[n["model"]]["type"]
         n["sf"] = clamp_sf(n.get("sf", 10))
+        _optional_info(n)
         nodes.append(n)
         names.add(n["name"])
 

@@ -41,6 +41,43 @@ function NumberField({ label, value, step = 0.5, min, max, onCommit }: {
   )
 }
 
+/** Text input that commits on blur / Enter. */
+function TextField({ label, value, maxLength, onCommit }: {
+  label: string; value: string; maxLength: number; onCommit: (v: string) => void
+}) {
+  const [text, setText] = useState(value)
+  useEffect(() => setText(value), [value])
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <input value={text} maxLength={maxLength} onChange={(e) => setText(e.target.value)}
+        onBlur={() => text.trim() !== value && onCommit(text.trim())}
+        onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
+    </label>
+  )
+}
+
+/** Number that may be left empty (undefined). */
+function OptionalNumber({ label, value, onCommit }: {
+  label: string; value?: number; onCommit: (v: number | undefined) => void
+}) {
+  const [text, setText] = useState(value?.toString() ?? '')
+  useEffect(() => setText(value?.toString() ?? ''), [value])
+  const commit = () => {
+    const v = text.trim() === '' ? undefined : Number(text)
+    if (v !== undefined && (!Number.isFinite(v) || v < 0)) return setText(value?.toString() ?? '')
+    if (v !== value) onCommit(v)
+  }
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <input type="number" inputMode="decimal" step={0.01} min={0} value={text}
+        onChange={(e) => setText(e.target.value)} onBlur={commit}
+        onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
+    </label>
+  )
+}
+
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="metric">
@@ -91,6 +128,15 @@ export default function DevicePanel(p: Props) {
         </select>
         {prof && <small className="hint">{prof.source}{prof.estimated.length ? ` Valores estimados: ${prof.estimated.join(', ')}.` : ''}</small>}
       </label>
+
+      {node && (
+        <>
+          <TextField label="Titular" value={node.owner ?? ''} maxLength={80}
+            onCommit={(v) => p.onPatch({ owner: v || undefined })} />
+          <OptionalNumber label="Superficie (ha)" value={node.area_ha}
+            onCommit={(v) => p.onPatch({ area_ha: v })} />
+        </>
+      )}
 
       {/* ── result ── */}
       {node && !cellular && (

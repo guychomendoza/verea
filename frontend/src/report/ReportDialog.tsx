@@ -10,7 +10,6 @@ interface Props {
   cells: Record<string, CellStatus>
   cellular: Set<string>
   stations: Set<string>
-  author: string
   legend: LegendItem[]
   showCoverage: boolean
   onClose: () => void
@@ -33,6 +32,9 @@ export default function ReportDialog(p: Props) {
 
   const lora = p.project.nodes.filter((n) => !p.cellular.has(n.name))
   const withLink = lora.filter((n) => p.links[n.name]?.link).length
+  // 4G states still on their way: a report now would list those sensors as unchecked
+  const cellPending = !!p.project.settings.cell_operator
+    && p.project.nodes.some((n) => p.cellular.has(n.name) && !p.cells[n.name])
 
   const generate = async () => {
     setBusy(true)
@@ -40,7 +42,7 @@ export default function ReportDialog(p: Props) {
     setDone([])
     try {
       const data = await collectReport({
-        project: p.project, catalog: p.catalog, author: p.author, links: p.links,
+        project: p.project, catalog: p.catalog, details: html, links: p.links,
         cells: p.cells, cellular: p.cellular, stations: p.stations, legend: p.legend, showCoverage: p.showCoverage,
         onProgress: (text, fraction) => setProgress({ text, fraction }),
       })
@@ -75,16 +77,17 @@ export default function ReportDialog(p: Props) {
         </div>
         <p className="hint">
           {p.project.gateways.length} gateways · {lora.length} nodos LoRa ({withLink} con enlace) ·{' '}
-          {p.project.nodes.length - lora.length} sensores 4G. Incluye el mapa general con su simbología y una ficha por
-          nodo (su enlace en el mapa, el Perfil de Elevación y los datos clave), glosario y fuentes.
+          {p.project.nodes.length - lora.length} sensores 4G. El PDF es un resumen: el mapa del proyecto y las tablas
+          de nodos LoRa y 4G. El HTML trae además la ficha de cada nodo (su enlace en el mapa, el Perfil de
+          Elevación y sus datos).
         </p>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={pdf} onChange={(e) => setPdf(e.target.checked)} disabled={busy} />
-          PDF (para enviar o imprimir)
+          PDF: resumen con mapa y tablas (para enviar o imprimir)
         </label>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={html} onChange={(e) => setHtml(e.target.checked)} disabled={busy} />
-          HTML interactivo (mapa y perfiles navegables; se abre en cualquier navegador)
+          HTML interactivo: detalle de cada nodo (se abre en cualquier navegador)
         </label>
         {progress && (
           <div>
@@ -93,10 +96,11 @@ export default function ReportDialog(p: Props) {
           </div>
         )}
         {done.length > 0 && <p className="hint">Descargado: {done.join(', ')}</p>}
+        {cellPending && !busy && <p className="hint" role="status">Calculando la cobertura 4G de los sensores… el reporte se habilita al terminar.</p>}
         {error && <p className="error" role="alert">⚠ {error}</p>}
         <div className="flex gap-2 justify-end">
           <button className="btn" onClick={p.onClose} disabled={busy}>Cerrar</button>
-          <button className="btn btn-active" onClick={generate} disabled={busy || (!pdf && !html)}>
+          <button className="btn btn-active" onClick={generate} disabled={busy || cellPending || (!pdf && !html)}>
             {busy ? 'Generando…' : 'Generar y descargar'}
           </button>
         </div>

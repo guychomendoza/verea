@@ -295,7 +295,9 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
     [project.nodes, catalog])
 
   // ── LoRa links: recalculated shortly after any change that affects them ──
-  const loraNodes = useMemo(() => project.nodes.filter((n) => !cellular.has(n.name)), [project.nodes, cellular])
+  // Radio fields only: editing the owner or the area does not recalculate the links
+  const loraNodes = useMemo(() => project.nodes.filter((n) => !cellular.has(n.name))
+    .map(({ owner, area_ha, ...radio }) => (void owner, void area_ha, radio)), [project.nodes, cellular])
   const { cell_operator, ...rf } = project.settings
   const linkInput = useDebounced(JSON.stringify([project.gateways, loraNodes, rf]), RECALC_DELAY_MS)
   useEffect(() => {
@@ -598,7 +600,6 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
       )}
       {showReport && (
         <ReportDialog catalog={catalog} project={project} links={links} cells={cells} cellular={cellular} stations={stations}
-          author={user ? user.me.full_name || user.me.email : ''}
           legend={mapLegend()} showCoverage={showCoverage} onClose={() => setShowReport(false)} />
       )}
     </>

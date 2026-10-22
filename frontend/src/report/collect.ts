@@ -1,6 +1,6 @@
 // Everything a report needs, gathered once and shared by the PDF and the HTML versions:
-// the general map, and for every node a map image of its link, plus the elevation profile for
-// LoRa nodes with a link. Maps come from a hidden map (snapshots.ts): the user's view stays put.
+// the general map, and (HTML only) for every node a map image of its link, plus the elevation
+// profile for LoRa nodes with a link. Maps come from a hidden map (snapshots.ts): the user's view stays put.
 import { api } from '../api'
 import { mapToPng, type LegendItem } from '../exportImage'
 import { cardLegend } from '../legend'
@@ -25,7 +25,6 @@ export interface NodeSection {
 export interface ReportData {
   project: Project
   catalog: Catalog
-  author: string
   generatedAt: Date
   mapImg: string | null         // general map, framed with legend (JPEG data URL)
   mapSize: [number, number]
@@ -50,7 +49,8 @@ function blobToDataUrl(b: Blob): Promise<string> {
 }
 
 export async function collectReport(args: {
-  project: Project; catalog: Catalog; author: string
+  project: Project; catalog: Catalog
+  details: boolean              // node cards (maps, profiles): only the HTML report has them
   links: Record<string, LinkResult>; cells: Record<string, CellStatus>; cellular: Set<string>; stations: Set<string>
   legend: LegendItem[]; showCoverage: boolean; onProgress: (text: string, fraction: number) => void
 }): Promise<ReportData> {
@@ -61,7 +61,7 @@ export async function collectReport(args: {
   const holder = document.createElement('div')
   holder.style.cssText = `position:fixed;left:-10000px;top:0;width:${PROFILE_SIZE[0]}px;height:${PROFILE_SIZE[1]}px`
   document.body.appendChild(holder)
-  const hasProfiles = project.nodes.some((n) => !isCellular(args.catalog, n) && args.links[n.name]?.link)
+  const hasProfiles = args.details && project.nodes.some((n) => !isCellular(args.catalog, n) && args.links[n.name]?.link)
   const Plotly = hasProfiles ? await loadPlotly() : null
   const nodes: NodeSection[] = []
   let mapImg: string | null = null
@@ -76,7 +76,7 @@ export async function collectReport(args: {
         attribution: 'Imágenes y nombres © Esri' + (args.showCoverage ? ' · Cobertura 4G: CRT / datos.gob.mx (CC BY 4.0)' : ''),
       }, 'image/jpeg', 0.85))
     }
-    for (const [i, node] of project.nodes.entries()) {
+    for (const [i, node] of (args.details ? project.nodes : []).entries()) {
       const cellular = isCellular(args.catalog, node)
       const link = cellular ? null : args.links[node.name]?.link
       const gateway = link ? project.gateways.find((g) => g.name === link.gateway) : undefined
@@ -102,7 +102,7 @@ export async function collectReport(args: {
   }
   onProgress('Armando el documento…', 0.97)
   return {
-    ...base, catalog: args.catalog, author: args.author, generatedAt: new Date(),
+    ...base, catalog: args.catalog, generatedAt: new Date(),
     mapImg, mapSize: SNAPSHOT_SIZE, legend: args.legend, nodes, showCoverage: args.showCoverage,
   }
 }

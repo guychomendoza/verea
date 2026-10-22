@@ -84,6 +84,15 @@ def test_project_normalize(client):
     assert bad.status_code == 422
 
 
+def test_project_keeps_owner_and_area(client):
+    nodes = [dict(NODE, name="A", owner="  Ana López ", area_ha="2.5"),
+             dict(NODE, name="B", owner="", area_ha=-1), dict(NODE, name="C", area_ha="x")]
+    r = client.post("/api/project/normalize", json={"project": {"gateways": [GW], "nodes": nodes}})
+    out = {n["name"]: n for n in r.json()["nodes"]}
+    assert (out["A"]["owner"], out["A"]["area_ha"]) == ("Ana López", 2.5)
+    assert "owner" not in out["B"] and "area_ha" not in out["B"] and "area_ha" not in out["C"]
+
+
 def test_cell_status(client):
     if "Telcel" not in api.coverage_sources():
         pytest.skip("no coverage data")

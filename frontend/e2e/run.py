@@ -99,6 +99,11 @@ def main():
         expect(panel).to_be_visible()
         expect(panel.get_by_label("Nombre")).to_have_value("N-1")
         print("click on map node: panel stays open")
+        expect(panel.get_by_label("Titular")).to_have_value("Ana Torres")
+        panel.get_by_label("Superficie (ha)").fill("3.25")
+        panel.get_by_label("Superficie (ha)").press("Enter")
+        expect(panel.get_by_label("Superficie (ha)")).to_have_value("3.25")
+        print("owner and area shown and editable in the node panel")
 
         # ── elevation profile ──
         chart = page.get_by_test_id("profile-chart")
@@ -254,13 +259,13 @@ def main():
         html = next(d for d in downloads if d.suggested_filename.endswith(".html"))
         pdf_bytes = Path(pdf.path()).read_bytes()
         pages = len(re.findall(rb"/Type\s*/Page[^s]", pdf_bytes))
-        assert pdf_bytes[:5] == b"%PDF-" and pages >= 3, pages
+        assert pdf_bytes[:5] == b"%PDF-" and pages >= 1, pages
         assert len(pdf_bytes) < 5_000_000, f"PDF too big: {len(pdf_bytes) / 1e6:.1f} MB"
         pdf.save_as(OUT / pdf.suggested_filename)
         html.save_as(OUT / html.suggested_filename)
         n_nodes = len(labels) - 1 + 1        # sample nodes + the one added with N (minus the gateway)
-        assert n_nodes + 2 <= pages <= n_nodes + 3, (pages, n_nodes)     # cover, a page per node, glossary
-        print("report:", names, f"PDF {len(pdf_bytes) / 1024:.0f} KB, {pages} pages ({n_nodes} node cards)")
+        assert pages <= 2, pages             # summary: map and the LoRa and 4G tables, no node cards
+        print("report:", names, f"PDF {len(pdf_bytes) / 1024:.0f} KB, {pages} pages (summary)")
         dialog.get_by_role("button", name="Cerrar").last.click()
         rep = ctx.new_page()
         rep_errors = []
@@ -276,6 +281,14 @@ def main():
         for k in ("Gateway", "Sensor LoRa", "Sensor 4G", "Estación meteorológica", "Enlace viable", "4G garantizado"):
             assert k in legend, (k, legend)
         assert rep.locator(".card .symbology").count() == n_nodes
+        titles = rep.locator(".card h3").all_inner_texts()
+        assert titles[0].startswith("N-1 · Ana Torres") and any(x.startswith("4G-1 · Beto Ruiz") for x in titles), titles
+        heads = rep.locator("main h2").all_inner_texts()
+        assert "Nodos LoRa" in heads and any(h.startswith("Sensores 4G") for h in heads), heads
+        body = rep.locator("main").inner_text()
+        assert "Señal declarada" not in body and "3.25 ha" in body and "5.06 ha" in body
+        assert rep.locator("td .dt").count() == n_nodes
+        print("HTML: LoRa and 4G tables (owner, area, status dot), cards 'node · owner' in alphabetical order")
         first = Image.open(io.BytesIO(__import__("base64").b64decode(snaps.first.get_attribute("src").split(",", 1)[1]))).convert("RGB")
         white = sum(1 for px in first.getdata() if min(px) > 235)
         assert white > 400, f"highlighted link (white rings and casing) not visible: {white}"

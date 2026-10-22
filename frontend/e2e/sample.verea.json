@@ -27,7 +27,9 @@
    "height": 1.5,
    "gain": 2.15,
    "cable_loss": 0.0,
-   "environment": "Cultivo bajo"
+   "environment": "Cultivo bajo",
+   "owner": "Ana Torres",
+   "area_ha": 2.5
   },
   {
    "name": "N-2",
@@ -53,7 +55,9 @@
    "height": 1.5,
    "gain": 0.0,
    "cable_loss": 0.0,
-   "environment": "Rural / Open"
+   "environment": "Rural / Open",
+   "owner": "Beto Ruiz",
+   "area_ha": 5.06
   },
   {
    "name": "WX-1",

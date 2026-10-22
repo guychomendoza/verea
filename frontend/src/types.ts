@@ -24,6 +24,8 @@ export interface NodeDevice {
   gain?: number
   cable_loss?: number
   environment?: string
+  owner?: string        // titular of the plot (optional, shown in reports)
+  area_ha?: number      // plot area in hectares (optional)
 }
 
 export interface Settings {

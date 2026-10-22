@@ -33,9 +33,11 @@ frontend, DB with users) is planned.
   ("Perfil de Elevación", Plotly loaded on demand from `plotly.ts`, same traces as
   `ui/profile_interactive.py`), `mapStyle.ts` (map style + device/link GeoJSON shared by the map
   and the report; `highlight` rings one link and dims the rest), `Sidebar.tsx`, `DevicePanel.tsx`,
-  `report/` (built in the browser: general map + one card per node with its link on the map —
-  from a hidden map in `snapshots.ts` — its profile and few figures; PDF with jsPDF, and
-  interactive HTML), panel borders (`Edge` in `App.tsx`) show an open/close arrow on hover,
+  `report/` (built in the browser; PDF with jsPDF = summary: whole-project map + separate LoRa
+  and 4G tables with owner/area, alphabetical, status dot; interactive HTML = the same plus one
+  card per node with its link on the map — from a hidden map in `snapshots.ts` — its profile and
+  few figures; node cards are only built when the HTML is requested; no e-mail in reports),
+  nodes may carry optional `owner` (titular) and `area_ha` (in `core/project.py` `_NODE_KEYS`), panel borders (`Edge` in `App.tsx`) show an open/close arrow on hover,
   ruler is a map control (and R), `shortcuts.ts` (G/Ctrl+G, N = LSE01, R, Ctrl+S;
   Ctrl+N cannot be captured in Chrome), `project.ts` (pure reducer), `api.ts`.
   maplibre-gl.css forces `.maplibregl-map` to position: relative: size the map container inline.

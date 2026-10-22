@@ -1,8 +1,11 @@
 // Report text and tables, shared by the PDF and the HTML versions (ui/report.py, in Spanish).
 import { distance, num } from '../geo'
+import { cellColor, linkColor } from '../mapStyle'
+import type { NodeDevice } from '../types'
 import type { NodeSection, ReportData } from './collect'
 
-export type Table = { title: string; head: string[]; rows: string[][] }
+/** A table; `colors[i]` is the status colour of row i (a dot in its last cell). */
+export type Table = { title: string; head: string[]; rows: string[][]; colors: string[] }
 
 const ALL_TERMS: [string, string][] = [
   ['Modelo de propagación', 'Cómo se estima la pérdida sobre el terreno. Se usa la mayor (la más '
@@ -46,22 +49,35 @@ export function envLabel(d: ReportData, key?: string): string {
 
 export function summary(d: ReportData): string[][] {
   const lora = d.project.nodes.filter((n) => !d.cellular.has(n.name))
-  const res = lora.map((n) => d.links[n.name]?.link)
-  const viable = res.filter((l) => l?.viable).length
   const cells = d.project.nodes.filter((n) => d.cellular.has(n.name)).map((n) => d.cells[n.name]?.state)
-  const rows = [
-    ['Gateways', String(d.project.gateways.length)],
-    ['Nodos LoRa', String(lora.length)],
-    ['Enlaces viables', `${viable} de ${lora.length}`],
-    ['Enlaces no viables o sin resultado', String(lora.length - viable)],
-  ]
+  const rows: string[][] = []
+  if (d.project.gateways.length || lora.length) {
+    const viable = lora.filter((n) => d.links[n.name]?.link?.viable).length
+    rows.push(['Gateways', String(d.project.gateways.length)], ['Nodos LoRa', String(lora.length)])
+    if (lora.length) rows.push(['Enlaces viables', `${viable} de ${lora.length}`])
+  }
   if (cells.length) {
     rows.push(['Sensores 4G', String(cells.length)],
       ['4G garantizado / incierto / sin 4G',
         `${cells.filter((s) => s === 'ok').length} / ${cells.filter((s) => s === 'edge' || s === 'differentiated').length} / ${cells.filter((s) => s === 'none').length}`])
+    const unchecked = cells.filter((s) => !s).length
+    if (unchecked) rows.push(['4G sin revisar (elige un operador)', String(unchecked)])
   }
   return rows
 }
+
+/** Alphabetical by owner (titular), then by node name. */
+export function byOwner(a: NodeDevice, b: NodeDevice): number {
+  const key = (n: NodeDevice) => (n.owner || n.name)
+  return key(a).localeCompare(key(b), 'es', { sensitivity: 'base' }) || a.name.localeCompare(b.name, 'es')
+}
+
+/** "AGU-D0248 · Trinidad Torres Contreras", or just the name. */
+export function nodeTitle(n: NodeDevice): string {
+  return n.owner ? `${n.name} · ${n.owner}` : n.name
+}
+
+export const hectares = (v?: number) => (v == null ? '—' : `${num(v, 2)} ha`)
 
 /** Settings in one line. */
 export function settingsLine(d: ReportData): string {
@@ -79,16 +95,50 @@ function status(d: ReportData, name: string): string {
   return r?.link ? (r.link.viable ? 'Viable' : 'No viable') : (r?.error ?? 'Sin resultado')
 }
 
-/** One row per node: the connectivity at a glance. */
-export function overviewTable(d: ReportData): Table {
+export function statusColor(d: ReportData, name: string): string {
+  return d.cellular.has(name) ? cellColor(d.cells[name]) : linkColor(d.links[name])
+}
+
+/** Optional columns (owner, area) only when some node has them. */
+function extras(nodes: NodeDevice[], area: boolean) {
+  const owner = nodes.some((n) => n.owner)
+  const ha = area && nodes.some((n) => n.area_ha != null)
   return {
-    title: 'Conectividad por nodo',
-    head: ['Nodo', 'Tipo', 'Gateway', 'Distancia', 'Margen', 'Estado'],
-    rows: d.project.nodes.map((n) => {
-      const l = d.cellular.has(n.name) ? null : d.links[n.name]?.link
-      return [n.name, d.cellular.has(n.name) ? '4G' : 'LoRa', l?.gateway ?? '—',
-        l ? distance(l.distance_m) : '—', l ? `${num(l.margin_db, 1)} dB` : '—', status(d, n.name)]
+    head: [...(owner ? ['Titular'] : []), ...(ha ? ['Superficie'] : [])],
+    cells: (n: NodeDevice) => [...(owner ? [n.owner ?? '—'] : []), ...(ha ? [hectares(n.area_ha)] : [])],
+  }
+}
+
+/** LoRa nodes: one row each (null when the project has none). */
+export function loraTable(d: ReportData): Table | null {
+  const nodes = d.project.nodes.filter((n) => !d.cellular.has(n.name)).sort(byOwner)
+  if (!nodes.length) return null
+  const x = extras(nodes, true)
+  return {
+    title: 'Nodos LoRa',
+    head: ['Nodo', ...x.head, 'Gateway', 'Distancia', 'Margen', 'Estado'],
+    rows: nodes.map((n) => {
+      const l = d.links[n.name]?.link
+      return [n.name, ...x.cells(n), l?.gateway ?? '—', l ? distance(l.distance_m) : '—',
+        l ? `${num(l.margin_db, 1)} dB` : '—', status(d, n.name)]
     }),
+    colors: nodes.map((n) => statusColor(d, n.name)),
+  }
+}
+
+/** 4G sensors: one row each (null when the project has none). */
+export function cellTable(d: ReportData): Table | null {
+  const nodes = d.project.nodes.filter((n) => d.cellular.has(n.name)).sort(byOwner)
+  if (!nodes.length) return null
+  const x = extras(nodes, true)
+  return {
+    title: `Sensores 4G${d.project.settings.cell_operator ? ` (${d.project.settings.cell_operator})` : ''}`,
+    head: ['Nodo', ...x.head, 'Cubierto alrededor', 'Estado'],
+    rows: nodes.map((n) => {
+      const c = d.cells[n.name]
+      return [n.name, ...x.cells(n), c?.nearby_share != null ? `${Math.round(c.nearby_share * 100)} %` : '—', status(d, n.name)]
+    }),
+    colors: nodes.map((n) => statusColor(d, n.name)),
   }
 }
 
@@ -96,21 +146,22 @@ export function overviewTable(d: ReportData): Table {
 export function nodeFacts(d: ReportData, s: NodeSection): string[][] {
   const n = s.node
   const model = d.catalog.node_profiles[n.model]?.label ?? n.model
+  const info = [...(n.owner ? [['Titular', n.owner]] : []), ...(n.area_ha != null ? [['Superficie', hectares(n.area_ha)]] : [])]
   if (s.cellular) {
     const c = d.cells[n.name]
     return [
-      ['Modelo', model],
+      ...info,
       ['Estado 4G', c ? c.text.replace(/^[^\p{L}\p{N}]+/u, '') : 'Sin revisar (elige un operador)'],
       ['Cubierto alrededor (300 m)', c?.nearby_share != null ? `${Math.round(c.nearby_share * 100)} %` : '—'],
-      c?.covered
-        ? ['Señal declarada', c.level_dbm != null ? `${c.level_dbm} dBm` : '—']
-        : ['Cobertura más cercana', c?.nearest_m != null ? distance(c.nearest_m) : '> 20 km'],
+      ...(c && !c.covered ? [['Cobertura más cercana', c.nearest_m != null ? distance(c.nearest_m) : '> 20 km']] : []),
+      ['Modelo', model],
       ['Coordenadas', `${n.lat.toFixed(5)}, ${n.lon.toFixed(5)}`],
     ]
   }
   const l = d.links[n.name]?.link
-  if (!l) return [['Modelo', model], ['Estado', status(d, n.name)], ['Coordenadas', `${n.lat.toFixed(5)}, ${n.lon.toFixed(5)}`]]
+  if (!l) return [...info, ['Modelo', model], ['Estado', status(d, n.name)], ['Coordenadas', `${n.lat.toFixed(5)}, ${n.lon.toFixed(5)}`]]
   return [
+    ...info,
     ['Gateway', l.gateway],
     ['Distancia', distance(l.distance_m)],
     ['Margen del enlace', `${num(l.margin_db, 1)} dB`],
