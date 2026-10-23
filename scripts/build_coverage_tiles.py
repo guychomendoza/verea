@@ -9,7 +9,7 @@ From an operator coverage GeoPackage (CRT open data) every map pixel gets a clas
   none     - Mexican land without declared coverage
 (transparent: sea / outside Mexico)
 
-Run once per quarter:
+Run once per quarter (after changing only the colours: --recolor data/coverage/<file>.pmtiles):
 
     python scripts/build_coverage_tiles.py data/coverage/RADIOMOVIL_4G_GARANTIZADA_2T_2026.gpkg \
         data/coverage/telcel_4g_2026q2.pmtiles
@@ -66,9 +66,9 @@ MOSAIC_FACTORS = (4, 16)            # coarse national grids for low zooms (≈18
 PALETTE = {
     0: (0, 0, 0, 0),
     1: (230, 57, 70, 95),           # none
-    2: (233, 196, 106, 140),        # edge
+    2: (255, 224, 102, 150),        # edge: light yellow
     3: (42, 157, 143, 85),          # certain
-    4: (244, 162, 97, 130),         # possible
+    4: (247, 127, 0, 140),          # possible: orange (less signal than edge, more than none)
 }
 CLASS_NAMES = {1: "none", 2: "edge", 3: "certain", 4: "possible"}
 
@@ -305,16 +305,54 @@ def tile_bounds(z, x, y):
     return west, south, east, north
 
 
+def recolor(path: Path):
+    """Put the current PALETTE on an already built tile set (the classes stay): minutes, not a
+    rebuild. The file is replaced once the new one is complete."""
+    from PIL import Image
+    from pmtiles.reader import MmapSource, Reader, all_tiles
+    from pmtiles.tile import zxy_to_tileid
+    from pmtiles.writer import write
+    palette = [c for k in range(len(PALETTE)) for c in PALETTE[k][:3]]
+    alpha = bytes(PALETTE[k][3] for k in range(len(PALETTE)))
+    tmp = path.with_name(path.stem + ".recolor.pmtiles")
+    with open(path, "rb") as f:
+        src = MmapSource(f)
+        reader = Reader(src)
+        header, metadata = reader.header(), reader.metadata()
+        tiles = []
+        for i, ((z, x, y), data) in enumerate(all_tiles(src), 1):
+            img = Image.open(io.BytesIO(data))
+            img.putpalette(palette)
+            buf = io.BytesIO()
+            img.save(buf, format="PNG", transparency=alpha)
+            tiles.append((zxy_to_tileid(z, x, y), buf.getvalue()))
+            if i % 20000 == 0:
+                print(f"  {i:,} tiles", flush=True)
+    tiles.sort()
+    with write(str(tmp)) as writer:
+        for tileid, png in tiles:
+            writer.write_tile(tileid, png)
+        writer.finalize(header, {**metadata, "recolored": time.strftime("%Y-%m-%d %H:%M")})
+    tmp.replace(path)
+    print(f"{path}: {len(tiles):,} tiles recoloured")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("gpkg", type=Path)
-    ap.add_argument("out", type=Path, help="output .pmtiles")
+    ap.add_argument("gpkg", type=Path, nargs="?")
+    ap.add_argument("out", type=Path, nargs="?", help="output .pmtiles")
+    ap.add_argument("--recolor", type=Path, metavar="PMTILES",
+                    help="only put the current colours on this built tile set (no GeoPackage needed)")
     ap.add_argument("--regions", nargs="*", help="only these REGION codes (testing), e.g. R5")
     ap.add_argument("--fixed-margin", type=float, default=None,
                     help="same margin (m) everywhere instead of the terrain-adaptive one")
     ap.add_argument("--workers", type=int, default=None)
     ap.add_argument("--keep-work", action="store_true", help="keep the intermediate files")
     args = ap.parse_args()
+    if args.recolor:
+        return recolor(args.recolor)
+    if not (args.gpkg and args.out):
+        ap.error("gpkg and out are required (or --recolor PMTILES)")
     from pmtiles.tile import Compression, TileType, zxy_to_tileid
     from pmtiles.writer import write
 

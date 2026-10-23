@@ -5,5 +5,5 @@ export const DEFAULT_CENTER: [number, number] = [-102.3494, 21.9614]   // Aguasc
 
 export const COLORS = {
   viable: '#06d6a0', marginal: '#ffd166', fail: '#ef476f', none: '#6c757d',
-  gateway: '#3da3bc', cellOk: '#2a9d8f', cellEdge: '#e9c46a', cellPossible: '#f4a261', cellNone: '#e63946',
+  gateway: '#3da3bc', cellOk: '#2a9d8f', cellEdge: '#ffe066', cellPossible: '#f77f00', cellNone: '#e63946',
 }

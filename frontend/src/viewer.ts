@@ -13,7 +13,7 @@ const NODE_KEYS = new Set(['height', 'environment'])
 const GATEWAY_KEYS = new Set(['height'])
 const okHeight = (h: unknown): h is number => typeof h === 'number' && Number.isFinite(h) && h > 0 && h <= 100
 
-/** What a viewer may do: change a height / environment, undo and redo. */
+/** What a viewer may do: change a height / environment (one node or every LoRa node), undo and redo. */
 export function viewerAllows(a: HistoryAction): boolean {
   switch (a.type) {
     case 'undo':
@@ -24,6 +24,8 @@ export function viewerAllows(a: HistoryAction): boolean {
       return Object.keys(a.patch).every((k) => NODE_KEYS.has(k))
     case 'updateGateway':
       return Object.keys(a.patch).every((k) => GATEWAY_KEYS.has(k))
+    case 'bulkEnvironment':
+      return true
     default:
       return false
   }

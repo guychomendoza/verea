@@ -83,4 +83,19 @@ describe('bulk model and undo', () => {
     expect(h.past).toEqual([])
     expect(reduceHistory(h, { type: 'undo' })).toBe(h)
   })
+
+  it('sets one environment on every LoRa node in one step', async () => {
+    const { reduceHistory } = await import('./project')
+    let p = emptyProject(settings)
+    p = reduce(p, { type: 'addNode', lat: 19.6, lon: -103.3, model: 'dragino_se0x_lb', catalog })
+    p = reduce(p, { type: 'addNode', lat: 19.7, lon: -103.3, model: 'dragino_se0x_lb', catalog })
+    p = reduce(p, { type: 'addNode', lat: 19.8, lon: -103.3, model: 'dragino_se0x_cs', catalog })
+    const lora = p.nodes.slice(0, 2).map((n) => n.name)
+    let h = reduceHistory({ present: p, past: [], future: [] }, { type: 'bulkEnvironment', names: lora, environment: 'Crops (high)' })
+    expect(h.present.nodes.map((n) => n.environment)).toEqual(['Crops (high)', 'Crops (high)', 'Rural / Open'])
+    expect(h.past).toHaveLength(1)
+    expect(reduceHistory(h, { type: 'bulkEnvironment', names: lora, environment: 'Crops (high)' })).toBe(h)   // nothing changes
+    h = reduceHistory(h, { type: 'undo' })
+    expect(h.present.nodes[0].environment).toBe('Rural / Open')
+  })
 })

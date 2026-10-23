@@ -61,7 +61,7 @@ def main():
         page.on("console", lambda m: m.type == "error" and errors.append(m.text))
         page.on("pageerror", lambda e: errors.append(str(e)))
         page.goto(URL)
-        expect(page.get_by_role("button", name="Abrir…")).to_be_visible(timeout=30000)
+        expect(page.get_by_role("button", name="Archivo ▾")).to_be_visible(timeout=30000)
 
         # ── open the sample project ──
         page.locator("input[type=file]").set_input_files(str(SAMPLE))
@@ -237,7 +237,7 @@ def main():
         print("search by coordinates: ok")
 
         # ── 4G coverage switch on the map (bottom right) ──
-        cov_btn = page.get_by_role("button", name="Cobertura 4G")
+        cov_btn = page.get_by_test_id("map").get_by_role("button", name="Cobertura 4G")
         vis = lambda: page.evaluate("() => window.__vereaMap.getLayoutProperty('coverage', 'visibility')")
         assert vis() == "none"
         cov_btn.click()
@@ -310,10 +310,13 @@ def main():
 
         # ── filters, bulk model change, undo / redo ──
         side.get_by_label("Buscar nodo").fill("Beto")
-        expect(side.locator(".device-list").nth(1).locator("li")).to_have_count(1)
+        sensors = side.get_by_role("region", name="Lista de sensores")
+        expect(sensors.locator("li")).to_have_count(1)
         side.get_by_label("Buscar nodo").fill("")
+        groups = sensors.locator(".group-title").all_inner_texts()
+        assert [g.split("\n")[0].strip() for g in groups] == ["Sensores LoRa", "Sensores 4G", "Estaciones meteorológicas"], groups
         side.get_by_role("button", name=re.compile(r"^4G incierto")).click()
-        expect(side.locator(".device-list").nth(1).locator("li")).to_have_count(1)
+        expect(sensors.locator("li")).to_have_count(1)
         side.get_by_role("button", name=re.compile(r"^Todos")).click()
         side.get_by_role("button", name="Cambiar modelo…").click()
         bulk = page.get_by_role("dialog", name="Cambiar modelo de sensores")
@@ -334,6 +337,13 @@ def main():
         page.wait_for_timeout(400)
         assert icon_of("4G-1") == "icon-cellular"
         print("filters (search, state chip); bulk 4G → SE0X-LB keeps the name; Ctrl+Z / Ctrl+Y / undo button")
+        # every LoRa node in one environment (crop stage) at once, one undo step
+        n1 = side.get_by_role("button", name=re.compile(r"^N-1\b"))
+        side.get_by_label("Entorno de todos los nodos LoRa").select_option("Cultivo alto / Milpa")
+        expect(n1).to_contain_text("13.8 dB", timeout=30000)                 # low crop 5 dB -> tall crop 20 dB
+        side.get_by_role("button", name="Deshacer").click()
+        expect(n1).to_contain_text("28.8 dB", timeout=30000)
+        print("environment of every LoRa node at once: 28.8 → 13.8 dB, undone")
         # a real drag still moves a node, and Ctrl+Z puts it back
         page.evaluate("() => window.__vereaMap.jumpTo({center: [-102.294, 21.258], zoom: 15})")
         page.wait_for_timeout(800)
@@ -386,7 +396,8 @@ def main():
 
         # ── import plots: KML (pins + polygons) then a CSV that updates one and adds one ──
         page.bring_to_front()
-        side.get_by_role("button", name="Importar parcelas…").click()
+        side.get_by_role("button", name="Archivo ▾").click()
+        page.get_by_role("menuitem", name="Importar parcelas…").click()
         imp = page.get_by_role("dialog", name="Importar parcelas")
         imp.get_by_label("Archivo a importar").set_input_files(str(HERE / "import_sample.kml"))
         expect(imp.get_by_role("status")).to_contain_text("4 filas")
@@ -400,7 +411,8 @@ def main():
         assert {"TST-D0001", "TST-D0002", "TST-D0003", "TST-D0004"} <= set(got), got
         n_plots = page.evaluate("async () => (await window.__vereaMap.getSource('plots').getData()).features.length")
         assert n_plots == 3, n_plots
-        side.get_by_role("button", name="Importar parcelas…").click()
+        side.get_by_role("button", name="Archivo ▾").click()
+        page.get_by_role("menuitem", name="Importar parcelas…").click()
         imp.get_by_label("Archivo a importar").set_input_files(str(HERE / "import_sample.csv"))
         expect(imp.get_by_role("status")).to_contain_text("2 filas")
         expect(imp).to_contain_text("coordenada sin punto decimal (corregida)")

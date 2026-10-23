@@ -315,7 +315,7 @@ def main():
         team_login(page, VERA["email"])
         expect(side.get_by_text("Modo lector")).to_be_visible(timeout=20000)
         expect(side.get_by_role("heading", name="Beto's edit")).to_be_visible()
-        for name in ("Nuevo", "+ Gateway", "Importar parcelas…", "🔗 Compartir", "Proyectos…", "Guardar archivo"):
+        for name in ("Archivo ▾", "+ Gateway", "Cambiar modelo…", "🔗 Compartir", "Proyectos…"):
             assert side.get_by_role("button", name=name, exact=True).count() == 0, name
         assert page.get_by_label("Nombre del proyecto").count() == 0
         assert (pid, VERA["id"]) in VIEWERS

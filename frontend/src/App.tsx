@@ -674,7 +674,11 @@ function Workspace({ catalog, user, viewer }: {
       onMeta={(meta) => dispatch({ type: 'meta', ...meta })}
       onSelect={select}
       showLabels={showLabels} onShowLabels={setShowLabels}
-      onImport={importFile} onExport={exportFile} onReport={() => setShowReport(true)} onImportPlots={() => setShowImport(true)} onBulk={(preset) => setBulk(preset ?? { groups: [] })} onSuggest={() => setSuggest(true)}
+      onImport={importFile} onExport={exportFile} onReport={() => setShowReport(true)} onImportPlots={() => setShowImport(true)} onBulk={(preset) => setBulk(preset ?? { groups: [] })}
+      onBulkEnvironment={(names, environment) => {
+        dispatch({ type: 'bulkEnvironment', names, environment })
+        setStatus(`${names.length} nodos LoRa en «${catalog.environments[environment]?.label ?? environment}» (Ctrl+Z para deshacer)`)
+      }} onSuggest={() => setSuggest(true)}
       ranges={{ any: Object.keys(ranges).length > 0, loading: rangeLoading.size > 0,
         onAll: () => showRange(project.gateways.filter((g) => g.online).map((g) => g.name)),
         onHide: () => setRanges({}) }}

@@ -57,6 +57,7 @@ export type Action =
   | { type: 'meta'; name?: string; description?: string }
   | { type: 'removePlot'; id: string }
   | { type: 'bulkModel'; names: string[]; model: string; catalog: Catalog }
+  | { type: 'bulkEnvironment'; names: string[]; environment: string }
   | { type: 'addGateways'; points: { lat: number; lon: number }[]; model: string; height: number; catalog: Catalog }
 
 export function reduce(p: Project, a: Action): Project {
@@ -119,6 +120,12 @@ export function reduce(p: Project, a: Action): Project {
         ? { ...n, model: a.model, type: prof.type, sf: prof.sf, tx_power: prof.tx_power, height: prof.height,
           gain: prof.gain, cable_loss: prof.cable_loss }
         : n)) }
+    }
+    case 'bulkEnvironment': {
+      // One crop stage for every LoRa node at once (one undo step)
+      const names = new Set(a.names)
+      if (!p.nodes.some((n) => names.has(n.name) && n.environment !== a.environment)) return p
+      return { ...p, nodes: p.nodes.map((n) => (names.has(n.name) ? { ...n, environment: a.environment } : n)) }
     }
     case 'removePlot':
       return { ...p, plots: (p.plots ?? []).filter((pl) => pl.id !== a.id),
