@@ -13,6 +13,7 @@ interface Props {
   legend: LegendItem[]
   showCoverage: boolean
   onClose: () => void
+  onDone: (files: string[]) => void      // everything requested was downloaded: the dialog closes
 }
 
 /** Choose PDF and/or interactive HTML, build them in the browser and download them. */
@@ -79,6 +80,7 @@ export default function ReportDialog(p: Props) {
       }
       setDone([...files])
       setProgress({ text: 'Listo', fraction: 1 })
+      if (!c.signal.aborted) p.onDone([...files])
     } catch (e) {
       if (c.signal.aborted) setProgress(null)
       else setError(e instanceof Error ? e.message : String(e))

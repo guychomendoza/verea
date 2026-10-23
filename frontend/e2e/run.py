@@ -280,7 +280,7 @@ def main():
         downloads = []
         page.on("download", lambda d: downloads.append(d))
         dialog.get_by_role("button", name="Generar y descargar").click()
-        expect(dialog.get_by_text("Listo", exact=True)).to_be_visible(timeout=120000)
+        expect(dialog).to_have_count(0, timeout=120000)          # closes by itself when both are downloaded
         page.wait_for_timeout(500)
         names = [d.suggested_filename for d in downloads]
         assert names[0].endswith(".pdf") and names[1].endswith(".html"), names    # the PDF first, not waiting for the HTML
@@ -295,7 +295,6 @@ def main():
         n_nodes = len(labels) - 1 + 1        # sample nodes + the one added with N (minus the gateway)
         assert pages <= 3, pages             # summary: tables, map, gateway / LoRa / 4G tables, no node cards
         print("report:", names, f"PDF {len(pdf_bytes) / 1024:.0f} KB, {pages} pages (summary)")
-        dialog.get_by_role("button", name="Cerrar").last.click()
         rep = ctx.new_page()
         rep_errors = []
         rep.on("pageerror", lambda e: rep_errors.append(str(e)))

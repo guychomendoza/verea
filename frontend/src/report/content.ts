@@ -1,6 +1,7 @@
 // Report text and tables, shared by the PDF and the HTML versions (ui/report.py, in Spanish).
 import { COLORS } from '../colors'
 import { networkCounts, type KindCount } from '../counts'
+import { nodeShortName } from '../project'
 import { distance, num } from '../geo'
 import { cellColor, cellShort, linkColor, withoutOperator } from '../mapStyle'
 import type { NodeDevice } from '../types'
@@ -59,9 +60,11 @@ export function summaryTables(d: ReportData): Table[] {
   const head = ['Concepto', 'Cantidad']
   const block = (title: string, k: KindCount, extra: [string, number][] = []): Table => {
     const states = k.states.filter((x) => x.n)
-    const rows = [['Total', String(k.total)], ...k.models.map(([m, n]) => [m, String(n)]),
+    // Models, then the extra split and the status colours; the total last
+    const body = [...k.models.map(([m, n]) => [m, String(n)]),
       ...extra.filter(([, n]) => n).map(([l, n]) => [l, String(n)]), ...states.map((x) => [x.label, String(x.n)])]
-    const colors = [...rows.slice(0, rows.length - states.length).map(() => ''), ...states.map((x) => x.color)]
+    const rows = [...body, ['Total', String(k.total)]]
+    const colors = [...body.slice(0, body.length - states.length).map(() => ''), ...states.map((x) => x.color), '']
     return { title, head, rows, colors }
   }
   const out: Table[] = []
@@ -96,7 +99,7 @@ export function byOwner(a: NodeDevice, b: NodeDevice): number {
 
 /** "AGU-D0248 · Trinidad Torres Contreras", or just the name. */
 export function nodeTitle(n: NodeDevice): string {
-  return n.owner ? `${n.name} · ${n.owner}` : n.name
+  return n.owner ? `${nodeShortName(n)} · ${n.owner}` : n.name
 }
 
 export const hectares = (v?: number) => (v == null ? '—' : `${num(v, 2)} ha`)
@@ -141,7 +144,7 @@ export function loraTable(d: ReportData): Table | null {
     head: ['Nodo', ...x.head, 'Gateway', 'Distancia', 'Margen', 'Estado'],
     rows: nodes.map((n) => {
       const l = d.links[n.name]?.link
-      return [n.name, ...x.cells(n), l?.gateway ?? '—', l ? distance(l.distance_m) : '—',
+      return [nodeShortName(n), ...x.cells(n), l?.gateway ?? '—', l ? distance(l.distance_m) : '—',
         l ? `${num(l.margin_db, 1)} dB` : '—', status(d, n.name)]
     }),
     colors: nodes.map((n) => statusColor(d, n.name)),
@@ -158,7 +161,7 @@ export function cellTable(d: ReportData): Table | null {
     head: ['Nodo', ...x.head, 'Cubierto alrededor', 'Estado'],
     rows: nodes.map((n) => {
       const c = d.cells[n.name]
-      return [n.name, ...x.cells(n), c?.nearby_share != null ? `${Math.round(c.nearby_share * 100)} %` : '—', status(d, n.name)]
+      return [nodeShortName(n), ...x.cells(n), c?.nearby_share != null ? `${Math.round(c.nearby_share * 100)} %` : '—', status(d, n.name)]
     }),
     colors: nodes.map((n) => statusColor(d, n.name)),
   }

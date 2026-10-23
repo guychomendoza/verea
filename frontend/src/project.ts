@@ -169,3 +169,18 @@ export function reduceHistory(h: History, a: HistoryAction): History {
     }
   }
 }
+
+/**
+ * The node's name without its owner when it already carries it ("AGU-D0311 Alfonso Maciel
+ * Guzman", from importing with "Folio + titular", possibly cut at 40 characters): the owner
+ * has its own column / title part, so it would show twice.
+ */
+export function nodeShortName(n: NodeDevice): string {
+  if (!n.owner) return n.name
+  const name = n.name.trim(), owner = n.owner.trim()
+  for (let i = name.indexOf(' '); i > 0; i = name.indexOf(' ', i + 1)) {
+    const rest = name.slice(i + 1).trim()
+    if (rest.length >= 3 && owner.toLowerCase().startsWith(rest.toLowerCase())) return name.slice(0, i).trim()
+  }
+  return name
+}

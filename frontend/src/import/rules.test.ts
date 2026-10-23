@@ -147,3 +147,16 @@ describe('KML descriptions', () => {
     expect(rows[1].issues.join()).toContain('en la lista aparece "CARLOS DIAZ"')
   })
 })
+
+describe('report names', () => {
+  it('does not repeat the owner when the node name already carries it', async () => {
+    const { nodeShortName } = await import('../project')
+    const nodeTitle = (x: { name: string; owner?: string }) => (x.owner ? `${nodeShortName(x as never)} · ${x.owner}` : x.name)
+    const n = (name: string, owner?: string) => ({ name, owner, lat: 0, lon: 0, model: 'x' })
+    expect(nodeShortName(n('AGU-D0311 Alfonso Maciel Guzman', 'Alfonso Maciel Guzman'))).toBe('AGU-D0311')
+    expect(nodeShortName(n('AGU-D0339 Katia Del Sagrario Barbosa Bar', 'Katia Del Sagrario Barbosa Barajas'))).toBe('AGU-D0339')
+    expect(nodeTitle(n('AGU-D0311 Alfonso Maciel Guzman', 'Alfonso Maciel Guzman'))).toBe('AGU-D0311 · Alfonso Maciel Guzman')
+    expect(nodeShortName(n('AGU-D0248', 'Trinidad Torres'))).toBe('AGU-D0248')
+    expect(nodeShortName(n('Pozo norte', 'Ana Lopez'))).toBe('Pozo norte')
+  })
+})

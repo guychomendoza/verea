@@ -64,7 +64,7 @@ export async function buildPdf(d: ReportData): Promise<Blob> {
   }
   /** A table; `colors[i]` puts a dot of that colour in column `dotCol` (default: the last) of row i. */
   const table = (head: string[] | null, rows: string[][], widths: number[] = [], colors: string[] = [],
-    o: { dotCol?: number } = {}) => {
+    o: { dotCol?: number; boldLast?: boolean } = {}) => {
     const dot = o.dotCol ?? (head ? head.length - 1 : -1)
     autoTable(doc, {
       startY: y, head: head ? [head.map(t)] : undefined, body: rows.map((r) => r.map(t)),
@@ -75,6 +75,12 @@ export async function buildPdf(d: ReportData): Promise<Blob> {
       columnStyles: {
         ...Object.fromEntries(widths.map((w, i) => [i, { cellWidth: w, ...(i === 0 && !head ? { fontStyle: 'bold' } : {}) }])),
         ...(colors.some(Boolean) ? { [dot]: { cellPadding: { top: 1.6, bottom: 1.6, right: 1.6, left: 6 } } } : {}),
+      },
+      didParseCell: (h) => {
+        if (o.boldLast && h.section === 'body' && h.row.index === rows.length - 1) {
+          h.cell.styles.fontStyle = 'bold'
+          h.cell.styles.fillColor = rgb('#dce3eb')
+        }
       },
       didDrawCell: (h) => {
         if (h.section !== 'body' || h.column.index !== dot || !colors[h.row.index]) return
@@ -87,7 +93,7 @@ export async function buildPdf(d: ReportData): Promise<Blob> {
   const stacked = (tables: Table[]) => {
     for (const tb of tables) {
       heading(tb.title, 11)
-      table(tb.head, tb.rows, [120, W - 120], tb.colors, { dotCol: 0 })
+      table(tb.head, tb.rows, [120, W - 120], tb.colors, { dotCol: 0, boldLast: true })
     }
   }
 

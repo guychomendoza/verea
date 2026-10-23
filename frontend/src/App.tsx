@@ -705,7 +705,8 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
       )}
       {showReport && (
         <ReportDialog catalog={catalog} project={project} links={links} cells={cells} cellular={cellular} stations={stations}
-          legend={mapLegend()} showCoverage={showCoverage} onClose={() => setShowReport(false)} />
+          legend={mapLegend()} showCoverage={showCoverage} onClose={() => setShowReport(false)}
+          onDone={(files) => { setShowReport(false); setStatus(`Reporte descargado: ${files.join(', ')}`) }} />
       )}
     </>
   )
