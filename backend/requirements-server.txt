@@ -1,0 +1,12 @@
+# The API server only (Dockerfile): what backend/ and core/ import, pinned to the tested versions.
+fastapi==0.159.1
+uvicorn[standard]==0.54.0
+PyJWT[crypto]==2.15.1
+cryptography==50.0.2
+pydantic==2.14.1
+numpy==2.5.4
+shapely==2.2.0
+pyogrio==0.13.0
+rasterio==1.5.2
+itmlogic==1.2
+requests==2.34.2

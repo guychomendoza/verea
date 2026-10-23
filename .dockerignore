@@ -1,0 +1,10 @@
+*
+!config.py
+!core/
+!utils/
+!backend/
+!scripts/server_data.py
+!scripts/get_coverage.py
+!scripts/prebuild_coverage_cache.py
+!scripts/dem_tiles.txt
+**/__pycache__

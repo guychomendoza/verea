@@ -1,0 +1,37 @@
+# Verea API on Fly.io (deploy/README.md). Querétaro, the region closest to the users.
+app = "verea-api"
+primary_region = "qro"
+
+[env]
+  SUPABASE_URL = "https://kepelonejrqoxdfjdcgb.supabase.co"
+  # the web app's address(es); SUPABASE_ANON_KEY is set with `fly secrets set`
+  VEREA_CORS_ORIGINS = "https://verea.pages.dev"
+
+# DEM, 4G coverage and its tile cache: filled once by scripts/server_data.py
+[[mounts]]
+  source = "verea_data"
+  destination = "/data"
+  initial_size = "10gb"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Stops when nobody uses it (pay per second), starts again on the next request (a few s)
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 20
+
+  [[http_service.checks]]
+    grace_period = "30s"
+    interval = "30s"
+    method = "GET"
+    path = "/api/health"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"

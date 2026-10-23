@@ -23,6 +23,12 @@ frontend, DB with users) is planned.
   `coverage-2026Q2`: operator GeoPackage 1.2 GB + map tiles ≈130 MB + relief grid 22 MB
   into `data/coverage/`).
 
+- Deploy (phase 4, 2026-10-23): `deploy/README.md` and `deploy/deploy.sh tiles|api|web` — Cloudflare Pages
+  (web, `frontend/public/_redirects` + `_headers`), R2 (PMTiles), Fly.io (`Dockerfile`, `fly.toml`, API in qro
+  with volume /data filled by `scripts/server_data.py`: DEM from AWS, GeoPackage + relief from the release,
+  national 4G tile cache via `scripts/prebuild_coverage_cache.py`). Tokens only in
+  `~/.config/verea/deploy.env` (outside the repo). flyctl is in `~/.fly/bin`, wrangler in frontend devDeps.
+
 ## Layout
 - `app.py` — the whole Streamlit UI (sidebar, map, panels, report, projects, autosave).
 - `core/network.py` — device dicts → Gateway/EndNode, `RFSettings`, `analyze_link`, `best_link`,
