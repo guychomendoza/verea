@@ -32,7 +32,10 @@ frontend, DB with users) is planned.
   labels "name / km · dB", profile cursor and pins), `ProfilePanel.tsx` + `profilePlot.ts`
   ("Perfil de Elevación", Plotly loaded on demand from `plotly.ts`, same traces as
   `ui/profile_interactive.py`), `mapStyle.ts` (map style + device/link GeoJSON shared by the map
-  and the report; `highlight` rings one link and dims the rest), `Sidebar.tsx`, `DevicePanel.tsx`,
+  and the report; `highlight` rings one link and dims the rest), `Sidebar.tsx` (folding sections remembered in
+  localStorage, "Archivo ▾" menu, sensors grouped by technology — LoRa / 4G / stations — in natural
+  alphabetical order, one environment for every LoRa node at once = `bulkEnvironment`, viewers too),
+  `DevicePanel.tsx`,
   `counts.ts` (devices per kind / model and per status colour) feeds the map counter
   (`NetworkCounter.tsx`) and the report's three summary tables (gateways, LoRa, 4G),
   `report/` (built in the browser; PDF only, with jsPDF = summary: whole-project map — from a
@@ -122,7 +125,9 @@ frontend, DB with users) is planned.
 - `scripts/build_relief.py` — Copernicus GLO-90 DEM (→ `data/dem/`, ≈1 GB) → national relief grid
   `data/coverage/relief_mx.npz` (max−min within 500 m, 0.0025° cells, uint8 per 1° tile).
 - `scripts/build_coverage_tiles.py` — GeoPackage → PMTiles of PNG tiles z5–13 with classes
-  certain / edge (within the margin) / possible (outside, within reach) / none. Raster pipeline: rasterize 0.2° tiles on a
+  certain / edge (within the margin) / possible (outside, within reach) / none, drawn green / light
+  yellow / orange / red (nearer red = less signal; `PALETTE` here, `COLORS` in `colors.ts`); after changing
+  only colours run `--recolor <pmtiles>` (≈4 min, no GeoPackage). Raster pipeline: rasterize 0.2° tiles on a
   0.0004° grid, margin per gap cell from the relief (one distance transform per
   `MARGIN_LEVELS_M` step), render Web-Mercator tiles (Mexico ≈ 23 min).
   Needs `requirements-build.txt`.
