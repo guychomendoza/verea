@@ -216,6 +216,13 @@ def team_login(page, email, password=PASSWORD):
     page.get_by_role("button", name="Iniciar sesión").click()
 
 
+def sign_out(page):
+    """Configuración → Cuenta → Cerrar sesión."""
+    page.get_by_role("button", name="Configuración").click()
+    page.get_by_role("dialog", name="Configuración").get_by_role("button", name="Cerrar sesión").click()
+    expect(page.get_by_role("button", name="Continuar con Google")).to_be_visible(timeout=10000)
+
+
 def pdf_from(page, downloads):
     dialog = page.get_by_role("dialog", name="Reporte")
     dialog.get_by_role("button", name="Generar PDF").click()
@@ -257,7 +264,7 @@ def main():
         page.get_by_label("Contraseña", exact=True).fill(PASSWORD)
         page.get_by_role("button", name="Iniciar sesión").click()
         side = page.get_by_role("complementary", name="Proyecto", exact=True)
-        expect(side).to_contain_text("Ana", timeout=20000)
+        expect(side.get_by_role("button", name="Configuración")).to_be_visible(timeout=20000)
         # opens the most recent team project (Beto's)
         expect(page.get_by_label("Nombre del proyecto")).to_have_value("Beto's orchard", timeout=20000)
         # edit -> autosaved
@@ -304,8 +311,7 @@ def main():
         pdf = pdf_from(page, downloads)
         assert f"/URI ({url})".encode() in pdf and len(SHARES) == 1, "the PDF links to the shared project"
         print("team PDF: link and QR")
-        side.get_by_role("button", name=re.compile("Ana")).click()
-        page.get_by_role("dialog", name="Mi perfil").get_by_role("button", name="Cerrar sesión").click()
+        sign_out(page)
         expect(page.get_by_role("button", name="Continuar con Google")).to_be_visible(timeout=10000)
 
         # ── a viewer opens the link ──
@@ -356,8 +362,10 @@ def main():
         expect(page.get_by_role("heading", name="Mis archivos")).to_be_visible(timeout=10000)
         expect(page.get_by_role("button", name="Abrir Beto's edit")).to_be_visible()
         page.screenshot(path=f"{OUT}/files.png")
-        page.get_by_role("button", name=re.compile("Vera")).click()
-        prof = page.get_by_role("dialog", name="Mi perfil")
+        page.get_by_role("button", name="Configuración").click()
+        prof = page.get_by_role("dialog", name="Configuración")
+        expect(prof.get_by_role("tab", name="Cuenta")).to_have_attribute("aria-selected", "true")
+        assert prof.get_by_role("tab", name="Administración").count() == 0          # viewers: no admin tab
         prof.get_by_label("Teléfono (opcional)").fill("33 1234 5678")
         prof.get_by_label("Empresa (opcional)").fill("Agrícola Vera")
         prof.get_by_role("button", name="Guardar").click()
@@ -370,13 +378,15 @@ def main():
         page.get_by_role("button", name="Abrir Beto's edit").click()
         expect(page.get_by_text("Ya no tienes acceso a ese proyecto")).to_be_visible(timeout=10000)
         print("access removed: back to the files with a notice")
-        page.get_by_role("button", name="Cerrar sesión").click()
-        expect(page.get_by_role("button", name="Continuar con Google")).to_be_visible(timeout=10000)
+        sign_out(page)
 
         # ── an admin turns the viewer into an editor ──
         team_login(page, JEFA["email"])
-        expect(side.get_by_role("button", name="Usuarios")).to_be_visible(timeout=20000)
-        side.get_by_role("button", name="Usuarios").click()
+        expect(side.get_by_role("button", name="Configuración")).to_be_visible(timeout=20000)
+        side.get_by_role("button", name="Configuración").click()
+        conf = page.get_by_role("dialog", name="Configuración")
+        conf.get_by_role("tab", name="Administración").click()
+        conf.get_by_role("button", name="Usuarios y roles…").click()
         users = page.get_by_role("dialog", name="Usuarios")
         expect(users).to_contain_text("Agrícola Vera")
         users.get_by_label(f"Rol de {VERA['email']}").select_option("member")

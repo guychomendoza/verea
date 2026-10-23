@@ -14,7 +14,7 @@ import ProfilePanel from './ProfilePanel'
 import { profileTitle } from './profilePlot'
 import { emptyProject, isCellular, isStation, PROJECT_VERSION, reduce, rename, selected, reduceHistory, type HistoryAction } from './project'
 import MyFiles from './MyFiles'
-import ProfileDialog from './ProfileDialog'
+import SettingsDialog from './SettingsDialog'
 import ProjectsDialog from './ProjectsDialog'
 import ShareDialog from './ShareDialog'
 import UsersDialog from './UsersDialog'
@@ -137,7 +137,8 @@ function CloudGate({ catalog, error, onSession }: { catalog: Catalog | null; err
   const [claiming, setClaiming] = useState(() => pendingShare() !== null)
   const [notice, setNotice] = useState('')
   const [file, setFile] = useState<string | null>(() => recall(VIEWER_FILE_KEY))
-  const [profileOpen, setProfileOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [usersOpen, setUsersOpen] = useState(false)
 
   useEffect(() => {
     const sb = cloud.supabase!
@@ -183,7 +184,7 @@ function CloudGate({ catalog, error, onSession }: { catalog: Catalog | null; err
     cloud.supabase!.auth.signOut()
     store(LAST_PROJECT_KEY, null)
     store(VIEWER_FILE_KEY, null)
-    setProfileOpen(false)
+    setSettingsOpen(false)
   }
 
   if (session === undefined) return <div className="p-6">Cargando…</div>
@@ -199,13 +200,23 @@ function CloudGate({ catalog, error, onSession }: { catalog: Catalog | null; err
     )
   }
   if (claiming) return <div className="p-6">Abriendo el proyecto compartido…</div>
-  const profile = profileOpen && (
-    <ProfileDialog me={me} onSaved={setMe} onSignOut={signOut} onClose={() => setProfileOpen(false)} />
+  const dialogs = (
+    <>
+      {settingsOpen && (
+        <SettingsDialog onClose={() => setSettingsOpen(false)} account={{
+          me, onSignOut: signOut,
+          onSave: async (patch) => { await cloud.updateMe(me.id, patch); setMe({ ...me, ...patch }) },
+          onDelete: async () => { await cloud.deleteMyAccount(); signOut() },
+          onUsers: me.role === 'admin' ? () => { setSettingsOpen(false); setUsersOpen(true) } : undefined,
+        }} />
+      )}
+      {usersOpen && <UsersDialog me={me} onClose={() => setUsersOpen(false)} />}
+    </>
   )
-  const user = { me, signOut, onProfile: () => setProfileOpen(true) }
+  const user = { me, signOut, onSettings: () => setSettingsOpen(true) }
   let content: React.ReactNode
   if (!cloud.isTeam(me) && !file) {
-    content = <MyFiles me={me} notice={notice} onOpen={openFile} onProfile={user.onProfile} onSignOut={signOut} />
+    content = <MyFiles me={me} notice={notice} onOpen={openFile} onSettings={user.onSettings} />
   } else if (error) {
     content = <div className="p-6 text-red-600">⚠ {error}</div>
   } else if (!catalog) {
@@ -216,10 +227,10 @@ function CloudGate({ catalog, error, onSession }: { catalog: Catalog | null; err
   } else {
     content = <Workspace catalog={catalog} user={user} />
   }
-  return <>{content}{profile}</>
+  return <>{content}{dialogs}</>
 }
 
-type User = { me: cloud.Me; signOut: () => void; onProfile: () => void }
+type User = { me: cloud.Me; signOut: () => void; onSettings: () => void }
 
 /** A viewer's project: loaded with their own changes, then the read-only workspace. */
 function ViewerLoader({ id, catalog, user, onFiles }: { id: string; catalog: Catalog; user: User; onFiles: (msg?: string) => void }) {
@@ -290,7 +301,7 @@ function Workspace({ catalog, user, viewer }: {
   // A viewer may only change heights / environments (the buttons for the rest are not shown either)
   const dispatch = useCallback((a: HistoryAction) => { if (!viewer || viewerAllows(a)) dispatchRaw(a) }, [viewer])
   const [showShare, setShowShare] = useState(false)
-  const [showUsers, setShowUsers] = useState(false)
+  const [localSettings, setLocalSettings] = useState(false)     // local mode: appearance only
 
   // ── persistence: browser (local mode) or cloud with optimistic locking ──
   const [doc, setDoc] = useState<CloudDoc | null>(null)
@@ -560,7 +571,7 @@ function Workspace({ catalog, user, viewer }: {
   const keyHandler = useRef<(e: KeyboardEvent) => void>(() => {})
   keyHandler.current = (e: KeyboardEvent) => {
     const action = shortcutFor(e)
-    if (!action || showReport || showProjects || showImport || bulk || suggest || showShare || showUsers) return
+    if (!action || showReport || showProjects || showImport || bulk || suggest || showShare || localSettings) return
     if (viewer && (action === 'addGateway' || action === 'addNode')) return
     if (action === 'save' || action === 'undo' || action === 'redo' || (action === 'addGateway' && (e.ctrlKey || e.metaKey))) e.preventDefault()
     switch (action) {
@@ -660,9 +671,8 @@ function Workspace({ catalog, user, viewer }: {
     <Sidebar catalog={catalog} project={project} selection={selection} links={links} cells={cells}
       mode={mode} addModel={addModel} showCoverage={showCoverage}
       status={[saveText, status].filter(Boolean).join(' · ')}
-      user={user ? { name: user.me.full_name || user.me.email, onProfile: user.onProfile,
-        ...(viewer ? {} : { onProjects: () => setShowProjects(true), onShare: doc ? () => setShowShare(true) : undefined }),
-        ...(user.me.role === 'admin' ? { onUsers: () => setShowUsers(true) } : {}) } : undefined}
+      user={user && !viewer ? { onProjects: () => setShowProjects(true), onShare: doc ? () => setShowShare(true) : undefined } : undefined}
+      onConfig={user ? user.onSettings : () => setLocalSettings(true)}
       viewer={viewer ? { changes: changeCount(overrides), onFiles: viewer.onFiles,
         onRestore: () => { dispatch({ type: 'open', project: viewer.base }); setStatus('Valores originales restaurados') } } : undefined}
       onMode={(m, model) => {
@@ -790,7 +800,7 @@ function Workspace({ catalog, user, viewer }: {
       {showShare && doc && (
         <ShareDialog projectId={doc.id} projectName={project.name} onClose={() => setShowShare(false)} />
       )}
-      {showUsers && user && <UsersDialog me={user.me} onClose={() => setShowUsers(false)} />}
+      {localSettings && <SettingsDialog onClose={() => setLocalSettings(false)} />}
       {suggest && (
         <SuggestGatewaysDialog catalog={catalog} project={project} links={links} cellular={cellular}
           onClose={() => setSuggest(false)}

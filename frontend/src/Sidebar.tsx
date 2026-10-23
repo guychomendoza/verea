@@ -3,7 +3,8 @@ import type { MapMode } from './MapView'
 import { COLORS } from './colors'
 import { cellColor } from './mapStyle'
 import { KIND_LABELS, type DeviceKind } from './deviceIcons'
-import { DeviceIcon, Logo, ThemeButton } from './Logo'
+import { DeviceIcon, Logo } from './Logo'
+import { Icon, type IconName } from './icons'
 import { db } from './geo'
 import { STATE_GROUPS, nodeState } from './nodeStatus'
 import { isCellular, isStation } from './project'
@@ -21,7 +22,8 @@ interface Props {
   showCoverage: boolean
   showLabels: boolean
   status: string
-  user?: { name: string; onProfile: () => void; onProjects?: () => void; onShare?: () => void; onUsers?: () => void }
+  user?: { onProjects?: () => void; onShare?: () => void }
+  onConfig: () => void                 // Configuración: account and appearance
   // Viewer mode: the project is read-only except heights / environments, which are the viewer's own
   viewer?: { changes: number; onRestore: () => void; onFiles: () => void }
   onMode: (m: MapMode, model?: string) => void
@@ -58,8 +60,9 @@ function savedSections(): Record<string, boolean> {
 }
 
 /** A part of the panel that folds; whether it is open is remembered in this browser. */
-function Section({ id, title, count, defaultOpen = true, actions, children }: {
-  id: string; title: string; count?: number | string; defaultOpen?: boolean; actions?: React.ReactNode; children: React.ReactNode
+function Section({ id, title, icon, count, defaultOpen = true, nested = false, actions, children }: {
+  id: string; title: string; icon?: React.ReactNode; count?: number | string; defaultOpen?: boolean; nested?: boolean
+  actions?: React.ReactNode; children: React.ReactNode
 }) {
   const [open, setOpen] = useState(() => savedSections()[id] ?? defaultOpen)
   const toggle = () => {
@@ -69,10 +72,11 @@ function Section({ id, title, count, defaultOpen = true, actions, children }: {
     } catch { /* private mode: not remembered */ }
   }
   return (
-    <section className="side-section">
+    <section className={`side-section ${nested ? 'nested' : ''}`}>
       <div className="section-head">
         <button type="button" className="section-toggle" aria-expanded={open} onClick={toggle}>
           <span className="chev" aria-hidden="true">{open ? '▾' : '▸'}</span>
+          {icon}
           <h3>{title}</h3>
           {count !== undefined && <span className="section-count">{count}</span>}
         </button>
@@ -154,14 +158,8 @@ export default function Sidebar(p: Props) {
     <aside className="panel side-panel" aria-label="Proyecto">
       <div className="brand-bar">
         <Logo width={112} />
-        <ThemeButton className="ml-auto" />
-        {p.user && (
-          <div className="flex flex-col items-end text-xs min-w-0">
-            <button className="btn-ghost underline truncate max-w-full" title="Mi perfil" onClick={p.user.onProfile}>
-              👤 {p.user.name}</button>
-            {p.user.onUsers && <button className="btn-ghost underline" onClick={p.user.onUsers}>Usuarios</button>}
-          </div>
-        )}
+        <button className="icon-btn ml-auto" onClick={p.onConfig} title="Configuración: cuenta y apariencia"
+          aria-label="Configuración"><Icon name="settings" size={18} /></button>
       </div>
       {p.viewer ? (
         <>
@@ -201,7 +199,7 @@ export default function Sidebar(p: Props) {
 
       {/* ── add devices / tools ── */}
       {!p.viewer && (
-        <Section id="add" title="Agregar al mapa">
+        <Section id="add" title="Agregar al mapa" icon={<SectionIcon name="plus" />}>
           <div className="flex flex-wrap gap-1.5">
             <button className={`btn ${p.mode === 'addGateway' ? 'btn-active' : ''}`} title="G"
               onClick={() => p.onMode(p.mode === 'addGateway' ? 'select' : 'addGateway')}>+ Gateway</button>
@@ -226,7 +224,7 @@ export default function Sidebar(p: Props) {
       )}
 
       {/* ── gateways ── */}
-      <Section id="gateways" title="Gateways" count={p.project.gateways.length}
+      <Section id="gateways" title="Gateways" icon={<SectionIcon name="gateway" />} count={p.project.gateways.length}
         actions={p.project.gateways.length > 0 && (
           <button className="btn-ghost underline text-xs" disabled={p.ranges.loading}
             onClick={p.ranges.any ? p.ranges.onHide : p.ranges.onAll}>
@@ -248,7 +246,7 @@ export default function Sidebar(p: Props) {
       </Section>
 
       {/* ── sensors, by technology ── */}
-      <Section id="nodes" title="Sensores"
+      <Section id="nodes" title="Sensores" icon={<SectionIcon name="sensors" />}
         count={shown.length === p.project.nodes.length ? p.project.nodes.length : `${shown.length} de ${p.project.nodes.length}`}
         actions={p.project.nodes.length > 0 && !p.viewer && (
           <button className="btn-ghost underline text-xs" onClick={() => p.onBulk()}>Cambiar modelo…</button>
@@ -280,11 +278,9 @@ export default function Sidebar(p: Props) {
         )}
         <div role="region" aria-label="Lista de sensores">
           {groups.map((g) => g.nodes.length > 0 && (
-            <div key={g.kind} className="node-group">
-              <h4 className="group-title">
-                <DeviceIcon kind={g.kind} color="#5a6b80" size={14} /> {GROUP_TITLES[g.kind]}
-                <span className="section-count">{g.nodes.length === g.all ? g.all : `${g.nodes.length} de ${g.all}`}</span>
-              </h4>
+            <Section key={g.kind} id={`nodes-${g.kind}`} nested title={GROUP_TITLES[g.kind]}
+              icon={<DeviceIcon kind={g.kind} color="#3da3bc" size={15} />}
+              count={g.nodes.length === g.all ? g.all : `${g.nodes.length} de ${g.all}`}>
               <ul className="device-list">
                 {g.nodes.map((n) => {
                   const cell = g.kind === 'cellular'
@@ -302,14 +298,14 @@ export default function Sidebar(p: Props) {
                   )
                 })}
               </ul>
-            </div>
+            </Section>
           ))}
           {p.project.nodes.length > 0 && shown.length === 0 && <p className="hint">Ningún sensor coincide con el filtro.</p>}
         </div>
       </Section>
 
       {/* ── 4G ── */}
-      <Section id="cell" title="Cobertura 4G">
+      <Section id="cell" title="Cobertura 4G" icon={<SectionIcon name="signal" />}>
         {p.catalog.cell_operators.length ? (
           <>
             <label className="field"><span>Operador</span>
@@ -335,7 +331,7 @@ export default function Sidebar(p: Props) {
       </Section>
 
       {/* ── radio settings ── */}
-      <Section id="radio" title="Ajustes de radio" defaultOpen={false}>
+      <Section id="radio" title="Ajustes de radio" icon={<SectionIcon name="sliders" />} defaultOpen={false}>
         <fieldset disabled={!!p.viewer} className="contents">
           <label className="field"><span>Frecuencia (MHz)</span>
             <select value={s.freq_mhz} onChange={(e) => p.onSettings({ freq_mhz: Number(e.target.value) })}>
@@ -363,7 +359,7 @@ export default function Sidebar(p: Props) {
       </Section>
 
       {/* ── map ── */}
-      <Section id="map" title="Mapa y simbología" defaultOpen={false}>
+      <Section id="map" title="Mapa y simbología" icon={<SectionIcon name="map" />} defaultOpen={false}>
         <div className="symbology" aria-label="Simbología">
           {(['gateway', 'lora', 'cellular', 'station'] as DeviceKind[]).map((k) => (
             <span key={k}><DeviceIcon kind={k} color="#5a6b80" /> {KIND_LABELS[k]}</span>
@@ -380,7 +376,7 @@ export default function Sidebar(p: Props) {
       </Section>
 
       {!p.viewer && (
-        <Section id="shortcuts" title="Atajos de teclado" defaultOpen={false}>
+        <Section id="shortcuts" title="Atajos de teclado" icon={<SectionIcon name="keyboard" />} defaultOpen={false}>
           <dl className="shortcuts">
             {SHORTCUT_HELP.map(([k, v]) => (<div key={k}><dt><kbd>{k}</kbd></dt><dd>{v}</dd></div>))}
           </dl>
@@ -389,6 +385,8 @@ export default function Sidebar(p: Props) {
     </aside>
   )
 }
+
+const SectionIcon = ({ name }: { name: IconName }) => <Icon name={name} size={15} />
 
 const GROUP_TITLES: Record<DeviceKind, string> = {
   gateway: 'Gateways', lora: 'Sensores LoRa', cellular: 'Sensores 4G', station: 'Estaciones meteorológicas',

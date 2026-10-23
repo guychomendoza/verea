@@ -32,8 +32,8 @@ frontend, DB with users) is planned.
   labels "name / km · dB", profile cursor and pins), `ProfilePanel.tsx` + `profilePlot.ts`
   ("Perfil de Elevación", Plotly loaded on demand from `plotly.ts`, same traces as
   `ui/profile_interactive.py`), `mapStyle.ts` (map style + device/link GeoJSON shared by the map
-  and the report; `highlight` rings one link and dims the rest), `Sidebar.tsx` (folding sections remembered in
-  localStorage, "Archivo ▾" menu, sensors grouped by technology — LoRa / 4G / stations — in natural
+  and the report; `highlight` rings one link and dims the rest), `Sidebar.tsx` (folding sections with line icons from `icons.tsx`, remembered in
+  localStorage, "Archivo ▾" menu, sensors grouped by technology — LoRa / 4G / stations, each folding — in natural
   alphabetical order, one environment for every LoRa node at once = `bulkEnvironment`, viewers too),
   `DevicePanel.tsx`,
   `counts.ts` (devices per kind / model and per status colour) feeds the map counter
@@ -83,7 +83,8 @@ frontend, DB with users) is planned.
   The viewer's workspace is the normal one with `viewer` set (`App.tsx`): read-only except node
   height / environment and gateway height (`viewer.ts`: `viewerAllows`, `overridesOf`,
   `applyOverrides`), kept in `project_viewers.overrides`, never in the project; `MyFiles.tsx` lists
-  their links; `ProfileDialog.tsx` (name, phone, company; viewers may delete their account);
+  their links; `SettingsDialog.tsx` = the gear button «Configuración» (tabs Cuenta: name, phone, company, sign out,
+  viewers may delete their account · Apariencia: theme · Administración: admins → `UsersDialog.tsx`);
   `public/privacidad.html` (privacy notice draft with placeholders for the company's data).
   Team-only API endpoints use `require_team` (`backend/auth.py`, reads the caller's profile through
   Supabase REST with `SUPABASE_ANON_KEY`): `/api/suggest-gateways`. Shared links only work for

@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react'
 import * as cloud from './cloud'
-import { Logo, ThemeButton } from './Logo'
+import { Icon } from './icons'
+import { Logo } from './Logo'
 
 interface Props {
   me: cloud.Me
   notice: string
   onOpen: (id: string) => void
-  onProfile: () => void
-  onSignOut: () => void
+  onSettings: () => void
 }
 
 /** A viewer's files: the projects whose link they opened. */
-export default function MyFiles({ me, notice, onOpen, onProfile, onSignOut }: Props) {
+export default function MyFiles({ me, notice, onOpen, onSettings }: Props) {
   const [rows, setRows] = useState<cloud.ViewerFile[] | null>(null)
   const [error, setError] = useState('')
   const load = () => cloud.myFiles().then(setRows).catch((e) => setError(e.message))
@@ -33,9 +33,9 @@ export default function MyFiles({ me, notice, onOpen, onProfile, onSignOut }: Pr
         <div className="files-head">
           <Logo width={150} />
           <div className="flex items-center gap-2">
-            <ThemeButton />
-            <button className="btn" onClick={onProfile}>👤 {me.full_name || me.email}</button>
-            <button className="btn-ghost text-sm underline" onClick={onSignOut}>Cerrar sesión</button>
+            <span className="hint truncate">{me.full_name || me.email}</span>
+            <button className="icon-btn" onClick={onSettings} title="Configuración: cuenta y apariencia" aria-label="Configuración">
+              <Icon name="settings" size={18} /></button>
           </div>
         </div>
         <h1 className="text-lg font-semibold">Mis archivos</h1>

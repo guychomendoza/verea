@@ -296,13 +296,18 @@ def main():
         expect(side.get_by_role("status")).to_contain_text("Reporte descargado")
         print("report:", names, f"PDF {len(pdf_bytes) / 1024:.0f} KB, {pages} pages (summary)")
 
-        # ── theme: automatic → light → dark, remembered ──
-        theme_btn = side.get_by_role("button", name=re.compile("Cambiar tema"))
-        theme_btn.click()
+        # ── Configuración → Apariencia: light / dark, remembered (local mode: no account tab) ──
+        side.get_by_role("button", name="Configuración").click()
+        conf = page.get_by_role("dialog", name="Configuración")
+        assert conf.get_by_role("tab", name="Cuenta").count() == 0
+        conf.get_by_role("radio", name="Claro").click()
         assert page.evaluate("document.documentElement.dataset.theme") == "light"
         light_bg = page.evaluate("getComputedStyle(document.body).backgroundColor")
-        theme_btn.click()
+        conf.get_by_role("radio", name="Oscuro").click()
+        expect(conf.get_by_role("radio", name="Oscuro")).to_have_attribute("aria-checked", "true")
         assert page.evaluate("document.documentElement.dataset.theme") == "dark"
+        page.screenshot(path=f"{OUT}/9_settings.png")
+        conf.get_by_role("button", name="Cerrar").click()
         dark_bg = page.evaluate("getComputedStyle(document.body).backgroundColor")
         assert light_bg != dark_bg, (light_bg, dark_bg)
         page.screenshot(path=f"{OUT}/9_dark.png")
@@ -313,8 +318,15 @@ def main():
         sensors = side.get_by_role("region", name="Lista de sensores")
         expect(sensors.locator("li")).to_have_count(1)
         side.get_by_label("Buscar nodo").fill("")
-        groups = sensors.locator(".group-title").all_inner_texts()
-        assert [g.split("\n")[0].strip() for g in groups] == ["Sensores LoRa", "Sensores 4G", "Estaciones meteorológicas"], groups
+        groups = sensors.locator(".section-toggle h3").all_inner_texts()
+        assert groups == ["Sensores LoRa", "Sensores 4G", "Estaciones meteorológicas"], groups
+        lora_tab = sensors.get_by_role("button", name=re.compile("Sensores LoRa"))
+        total = sensors.locator("li").count()
+        lora_tab.click()                                                       # each kind folds on its own
+        expect(lora_tab).to_have_attribute("aria-expanded", "false")
+        expect(sensors.locator("li")).to_have_count(2)                         # the 4G sensor and the station
+        lora_tab.click()
+        expect(sensors.locator("li")).to_have_count(total)
         side.get_by_role("button", name=re.compile(r"^4G incierto")).click()
         expect(sensors.locator("li")).to_have_count(1)
         side.get_by_role("button", name=re.compile(r"^Todos")).click()
