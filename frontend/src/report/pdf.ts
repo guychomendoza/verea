@@ -62,16 +62,14 @@ export async function buildPdf(d: ReportData): Promise<Blob> {
     }
     y += 3
   }
-  /** A table; `colors[i]` puts a dot of that colour in column `dotCol` (default: the last) of row i.
-   *  With `box` it is drawn in that column of the page and y is not advanced (side by side). */
+  /** A table; `colors[i]` puts a dot of that colour in column `dotCol` (default: the last) of row i. */
   const table = (head: string[] | null, rows: string[][], widths: number[] = [], colors: string[] = [],
-    o: { dotCol?: number; box?: { left: number; width: number } } = {}): number => {
+    o: { dotCol?: number } = {}) => {
     const dot = o.dotCol ?? (head ? head.length - 1 : -1)
-    const left = o.box?.left ?? M
     autoTable(doc, {
       startY: y, head: head ? [head.map(t)] : undefined, body: rows.map((r) => r.map(t)),
-      margin: { left, right: o.box ? 210 - left - o.box.width : M, bottom: 18 },
-      styles: { fontSize: o.box ? 7.5 : 8.5, cellPadding: 1.6, textColor: INK, lineColor: [220, 224, 230], lineWidth: 0.1 },
+      margin: { left: M, right: M, bottom: 18 },
+      styles: { fontSize: 8.5, cellPadding: 1.6, textColor: INK, lineColor: [220, 224, 230], lineWidth: 0.1 },
       headStyles: { fillColor: NAVY, textColor: [230, 237, 244], fontStyle: 'bold' },
       alternateRowStyles: { fillColor: rgb(BRAND.rowAlt) },
       columnStyles: {
@@ -83,27 +81,16 @@ export async function buildPdf(d: ReportData): Promise<Blob> {
         doc.setFillColor(...rgb(colors[h.row.index])).circle(h.cell.x + 3, h.cell.y + h.cell.height / 2, 1.3, 'F')
       },
     })
-    const end = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY
-    if (!o.box) y = end + 5
-    return end
+    y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 5
   }
-  /** The summary tables side by side, each with its title. */
-  const sideBySide = (tables: Table[]) => {
-    if (!tables.length) return
-    const gap = 4
-    const w = (W - gap * (tables.length - 1)) / tables.length
-    ensure(30)
-    doc.setFont('helvetica', 'bold').setFontSize(10).setTextColor(...NAVY)
-    tables.forEach((tb, i) => doc.text(t(tb.title), M + i * (w + gap), y + 4))
-    y += 6
-    const top = y
-    let end = y
-    tables.forEach((tb, i) => {
-      y = top
-      end = Math.max(end, table(tb.head, tb.rows, [w * 0.72, w * 0.28], tb.colors, { dotCol: 0, box: { left: M + i * (w + gap), width: w } }))
-    })
-    y = end + 5
+  /** The summary tables one under the other, each with its title. */
+  const stacked = (tables: Table[]) => {
+    for (const tb of tables) {
+      heading(tb.title, 11)
+      table(tb.head, tb.rows, [120, W - 120], tb.colors, { dotCol: 0 })
+    }
   }
+
 
   const image = (dataUrl: string, ratio: number, maxH: number) => {
     const w = Math.min(W, maxH / ratio)
@@ -156,7 +143,7 @@ export async function buildPdf(d: ReportData): Promise<Blob> {
   doc.text(t(`Reporte de red · ${d.generatedAt.toLocaleString('es-MX')}`), tx, 24)
   y = 42
   if (d.project.description.trim()) paragraph(d.project.description, 10, INK)
-  sideBySide(summaryTables(d))
+  stacked(summaryTables(d))
   paragraph(settingsLine(d), 8.5)
   if (d.mapImg) {
     image(d.mapImg, (d.mapSize[1] + 88) / (d.mapSize[0] + 32), 140)

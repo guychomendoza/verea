@@ -293,7 +293,7 @@ def main():
         pdf.save_as(OUT / pdf.suggested_filename)
         html.save_as(OUT / html.suggested_filename)
         n_nodes = len(labels) - 1 + 1        # sample nodes + the one added with N (minus the gateway)
-        assert pages <= 2, pages             # summary: map and the LoRa and 4G tables, no node cards
+        assert pages <= 3, pages             # summary: tables, map, gateway / LoRa / 4G tables, no node cards
         print("report:", names, f"PDF {len(pdf_bytes) / 1024:.0f} KB, {pages} pages (summary)")
         dialog.get_by_role("button", name="Cerrar").last.click()
         rep = ctx.new_page()
@@ -433,7 +433,7 @@ def main():
         expect(imp).to_contain_text("la parcela no tiene folio; se tomó el de su pin")
         imp.get_by_role("button", name="Agregar 4 al proyecto").click()
         expect(imp).to_have_count(0)
-        expect(page.get_by_role("status").first).to_contain_text("Importado: 4 nodos nuevos")
+        expect(side.get_by_role("button", name=re.compile(r"TST-D0004"))).to_be_visible()   # (the status line may already say "Calculando enlaces…")
         page.wait_for_timeout(800)
         got = page.evaluate("async () => (await window.__vereaMap.getSource('devices').getData()).features.map(f => f.properties.name)")
         assert {"TST-D0001", "TST-D0002", "TST-D0003", "TST-D0004"} <= set(got), got

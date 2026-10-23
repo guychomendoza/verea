@@ -115,8 +115,8 @@ export function buildHtml(d: ReportData): string {
     background:rgb(15 34 54 / .88); color:#e6edf4; font:11px/1.3 system-ui,sans-serif; }
   .cov-legend[hidden] { display:none; } .cov-legend span { display:flex; align-items:center; gap:6px; }
   .cov-legend i { width:10px; height:10px; border-radius:2px; display:inline-block; }
-  .summary { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:14px; }
-  .summary h3 { font-size:14px; margin:0 0 6px; color:var(--navy); }
+  .summary > div { margin-bottom:14px; }
+  .summary h3 { font-size:15px; margin:0 0 6px; color:var(--navy); }
   .symbology { display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; font-size:12px; color:var(--muted); margin:8px 0 12px; }
   .symbology span { display:inline-flex; align-items:center; gap:5px; } .symbology b { color:var(--ink); }
   td .dt { width:10px; height:10px; border-radius:50%; display:inline-block; vertical-align:-1px; margin-right:4px; }
