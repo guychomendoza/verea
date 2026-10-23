@@ -76,7 +76,7 @@ export async function collectReport(args: {
     if (canvas) {
       mapImg = await blobToDataUrl(await mapToPng(canvas, {
         title: project.name.trim() || 'Proyecto Verea',
-        subtitle: `${project.gateways.length} gateways · ${project.nodes.length} nodos`,
+        subtitle: `${project.gateways.length} ${project.gateways.length === 1 ? 'gateway' : 'gateways'} · ${project.nodes.length} ${project.nodes.length === 1 ? 'nodo' : 'nodos'}`,
         // the PDF draws the symbology itself (sharper than inside the image)
         attribution: 'Imágenes y nombres © Esri' + (args.showCoverage ? ' · Cobertura 4G: CRT / datos.gob.mx (CC BY 4.0)' : ''),
       }, 'image/jpeg', 0.85))

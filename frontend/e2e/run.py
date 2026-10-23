@@ -88,6 +88,11 @@ def main():
         assert not missing, missing
         assert side.locator(".device-list .device-icon").count() == 5
         print("logo in the side panel; map symbols:", icons)
+        counter = page.get_by_role("region", name="Resumen de la red")
+        expect(counter).to_contain_text("Red: 1 GW · 4 sensores")
+        expect(counter).to_contain_text("3 LoRa")
+        expect(counter).to_contain_text("1 4G")
+        print("map counter:", counter.inner_text().replace("\n", " | "))
 
         # ── bug: a click on a node in the map opens the device panel and keeps it open ──
         pt = page.evaluate("() => window.__vereaMap.project([-102.2952, 21.2519])")
@@ -308,10 +313,11 @@ def main():
         titles = rep.locator(".card h3").all_inner_texts()
         assert titles[0].startswith("N-1 · Ana Torres") and any(x.startswith("4G-1 · Beto Ruiz") for x in titles), titles
         heads = rep.locator("main h2").all_inner_texts()
-        assert "Nodos LoRa" in heads and any(h.startswith("Sensores 4G") for h in heads), heads
+        assert "Gateways" in heads and "Nodos LoRa" in heads and any(h.startswith("Sensores 4G") for h in heads), heads
+        assert rep.locator(".summary h3").all_inner_texts()[:2] == ["Gateways", "Sensores LoRa"], rep.locator(".summary h3").all_inner_texts()
         body = rep.locator("main").inner_text()
         assert "Señal declarada" not in body and "3.25 ha" in body and "5.06 ha" in body
-        assert rep.locator("td .dt").count() == n_nodes
+        assert rep.locator("main > .tbl td .dt").count() == n_nodes + 1          # every node and the gateway
         print("HTML: LoRa and 4G tables (owner, area, status dot), cards 'node · owner' in alphabetical order")
         first = Image.open(io.BytesIO(__import__("base64").b64decode(snaps.first.get_attribute("src").split(",", 1)[1]))).convert("RGB")
         white = sum(1 for px in first.getdata() if min(px) > 235)

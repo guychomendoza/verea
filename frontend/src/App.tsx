@@ -15,6 +15,8 @@ import { profileTitle } from './profilePlot'
 import { emptyProject, isCellular, isStation, PROJECT_VERSION, reduce, rename, selected, reduceHistory, type HistoryAction } from './project'
 import ProjectsDialog from './ProjectsDialog'
 import BulkModelDialog from './BulkModelDialog'
+import { networkCounts } from './counts'
+import NetworkCounter from './NetworkCounter'
 import SuggestGatewaysDialog from './SuggestGatewaysDialog'
 import ImportDialog from './import/ImportDialog'
 import ReportDialog from './report/ReportDialog'
@@ -607,6 +609,7 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
         }} />
         <button className="btn map-btn" onClick={exportMap} title="Descargar el mapa como imagen PNG">📷 Imagen del mapa</button>
       </div>
+      <NetworkCounter counts={networkCounts(project, catalog, links, cells, cellular)} />
       {(mode === 'ruler' || ruler.length > 0) && (
         <div className="ruler-box" role="region" aria-label="Regla">
           <strong>📏 Regla</strong>{' '}

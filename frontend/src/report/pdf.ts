@@ -5,7 +5,7 @@ import { BRAND, LOGO_RATIO, logoSvg, markSvg, svgToPng } from '../brand'
 import { deviceIconCanvas } from '../deviceIcons'
 import type { LegendItem } from '../legend'
 import type { ReportData } from './collect'
-import { SOURCES, cellTable, loraTable, settingsLine, summary } from './content'
+import { SOURCES, cellTable, gatewayTable, loraTable, settingsLine, summaryTables, type Table } from './content'
 
 const M = 14                       // page margin (mm)
 const W = 210 - 2 * M
@@ -62,24 +62,49 @@ export async function buildPdf(d: ReportData): Promise<Blob> {
     }
     y += 3
   }
-  const table = (head: string[] | null, rows: string[][], widths: number[] = [], colors: string[] = []) => {
-    const dot = head ? head.length - 1 : -1          // status column: a dot of the row's colour
+  /** A table; `colors[i]` puts a dot of that colour in column `dotCol` (default: the last) of row i.
+   *  With `box` it is drawn in that column of the page and y is not advanced (side by side). */
+  const table = (head: string[] | null, rows: string[][], widths: number[] = [], colors: string[] = [],
+    o: { dotCol?: number; box?: { left: number; width: number } } = {}): number => {
+    const dot = o.dotCol ?? (head ? head.length - 1 : -1)
+    const left = o.box?.left ?? M
     autoTable(doc, {
-      startY: y, head: head ? [head.map(t)] : undefined, body: rows.map((r) => r.map(t)), margin: { left: M, right: M, bottom: 18 },
-      styles: { fontSize: 8.5, cellPadding: 1.6, textColor: INK, lineColor: [220, 224, 230], lineWidth: 0.1 },
+      startY: y, head: head ? [head.map(t)] : undefined, body: rows.map((r) => r.map(t)),
+      margin: { left, right: o.box ? 210 - left - o.box.width : M, bottom: 18 },
+      styles: { fontSize: o.box ? 7.5 : 8.5, cellPadding: 1.6, textColor: INK, lineColor: [220, 224, 230], lineWidth: 0.1 },
       headStyles: { fillColor: NAVY, textColor: [230, 237, 244], fontStyle: 'bold' },
       alternateRowStyles: { fillColor: rgb(BRAND.rowAlt) },
       columnStyles: {
         ...Object.fromEntries(widths.map((w, i) => [i, { cellWidth: w, ...(i === 0 && !head ? { fontStyle: 'bold' } : {}) }])),
-        ...(colors.length ? { [dot]: { cellPadding: { top: 1.6, bottom: 1.6, right: 1.6, left: 6 } } } : {}),
+        ...(colors.some(Boolean) ? { [dot]: { cellPadding: { top: 1.6, bottom: 1.6, right: 1.6, left: 6 } } } : {}),
       },
       didDrawCell: (h) => {
         if (h.section !== 'body' || h.column.index !== dot || !colors[h.row.index]) return
         doc.setFillColor(...rgb(colors[h.row.index])).circle(h.cell.x + 3, h.cell.y + h.cell.height / 2, 1.3, 'F')
       },
     })
-    y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 5
+    const end = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY
+    if (!o.box) y = end + 5
+    return end
   }
+  /** The summary tables side by side, each with its title. */
+  const sideBySide = (tables: Table[]) => {
+    if (!tables.length) return
+    const gap = 4
+    const w = (W - gap * (tables.length - 1)) / tables.length
+    ensure(30)
+    doc.setFont('helvetica', 'bold').setFontSize(10).setTextColor(...NAVY)
+    tables.forEach((tb, i) => doc.text(t(tb.title), M + i * (w + gap), y + 4))
+    y += 6
+    const top = y
+    let end = y
+    tables.forEach((tb, i) => {
+      y = top
+      end = Math.max(end, table(tb.head, tb.rows, [w * 0.72, w * 0.28], tb.colors, { dotCol: 0, box: { left: M + i * (w + gap), width: w } }))
+    })
+    y = end + 5
+  }
+
   const image = (dataUrl: string, ratio: number, maxH: number) => {
     const w = Math.min(W, maxH / ratio)
     const h = w * ratio
@@ -131,14 +156,14 @@ export async function buildPdf(d: ReportData): Promise<Blob> {
   doc.text(t(`Reporte de red · ${d.generatedAt.toLocaleString('es-MX')}`), tx, 24)
   y = 42
   if (d.project.description.trim()) paragraph(d.project.description, 10, INK)
-  table(null, summary(d), [80, W - 80])
+  sideBySide(summaryTables(d))
   paragraph(settingsLine(d), 8.5)
   if (d.mapImg) {
     image(d.mapImg, (d.mapSize[1] + 88) / (d.mapSize[0] + 32), 140)
     y -= 2
     legend(d.legend)
   }
-  for (const tb of [loraTable(d), cellTable(d)]) {
+  for (const tb of [gatewayTable(d), loraTable(d), cellTable(d)]) {
     if (!tb) continue
     heading(tb.title, 12)
     table(tb.head, tb.rows, [], tb.colors)

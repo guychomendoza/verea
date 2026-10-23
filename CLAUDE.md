@@ -33,7 +33,9 @@ frontend, DB with users) is planned.
   ("Perfil de Elevación", Plotly loaded on demand from `plotly.ts`, same traces as
   `ui/profile_interactive.py`), `mapStyle.ts` (map style + device/link GeoJSON shared by the map
   and the report; `highlight` rings one link and dims the rest), `Sidebar.tsx`, `DevicePanel.tsx`,
-  `report/` (built in the browser; PDF with jsPDF = summary: whole-project map + separate LoRa
+  `counts.ts` (devices per kind / model and per status colour) feeds the map counter
+  (`NetworkCounter.tsx`) and the report's three summary tables (gateways, LoRa, 4G),
+  `report/` (built in the browser; PDF with jsPDF = summary: whole-project map + gateway, LoRa
   and 4G tables with owner/area, alphabetical, status dot; interactive HTML = the same plus one
   card per node with its link on the map — from a hidden map in `snapshots.ts` — its profile and
   few figures; node cards are only built when the HTML is requested, after the PDF has been

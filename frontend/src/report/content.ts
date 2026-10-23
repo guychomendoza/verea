@@ -1,4 +1,6 @@
 // Report text and tables, shared by the PDF and the HTML versions (ui/report.py, in Spanish).
+import { COLORS } from '../colors'
+import { networkCounts, type KindCount } from '../counts'
 import { distance, num } from '../geo'
 import { cellColor, linkColor } from '../mapStyle'
 import type { NodeDevice } from '../types'
@@ -50,26 +52,40 @@ export function envLabel(d: ReportData, key?: string): string {
   return (key && d.catalog.environments[key]?.label) || key || '—'
 }
 
-export function summary(d: ReportData): string[][] {
-  const lora = d.project.nodes.filter((n) => !d.cellular.has(n.name))
-  const cells = d.project.nodes.filter((n) => d.cellular.has(n.name)).map((n) => d.cells[n.name]?.state)
-  const rows: string[][] = []
-  if (d.project.gateways.length || lora.length) {
-    const viable = lora.filter((n) => d.links[n.name]?.link?.viable).length
-    rows.push(['Gateways', String(d.project.gateways.length)], ['Nodos LoRa', String(lora.length)])
-    if (lora.length) rows.push(['Enlaces viables', `${viable} de ${lora.length}`])
+/** Three small tables: gateways, LoRa sensors and 4G sensors (only those the project has):
+ *  how many, of which model, and how many of each status colour. */
+export function summaryTables(d: ReportData): Table[] {
+  const c = networkCounts(d.project, d.catalog, d.links, d.cells, d.cellular)
+  const head = ['Concepto', 'Cantidad']
+  const block = (title: string, k: KindCount, extra: [string, number][] = []): Table => {
+    const states = k.states.filter((x) => x.n)
+    const rows = [['Total', String(k.total)], ...k.models.map(([m, n]) => [m, String(n)]),
+      ...extra.filter(([, n]) => n).map(([l, n]) => [l, String(n)]), ...states.map((x) => [x.label, String(x.n)])]
+    const colors = [...rows.slice(0, rows.length - states.length).map(() => ''), ...states.map((x) => x.color)]
+    return { title, head, rows, colors }
   }
-  if (cells.length) {
-    const count = (...st: (string | undefined)[]) => String(cells.filter((s) => st.includes(s)).length)
-    rows.push(['Sensores 4G', String(cells.length)],
-      ['4G garantizado', count('ok')],
-      ['4G incierto (cerca del borde de la cobertura)', count('edge', 'differentiated')],
-      ['4G posible con LTE-M / NB-IoT (verificar en campo)', count('possible')],
-      ['Sin 4G', count('none')])
-    const unchecked = cells.filter((s) => !s).length
-    if (unchecked) rows.push(['4G sin revisar (elige un operador)', String(unchecked)])
+  const out: Table[] = []
+  if (c.gateways.total) out.push(block('Gateways', c.gateways, [['Con 4G propio', c.gateways.cellular], ['Con WiFi / Ethernet', c.gateways.wired]]))
+  if (c.lora.total) out.push(block('Sensores LoRa', c.lora))
+  if (c.cell.total) out.push(block(`Sensores 4G${d.project.settings.cell_operator ? ` (${d.project.settings.cell_operator})` : ''}`, c.cell))
+  return out
+}
+
+/** One row per gateway: model, connection, mast height, nodes it serves. */
+export function gatewayTable(d: ReportData): Table | null {
+  const gws = [...d.project.gateways].sort((a, b) => a.name.localeCompare(b.name, 'es', { numeric: true }))
+  if (!gws.length) return null
+  const served = (name: string) => Object.values(d.links).filter((r) => r.link?.gateway === name).length
+  return {
+    title: 'Gateways',
+    head: ['Gateway', 'Modelo', 'Conexión', 'Altura', 'Nodos que atiende', 'Estado'],
+    rows: gws.map((g) => [
+      g.name, d.catalog.gateway_profiles[g.model]?.label ?? g.model,
+      (g.backhaul ?? d.catalog.gateway_profiles[g.model]?.backhaul) === '4g' ? '4G propio' : 'WiFi / Ethernet',
+      g.height != null ? `${num(g.height, 1)} m` : '—', String(served(g.name)), g.online ? 'En línea' : 'Fuera de línea',
+    ]),
+    colors: gws.map((g) => (g.online ? COLORS.gateway : COLORS.none)),
   }
-  return rows
 }
 
 /** Alphabetical by owner (titular), then by node name. */

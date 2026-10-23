@@ -7,7 +7,7 @@ import type { LegendItem } from '../legend'
 import { cellColor, nodeKindOf } from '../mapStyle'
 import { PLOTLY_CONFIG, PLOTLY_LOCALE } from '../profilePlot'
 import type { ReportData } from './collect'
-import { GLOSSARY, SOURCES, byOwner, cellTable, loraTable, nodeFacts, nodeTitle, settingsLine, summary, type Table } from './content'
+import { GLOSSARY, SOURCES, byOwner, cellTable, gatewayTable, loraTable, nodeFacts, nodeTitle, settingsLine, summaryTables, type Table } from './content'
 
 const MAPLIBRE = 'https://unpkg.com/maplibre-gl@5.24.0/dist'
 const PLOTLY = 'https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js'
@@ -17,8 +17,8 @@ function esc(s: unknown): string {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 }
 
-function tableHtml(head: string[], rows: string[][], colors: string[] = []): string {
-  const cell = (c: string, i: number, r: number) => (colors[r] && i === head.length - 1
+function tableHtml(head: string[], rows: string[][], colors: string[] = [], dotCol = head.length - 1): string {
+  const cell = (c: string, i: number, r: number) => (colors[r] && i === dotCol
     ? `<td><i class="dt" style="background:${colors[r]}"></i> ${esc(c)}</td>` : `<td>${esc(c)}</td>`)
   return `<div class="tbl"><table><thead><tr>${head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>`
     + `<tbody>${rows.map((r, ri) => `<tr>${r.map((c, i) => cell(c, i, ri)).join('')}</tr>`).join('')}</tbody></table></div>`
@@ -115,6 +115,8 @@ export function buildHtml(d: ReportData): string {
     background:rgb(15 34 54 / .88); color:#e6edf4; font:11px/1.3 system-ui,sans-serif; }
   .cov-legend[hidden] { display:none; } .cov-legend span { display:flex; align-items:center; gap:6px; }
   .cov-legend i { width:10px; height:10px; border-radius:2px; display:inline-block; }
+  .summary { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:14px; }
+  .summary h3 { font-size:14px; margin:0 0 6px; color:var(--navy); }
   .symbology { display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; font-size:12px; color:var(--muted); margin:8px 0 12px; }
   .symbology span { display:inline-flex; align-items:center; gap:5px; } .symbology b { color:var(--ink); }
   td .dt { width:10px; height:10px; border-radius:50%; display:inline-block; vertical-align:-1px; margin-right:4px; }
@@ -144,11 +146,12 @@ export function buildHtml(d: ReportData): string {
 <header><div class="logo">${logoSvg('#ffffff', BRAND.teal, ' role="img" aria-label="Verea"')}</div><div><h1>${esc(title)}</h1><p>Reporte de red · ${esc(d.generatedAt.toLocaleString('es-MX'))}</p></div></header>
 <main>
 ${d.project.description.trim() ? `<p>${esc(d.project.description)}</p>` : ''}
-<h2>Resumen</h2>${tableHtml(['Concepto', 'Valor'], summary(d))}
+<h2>Resumen</h2><div class="summary">${summaryTables(d).map((tb) => `<div><h3>${esc(tb.title)}</h3>${tableHtml(tb.head, tb.rows, tb.colors, 0)}</div>`).join('')}</div>
 <p class="muted">${esc(settingsLine(d))}</p>
 <h2>Mapa</h2><div id="map"></div>
 ${legendHtml(d.legend)}
 <p class="muted">Pasa el mouse sobre un Perfil de Elevación para ver el punto en este mapa.</p>
+${statusTable(gatewayTable(d))}
 ${statusTable(loraTable(d))}
 ${statusTable(cellTable(d))}
 ${d.nodes.length ? '<h2>Nodos</h2>' : ''}
