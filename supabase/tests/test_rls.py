@@ -29,10 +29,12 @@ def db(tmp_path_factory):
 
 
 def new_user(db, email, role="member", active=True):
-    """An accepted invitation: auth user (profile made by the trigger), optionally promoted."""
+    """An accepted invitation (or, for a viewer, a Google sign-up): auth user, profile made by
+    the trigger, optionally promoted or deactivated."""
     with psycopg.connect(db, autocommit=True) as c:
-        uid = c.execute("insert into auth.users (email, raw_user_meta_data) values (%s, %s) returning id",
-                        (email, '{"full_name": "%s"}' % email.split("@")[0])).fetchone()[0]
+        uid = c.execute("insert into auth.users (email, raw_user_meta_data, invited_at) values (%s, %s, %s) "
+                        "returning id", (email, '{"full_name": "%s"}' % email.split("@")[0],
+                                         None if role == "viewer" else "now")).fetchone()[0]
         c.execute("update public.profiles set role = %s, active = %s where id = %s", (role, active, uid))
     return uid
 
@@ -150,3 +152,138 @@ def test_deleting_an_editor_clears_last_edited_by(db, team):
     with psycopg.connect(db, autocommit=True) as c:
         c.execute("delete from auth.users where id = %s", (temp,))
         assert c.execute("select name, updated_by from projects where id = %s", (pid,)).fetchone() == ("touched", None)
+
+
+# ── viewers and shared links ──
+
+# Refusals from the viewer functions (no access / unknown or revoked link / team account)
+DENIED = (psycopg.errors.InsufficientPrivilege, psycopg.errors.NoDataFound, psycopg.errors.RaiseException)
+
+PROJECT = ('{"nodes": [{"name": "AGU-D0311 Alfonso Maciel Guz", "owner": "Alfonso Maciel Guzman", '
+           '"area_ha": 2.5, "plot": "p1", "height": 2.5}, {"name": "N-2", "height": 1.5}], '
+           '"plots": [{"id": "p1"}], "gateways": []}')
+
+
+@pytest.fixture(scope="module")
+def shared(db, team):
+    """A project with a link that hides owner info and one that shows it, and two viewers."""
+    ana = As(db, team["ana"])
+    pid = ana.q("insert into projects (name, data) values ('Tamazula', %s) returning id", PROJECT)[0][0]
+    hidden = ana.q("insert into project_shares (project_id) values (%s) returning token", pid)[0][0]
+    full = ana.q("insert into project_shares (project_id, show_owner_info) values (%s, true) returning token",
+                 pid)[0][0]
+    return {"pid": pid, "hidden": hidden, "full": full,
+            "vera": new_user(db, "vera@cliente.mx", role="viewer"),
+            "otto": new_user(db, "otto@cliente.mx", role="viewer")}
+
+
+def test_google_sign_ups_are_viewers_and_invitations_members(db):
+    with psycopg.connect(db, autocommit=True) as c:
+        g = c.execute("""insert into auth.users (email, raw_user_meta_data) values ('g@gmail.com', '{"name": "Gil"}')
+                         returning id""").fetchone()[0]
+        i = c.execute("insert into auth.users (email, invited_at) values ('i@farm.mx', now()) returning id").fetchone()[0]
+        rows = dict(c.execute("select id, (role, full_name) from profiles where id in (%s, %s)", (g, i)).fetchall())
+    assert rows[g] == ("viewer", "Gil") and rows[i][0] == "member"
+
+
+def test_viewers_see_no_team_projects_or_profiles(db, team, shared):
+    vera = As(db, shared["vera"])
+    assert vera.q("select * from projects") == []
+    assert vera.q("select email from profiles") == [("vera@cliente.mx",)]
+    assert vera.q("select * from project_shares") == []
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        vera.q("insert into projects (name, data) values ('x', '{}')")
+    with pytest.raises(DENIED):
+        vera.q("select viewer_project(%s)", shared["pid"])          # no link opened yet
+    assert vera.q("select * from my_files()") == []
+
+
+def test_a_link_gives_read_access_without_owner_info(db, team, shared):
+    vera = As(db, shared["vera"])
+    assert vera.q("select claim_share(%s)", shared["hidden"]) == [(shared["pid"],)]
+    v = vera.q("select viewer_project(%s)", shared["pid"])[0][0]
+    assert v["name"] == "Tamazula" and v["token"] == shared["hidden"] and v["show_owner_info"] is False
+    n0 = v["data"]["nodes"][0]
+    assert n0 == {"name": "AGU-D0311", "height": 2.5} and "plots" not in v["data"]
+    assert [r[1] for r in vera.q("select * from my_files()")] == ["Tamazula"]
+    # Still no direct access, no editing, no deleting
+    assert vera.q("select * from projects") == []
+    assert vera.q("update projects set name = 'mío' where id = %s", shared["pid"]) == 0
+    assert vera.q("delete from projects where id = %s", shared["pid"]) == 0
+
+
+def test_a_link_that_shows_owner_info(db, team, shared):
+    otto = As(db, shared["otto"])
+    otto.q("select claim_share(%s)", shared["full"])
+    d = otto.q("select viewer_project(%s)", shared["pid"])[0][0]["data"]
+    assert d["nodes"][0]["owner"] == "Alfonso Maciel Guzman" and d["plots"] == [{"id": "p1"}]
+
+
+def test_viewers_keep_their_own_changes(db, team, shared):
+    vera, otto = As(db, shared["vera"]), As(db, shared["otto"])
+    vera.q("select claim_share(%s)", shared["hidden"])
+    otto.q("select claim_share(%s)", shared["full"])
+    assert vera.q("""update project_viewers set overrides = '{"N-2": {"height": 4}}' where project_id = %s""",
+                  shared["pid"]) == 1
+    assert otto.q("select overrides from project_viewers where user_id = %s", shared["vera"]) == []
+    assert otto.q("""update project_viewers set overrides = '{}' where user_id = %s""", shared["vera"]) == 0
+    assert vera.q("select viewer_project(%s)", shared["pid"])[0][0]["overrides"] == {"N-2": {"height": 4}}
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        vera.q("update project_viewers set share_id = null where project_id = %s", shared["pid"])
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        vera.q("insert into project_viewers (project_id, user_id) values (%s, %s)", shared["pid"], shared["vera"])
+    # The team sees who has access (for follow-up) and the original never changed
+    ana = As(db, team["ana"])
+    assert len(ana.q("select user_id from project_viewers where project_id = %s", shared["pid"])) == 2
+    assert ana.q("select data -> 'nodes' -> 1 ->> 'height' from projects where id = %s", shared["pid"]) == [("1.5",)]
+
+
+def test_viewers_cannot_promote_themselves_but_edit_their_profile(db, shared):
+    vera = As(db, shared["vera"])
+    assert vera.q("update profiles set full_name = 'Vera R', phone = '33 1234', company = 'Agro' "
+                  "where id = %s", shared["vera"]) == 1
+    with pytest.raises(psycopg.errors.RaiseException):
+        vera.q("update profiles set role = 'member' where id = %s", shared["vera"])
+    with pytest.raises(psycopg.errors.CheckViolation):
+        vera.q("update profiles set phone = %s where id = %s", "1" * 41, shared["vera"])
+
+
+def test_links_can_be_revoked_and_access_removed(db, team, shared):
+    ana = As(db, team["ana"])
+    pid = ana.q("insert into projects (name, data) values ('Otro', '{}') returning id")[0][0]
+    tok = ana.q("insert into project_shares (project_id) values (%s) returning token", pid)[0][0]
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        ana.q("insert into project_shares (project_id, token) values (%s, 'adivinable')", pid)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        As(db, shared["vera"]).q("insert into project_shares (project_id) values (%s)", pid)
+    otto = As(db, shared["otto"])
+    otto.q("select claim_share(%s)", tok)
+    assert ana.q("update project_shares set revoked_at = now() where token = %s", tok) == 1
+    assert otto.q("select viewer_project(%s)", pid)[0][0]["token"] is None    # kept, link gone
+    with pytest.raises(DENIED):
+        As(db, shared["vera"]).q("select claim_share(%s)", tok)              # no new access
+    assert ana.q("delete from project_viewers where project_id = %s and user_id = %s", pid, shared["otto"]) == 1
+    with pytest.raises(DENIED):
+        otto.q("select viewer_project(%s)", pid)
+    with pytest.raises(DENIED):
+        otto.q("select claim_share('no-existe')")
+
+
+def test_deactivated_viewers_lose_access(db, team, shared):
+    As(db, shared["vera"]).q("select claim_share(%s)", shared["hidden"])
+    As(db, team["admin"]).q("update profiles set active = false where id = %s", shared["vera"])
+    with pytest.raises(DENIED):
+        As(db, shared["vera"]).q("select viewer_project(%s)", shared["pid"])
+    assert As(db, shared["vera"]).q("select * from my_files()") == []
+    As(db, team["admin"]).q("update profiles set active = true where id = %s", shared["vera"])
+
+
+def test_only_viewers_delete_their_own_account(db, team):
+    gone = new_user(db, "adios@cliente.mx", role="viewer")
+    with pytest.raises(DENIED):
+        As(db, team["ana"]).q("select delete_my_account()")
+    As(db, gone).q("select delete_my_account()")
+    with psycopg.connect(db, autocommit=True) as c:
+        assert c.execute("select count(*) from profiles where id = %s", (gone,)).fetchone() == (0,)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        As(db).q("select delete_my_account()")

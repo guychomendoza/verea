@@ -7,13 +7,15 @@ Configure the team's Supabase project for Verea through the Management API.
 
 What it does (idempotent):
   1. applies supabase/migrations/*.sql not applied yet (tracked in public._verea_migrations);
-  2. auth settings: public sign-ups OFF (invite-only), passwords of 10+ characters,
-     site URL and allowed redirect URLs for the invitation / reset emails;
+  2. auth settings: sign-ups ON (a new account is a viewer: it sees only the projects whose
+     link it opened; the team is made by invitation or by an admin), e-mail sign-ups must be
+     confirmed, passwords of 10+ characters, site URL and allowed redirect URLs; Google
+     sign-in when GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are set;
   3. with --admin: makes that existing account an admin;
   4. prints the project URL and its public (anon) key for frontend/.env.local.
 
-The access token (Account -> Access Tokens) is only read from the environment and
-never written anywhere. Uses only the standard library.
+The access token (Account -> Access Tokens) and the Google OAuth client are only read
+from the environment and never written anywhere. Uses only the standard library.
 """
 
 import argparse
@@ -77,15 +79,22 @@ def main() -> int:
                         f"values ({literal(f.name)});\ncommit;")
         print(f"  migration {f.name}: applied")
 
-    # 2. auth: invite-only
+    # 2. auth: anyone may sign in as a viewer; Google when its OAuth client is given
     urls = [args.site_url, *args.redirect]
-    call("PATCH", f"/projects/{ref}/config/auth", token, {
-        "disable_signup": True,
+    auth = {
+        "disable_signup": False,
+        "mailer_autoconfirm": False,
         "site_url": args.site_url,
         "uri_allow_list": ",".join(u.rstrip("/") + "/**" for u in urls),
         "password_min_length": 10,
-    })
-    print(f"  auth: sign-ups disabled, site URL {args.site_url}, redirects {', '.join(urls)}")
+    }
+    gid, gsecret = os.environ.get("GOOGLE_CLIENT_ID"), os.environ.get("GOOGLE_CLIENT_SECRET")
+    if gid and gsecret:
+        auth |= {"external_google_enabled": True, "external_google_client_id": gid, "external_google_secret": gsecret}
+    call("PATCH", f"/projects/{ref}/config/auth", token, auth)
+    print(f"  auth: sign-ups as viewers, site URL {args.site_url}, redirects {', '.join(urls)}")
+    print(f"  Google: {'on' if gid and gsecret else 'unchanged (set GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)'}"
+          f" · callback for the Google client: https://{ref}.supabase.co/auth/v1/callback")
 
     # 3. first admin
     if args.admin:
