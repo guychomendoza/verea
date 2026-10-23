@@ -19,6 +19,7 @@
     "maplibre-gl": "^5.24.0",
     "plotly.js-dist-min": "^2.35.2",
     "pmtiles": "^4.5.0",
+    "qrcode-generator": "1.4.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-resizable-panels": "^2.1.9"

@@ -10,8 +10,8 @@ Needs a development API and a dev server in local mode, e.g.:
 
 Covers: opening the sample project (N-1 = 28.8 dB, same as Streamlit), map labels with km/dB,
 selecting a node on the map, the Elevation Profile (zoom, reset, hover linked to the map, pins,
-image), resizable/collapsible panels, ruler, shortcuts, place search, dark map image, PDF + HTML
-reports, Spanish texts, reload and phone width.
+image), resizable/collapsible panels, ruler, shortcuts, place search, dark map image, PDF report,
+Spanish texts, reload and phone width.
 """
 import io
 import math
@@ -242,12 +242,12 @@ def main():
         assert vis() == "none"
         cov_btn.click()
         expect(cov_btn).to_have_attribute("aria-pressed", "true")
-        assert vis() == "visible"
+        page.wait_for_function("() => window.__vereaMap.getLayoutProperty('coverage', 'visibility') === 'visible'", timeout=5000)
         expect(page.locator(".verea-coverage-legend")).to_contain_text("Posible (LTE-M)")
         page.wait_for_timeout(2500)
         page.screenshot(path=f"{OUT}/3_coverage.png")
         cov_btn.click()
-        assert vis() == "none"
+        page.wait_for_function("() => window.__vereaMap.getLayoutProperty('coverage', 'visibility') === 'none'", timeout=5000)
         print("coverage switch on the map: on/off with its legend")
 
         # ── map image with dark frame ──
@@ -267,73 +267,34 @@ def main():
         assert page.get_by_role("button", name="Zoom in").count() == 0
         print("no English left on the main screen")
 
-        # ── report: PDF + interactive HTML ──
+        # ── report: PDF (the detail of each node is the app itself, through a shared link) ──
         side.get_by_role("button", name="📄 Reporte").click()
         dialog = page.get_by_role("dialog", name="Reporte")
-        dialog.get_by_role("button", name="Generar y descargar").click()
+        assert dialog.get_by_text("HTML").count() == 0, "no HTML report any more"
+        assert dialog.get_by_text("Ver este proyecto a detalle").count() == 0, "local mode: no link to share"
+        dialog.get_by_role("button", name="Generar PDF").click()
         expect(dialog.get_by_role("button", name="Cancelar")).to_be_visible()
-        page.wait_for_timeout(800)
         dialog.get_by_role("button", name="Cancelar").click()
-        expect(dialog.get_by_role("button", name="Generar y descargar")).to_be_enabled(timeout=20000)
+        expect(dialog.get_by_role("button", name="Generar PDF")).to_be_enabled(timeout=20000)
         expect(dialog.get_by_role("alert")).to_have_count(0)
         print("report: Cancelar stops the generation")
         downloads = []
         page.on("download", lambda d: downloads.append(d))
-        dialog.get_by_role("button", name="Generar y descargar").click()
-        expect(dialog).to_have_count(0, timeout=120000)          # closes by itself when both are downloaded
+        dialog.get_by_role("button", name="Generar PDF").click()
+        expect(dialog).to_have_count(0, timeout=120000)          # closes by itself once downloaded
         page.wait_for_timeout(500)
         names = [d.suggested_filename for d in downloads]
-        assert names[0].endswith(".pdf") and names[1].endswith(".html"), names    # the PDF first, not waiting for the HTML
-        pdf = next(d for d in downloads if d.suggested_filename.endswith(".pdf"))
-        html = next(d for d in downloads if d.suggested_filename.endswith(".html"))
+        assert len(names) == 1 and names[0].endswith(".pdf"), names
+        pdf = downloads[0]
         pdf_bytes = Path(pdf.path()).read_bytes()
         pages = len(re.findall(rb"/Type\s*/Page[^s]", pdf_bytes))
         assert pdf_bytes[:5] == b"%PDF-" and pages >= 1, pages
         assert len(pdf_bytes) < 5_000_000, f"PDF too big: {len(pdf_bytes) / 1e6:.1f} MB"
+        assert b"/URI" not in pdf_bytes, "local mode: no online link"
         pdf.save_as(OUT / pdf.suggested_filename)
-        html.save_as(OUT / html.suggested_filename)
-        n_nodes = len(labels) - 1 + 1        # sample nodes + the one added with N (minus the gateway)
-        assert pages <= 3, pages             # summary: tables, map, gateway / LoRa / 4G tables, no node cards
+        assert pages <= 3, pages             # summary: map, gateway / LoRa / 4G tables
+        expect(side.get_by_role("status")).to_contain_text("Reporte descargado")
         print("report:", names, f"PDF {len(pdf_bytes) / 1024:.0f} KB, {pages} pages (summary)")
-        rep = ctx.new_page()
-        rep_errors = []
-        rep.on("pageerror", lambda e: rep_errors.append(str(e)))
-        rep.goto((OUT / html.suggested_filename).as_uri())
-        expect(rep.locator(".chart .main-svg").first).to_be_visible(timeout=60000)
-        rep.wait_for_timeout(2000)
-        charts = rep.locator(".chart").count()
-        snaps = rep.locator("img.snap")
-        assert snaps.count() == n_nodes, snaps.count()
-        expect(rep.locator("header .logo svg")).to_be_visible()
-        legend = rep.locator("main > .symbology").inner_text()
-        for k in ("Gateway", "Sensor LoRa", "Sensor 4G", "Estación meteorológica", "Enlace viable", "4G garantizado"):
-            assert k in legend, (k, legend)
-        assert rep.locator(".card .symbology").count() == n_nodes
-        titles = rep.locator(".card h3").all_inner_texts()
-        assert titles[0].startswith("N-1 · Ana Torres") and any(x.startswith("4G-1 · Beto Ruiz") for x in titles), titles
-        heads = rep.locator("main h2").all_inner_texts()
-        assert "Gateways" in heads and "Nodos LoRa" in heads and any(h.startswith("Sensores 4G") for h in heads), heads
-        assert rep.locator(".summary h3").all_inner_texts()[:2] == ["Gateways", "Sensores LoRa"], rep.locator(".summary h3").all_inner_texts()
-        body = rep.locator("main").inner_text()
-        assert "Señal declarada" not in body and "3.25 ha" in body and "5.06 ha" in body
-        assert "Telcel" not in body, "the report should not name the operator"
-        assert rep.locator("main > .tbl td .dt").count() == n_nodes + 1          # every node and the gateway
-        print("HTML: LoRa and 4G tables (owner, area, status dot), cards 'node · owner' in alphabetical order")
-        first = Image.open(io.BytesIO(__import__("base64").b64decode(snaps.first.get_attribute("src").split(",", 1)[1]))).convert("RGB")
-        white = sum(1 for px in first.getdata() if min(px) > 235)
-        assert white > 400, f"highlighted link (white rings and casing) not visible: {white}"
-        first.save(OUT / "node_card_map.jpg")
-        rep.screenshot(path=f"{OUT}/5_report_html.png", full_page=False)
-        rep_cov = rep.get_by_role("button", name="Cobertura 4G")
-        rep_cov.click()
-        expect(rep_cov).to_have_attribute("aria-pressed", "true")
-        rep.wait_for_timeout(3000)
-        rep.screenshot(path=f"{OUT}/5_report_coverage.png")
-        assert rep.evaluate("() => window.vereaMap.getLayoutProperty('coverage', 'visibility')") == "visible"
-        print("HTML report: coverage switch")
-        assert not rep_errors, rep_errors
-        print("HTML report opens:", charts, "interactive profiles,", snaps.count(), "node maps, no errors")
-        rep.close()
 
         # ── theme: automatic → light → dark, remembered ──
         theme_btn = side.get_by_role("button", name=re.compile("Cambiar tema"))

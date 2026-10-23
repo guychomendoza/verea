@@ -238,3 +238,25 @@ def test_suggest_gateways(client):
     assert {"proposals", "unreachable", "over_limit"} <= out.keys()
     served = {n["name"] for p in out["proposals"] for n in p["nodes"]}
     assert served | set(out["unreachable"]) | set(out["over_limit"]) == {"A", "B"}
+
+
+def test_gateway_suggestions_are_for_the_team(supabase, monkeypatch):
+    """Viewers (people a project was shared with) use the calculations, not the planning tools."""
+    c = TestClient(api.app)
+    body = {"nodes": [], "settings": {}, "gateway": {"name": "g", "lat": 20, "lon": -103}}
+    roles = {"11111111-1111-1111-1111-111111111111": True, "22222222-2222-2222-2222-222222222222": False}
+    asked = []
+    monkeypatch.setattr(auth, "_is_team", lambda url, key, token, uid: asked.append(uid) or roles[uid])
+    monkeypatch.setattr(auth, "_team_cache", {})
+    hdr = lambda uid: {"Authorization": f"Bearer {supabase(sub=uid)}"}   # noqa: E731
+    monkeypatch.delenv("SUPABASE_ANON_KEY", raising=False)
+    assert c.post("/api/suggest-gateways", json=body, headers=hdr("11111111-1111-1111-1111-111111111111")).status_code == 503
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "anon")
+    viewer = "22222222-2222-2222-2222-222222222222"
+    assert c.post("/api/suggest-gateways", json=body, headers=hdr(viewer)).status_code == 403
+    assert c.get("/api/catalog", headers=hdr(viewer)).status_code == 200        # calculations stay open
+    assert c.post("/api/suggest-gateways", json=body, headers=hdr("not-a-uuid")).status_code == 403
+    r = c.post("/api/suggest-gateways", json=body, headers=hdr("11111111-1111-1111-1111-111111111111"))
+    assert r.status_code != 403
+    c.post("/api/suggest-gateways", json=body, headers=hdr(viewer))
+    assert asked.count(viewer) == 1                                            # role cached

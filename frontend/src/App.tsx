@@ -13,7 +13,13 @@ import MapView, { type Focus, type MapMode } from './MapView'
 import ProfilePanel from './ProfilePanel'
 import { profileTitle } from './profilePlot'
 import { emptyProject, isCellular, isStation, PROJECT_VERSION, reduce, rename, selected, reduceHistory, type HistoryAction } from './project'
+import MyFiles from './MyFiles'
+import ProfileDialog from './ProfileDialog'
 import ProjectsDialog from './ProjectsDialog'
+import ShareDialog from './ShareDialog'
+import UsersDialog from './UsersDialog'
+import { clearPendingShare, pendingShare, shareUrl } from './share'
+import { applyOverrides, changeCount, overridesOf, viewerAllows, type Overrides } from './viewer'
 import BulkModelDialog from './BulkModelDialog'
 import { networkCounts } from './counts'
 import NetworkCounter from './NetworkCounter'
@@ -27,6 +33,8 @@ import type { Catalog, CellStatus, Gateway, LinkDetail, LinkResult, NodeDevice, 
 
 const STORAGE_KEY = 'verea.project'     // local mode (no Supabase configured)
 const LAST_PROJECT_KEY = 'verea.lastProject'
+const VIEWER_FILE_KEY = 'verea.viewerFile'
+const OVERRIDES_DELAY_MS = 1000
 const RECALC_DELAY_MS = 400
 const SAVE_DELAY_MS = 1500
 const SHORTCUT_NODE_MODEL = 'dragino_lse01'
@@ -118,11 +126,18 @@ export default function App() {
   }} />
 }
 
-/** Login, password setup and membership check before the workspace (cloud mode). */
+/**
+ * Login, password setup, the shared link being opened, then the team's workspace or, for a
+ * viewer, their files and the project they open (cloud mode).
+ */
 function CloudGate({ catalog, error, onSession }: { catalog: Catalog | null; error: string; onSession: () => void }) {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
   const [me, setMe] = useState<cloud.Me | null | undefined>(undefined)
   const [mustSetPassword, setMustSetPassword] = useState(cloud.arrivedToSetPassword)
+  const [claiming, setClaiming] = useState(() => pendingShare() !== null)
+  const [notice, setNotice] = useState('')
+  const [file, setFile] = useState<string | null>(() => recall(VIEWER_FILE_KEY))
+  const [profileOpen, setProfileOpen] = useState(false)
 
   useEffect(() => {
     const sb = cloud.supabase!
@@ -147,23 +162,83 @@ function CloudGate({ catalog, error, onSession }: { catalog: Catalog | null; err
     if (session) cloud.me(session).then(setMe).catch(() => setMe(null))
   }, [uid]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const signOut = () => { cloud.supabase!.auth.signOut(); store(LAST_PROJECT_KEY, null) }
+  // A shared link opened before signing in: its project opens now
+  useEffect(() => {
+    const share = pendingShare()
+    if (!me || !me.active || !share) return
+    cloud.claimShare(share)
+      .then((id) => {
+        if (cloud.isTeam(me)) store(LAST_PROJECT_KEY, id)
+        else openFile(id)
+      })
+      .catch((e) => setNotice(/revocado|no existe/.test(e.message) ? 'Ese link ya no es válido: pide uno nuevo a quien te lo compartió.' : e.message))
+      .finally(() => { clearPendingShare(); setClaiming(false) })
+  }, [me?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const openFile = (id: string | null) => {
+    store(VIEWER_FILE_KEY, id)
+    setFile(id)
+  }
+  const signOut = () => {
+    cloud.supabase!.auth.signOut()
+    store(LAST_PROJECT_KEY, null)
+    store(VIEWER_FILE_KEY, null)
+    setProfileOpen(false)
+  }
 
   if (session === undefined) return <div className="p-6">Cargando…</div>
   if (!session) return <Login />
   if (mustSetPassword) return <SetPassword email={session.user.email ?? ''} onDone={() => setMustSetPassword(false)} />
   if (me === undefined) return <div className="p-6">Cargando…</div>
-  if (me === null) {
+  if (me === null || !me.active) {
     return (
       <Notice title="Esta cuenta no está activa">
-        <p className="hint">Pide al administrador de tu equipo que (re)active {session.user.email}.</p>
+        <p className="hint">Pide al administrador de Verea que (re)active {session.user.email}.</p>
         <button className="btn" onClick={signOut}>Cerrar sesión</button>
       </Notice>
     )
   }
-  if (error) return <div className="p-6 text-red-600">⚠ {error}</div>
-  if (!catalog) return <div className="p-6">Cargando…</div>
-  return <Workspace catalog={catalog} user={{ me, signOut }} />
+  if (claiming) return <div className="p-6">Abriendo el proyecto compartido…</div>
+  const profile = profileOpen && (
+    <ProfileDialog me={me} onSaved={setMe} onSignOut={signOut} onClose={() => setProfileOpen(false)} />
+  )
+  const user = { me, signOut, onProfile: () => setProfileOpen(true) }
+  let content: React.ReactNode
+  if (!cloud.isTeam(me) && !file) {
+    content = <MyFiles me={me} notice={notice} onOpen={openFile} onProfile={user.onProfile} onSignOut={signOut} />
+  } else if (error) {
+    content = <div className="p-6 text-red-600">⚠ {error}</div>
+  } else if (!catalog) {
+    content = <div className="p-6">Cargando…</div>
+  } else if (!cloud.isTeam(me)) {
+    content = <ViewerLoader key={file} id={file!} catalog={catalog} user={user}
+      onFiles={(msg) => { setNotice(msg ?? ''); openFile(null) }} />
+  } else {
+    content = <Workspace catalog={catalog} user={user} />
+  }
+  return <>{content}{profile}</>
+}
+
+type User = { me: cloud.Me; signOut: () => void; onProfile: () => void }
+
+/** A viewer's project: loaded with their own changes, then the read-only workspace. */
+function ViewerLoader({ id, catalog, user, onFiles }: { id: string; catalog: Catalog; user: User; onFiles: (msg?: string) => void }) {
+  const [doc, setDoc] = useState<ViewerDoc | null>(null)
+  useEffect(() => {
+    cloud.viewerProject(id)
+      .then((r) => setDoc({ id, token: r.token, overrides: r.overrides ?? {},
+        base: { ...r.data, name: r.name, settings: { ...catalog.defaults, ...r.data.settings } } }))
+      .catch(() => onFiles('Ya no tienes acceso a ese proyecto.'))
+  }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
+  if (!doc) return <div className="p-6">Abriendo el proyecto…</div>
+  return <Workspace catalog={catalog} user={user} viewer={{ ...doc, onFiles: () => onFiles() }} />
+}
+
+interface ViewerDoc {
+  id: string
+  base: Project                        // the team's project, as shared
+  overrides: Overrides                 // the viewer's own changes on it
+  token: string | null                 // the link they came by (for the PDF)
 }
 
 interface CloudDoc {
@@ -174,11 +249,16 @@ interface CloudDoc {
 
 type SaveState = 'saved' | 'saving' | 'pending' | 'conflict' | 'error'
 
-function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me; signOut: () => void } }) {
+function Workspace({ catalog, user, viewer }: {
+  catalog: Catalog; user?: User; viewer?: ViewerDoc & { onFiles: () => void }
+}) {
   const cloudMode = !!user
+  const teamCloud = cloudMode && !viewer          // the team's projects table (viewers keep only their changes)
   const narrow = useNarrow()
+  const envKeys = Object.keys(catalog.environments)
   const [history, dispatchRaw] = useReducer(reduceHistory, null, () =>
-    ({ present: (cloudMode ? null : loadLocal()) ?? emptyProject(catalog.defaults), past: [], future: [] }))
+    ({ present: viewer ? applyOverrides(viewer.base, viewer.overrides, envKeys)
+      : (cloudMode ? null : loadLocal()) ?? emptyProject(catalog.defaults), past: [], future: [] }))
   const project = history.present
   const [selection, setSelection] = useState<Selection>(null)
   const [mode, setMode] = useState<MapMode>('select')
@@ -207,7 +287,10 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
   // Gateway range on the map: radials per gateway, kept while the gateway and settings stay the same
   const [ranges, setRanges] = useState<Record<string, { radials: Radial[]; sig: string }>>({})
   const [rangeLoading, setRangeLoading] = useState<Set<string>>(new Set())
-  const dispatch = useCallback((a: HistoryAction) => dispatchRaw(a), [])
+  // A viewer may only change heights / environments (the buttons for the rest are not shown either)
+  const dispatch = useCallback((a: HistoryAction) => { if (!viewer || viewerAllows(a)) dispatchRaw(a) }, [viewer])
+  const [showShare, setShowShare] = useState(false)
+  const [showUsers, setShowUsers] = useState(false)
 
   // ── persistence: browser (local mode) or cloud with optimistic locking ──
   const [doc, setDoc] = useState<CloudDoc | null>(null)
@@ -244,7 +327,7 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
   // development mode runs effects twice, which would create two empty projects)
   const startedRef = useRef(false)
   useEffect(() => {
-    if (!cloudMode || startedRef.current) return
+    if (!teamCloud || startedRef.current) return
     startedRef.current = true
     ;(async () => {
       const last = recall(LAST_PROJECT_KEY)
@@ -287,11 +370,27 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
 
   // Autosave shortly after the last change
   useEffect(() => {
-    if (!cloudMode || !doc || project === savedRef.current || saveState === 'conflict') return
+    if (!teamCloud || !doc || project === savedRef.current || saveState === 'conflict') return
     setSaveState('pending')
     const t = setTimeout(saveNow, SAVE_DELAY_MS)
     return () => clearTimeout(t)
-  }, [project, doc, cloudMode]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [project, doc, teamCloud]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Viewer: their changes (what differs from the shared project) are saved shortly after
+  const overrides = useMemo(() => (viewer ? overridesOf(viewer.base, project) : {}), [viewer, project])
+  const overridesJson = JSON.stringify(overrides)
+  const savedOverrides = useRef(viewer ? JSON.stringify(overridesOf(viewer.base, project)) : '')
+  useEffect(() => {
+    if (!viewer || !user || overridesJson === savedOverrides.current) return
+    setSaveState('pending')
+    const t = setTimeout(() => {
+      setSaveState('saving')
+      cloud.saveOverrides(viewer.id, user.me.id, JSON.parse(overridesJson))
+        .then(() => { savedOverrides.current = overridesJson; setSaveState('saved') })
+        .catch((e) => { setSaveState('error'); setSaveError(e.message) })
+    }, OVERRIDES_DELAY_MS)
+    return () => clearTimeout(t)
+  }, [overridesJson]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Warn before leaving with changes not yet in the cloud
   useEffect(() => {
@@ -301,7 +400,10 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
     return () => window.removeEventListener('beforeunload', onLeave)
   }, [cloudMode, saveState])
 
-  const saveText = !cloudMode ? '' : {
+  const saveText = !cloudMode ? '' : viewer ? {
+    saved: '', saving: '☁ Guardando tus cambios…', pending: '☁ Guardando tus cambios…',
+    conflict: '', error: `⚠ Tus cambios no se guardaron: ${saveError}`,
+  }[saveState] : {
     saved: '☁ Guardado', saving: '☁ Guardando…', pending: '☁ Cambios sin guardar…',
     conflict: '⚠ Sin guardar: alguien más lo modificó', error: `⚠ Sin guardar: ${saveError}`,
   }[saveState]
@@ -457,7 +559,8 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
   const keyHandler = useRef<(e: KeyboardEvent) => void>(() => {})
   keyHandler.current = (e: KeyboardEvent) => {
     const action = shortcutFor(e)
-    if (!action || showReport || showProjects || showImport || bulk || suggest) return
+    if (!action || showReport || showProjects || showImport || bulk || suggest || showShare || showUsers) return
+    if (viewer && (action === 'addGateway' || action === 'addNode')) return
     if (action === 'save' || action === 'undo' || action === 'redo' || (action === 'addGateway' && (e.ctrlKey || e.metaKey))) e.preventDefault()
     switch (action) {
       case 'addGateway':
@@ -479,7 +582,8 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
         undoRedo(action)
         break
       case 'save':
-        if (cloudMode) {
+        if (viewer) setStatus('Tus cambios se guardan solos')
+        else if (cloudMode) {
           if (saveState === 'saved') setStatus('Todo está guardado')
           else saveNow()
         } else {
@@ -540,7 +644,7 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
   }
 
   // Cloud: nothing is editable until the project is open, so no edit is lost to the load
-  if (cloudMode && !doc) {
+  if (teamCloud && !doc) {
     return saveState === 'error'
       ? <Notice title="No se pudieron abrir tus proyectos"><p className="hint">{saveError}</p>
           <button className="btn" onClick={() => window.location.reload()}>Reintentar</button></Notice>
@@ -555,8 +659,11 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
     <Sidebar catalog={catalog} project={project} selection={selection} links={links} cells={cells}
       mode={mode} addModel={addModel} showCoverage={showCoverage}
       status={[saveText, status].filter(Boolean).join(' · ')}
-      user={user ? { name: user.me.full_name || user.me.email, onSignOut: user.signOut,
-        onProjects: () => setShowProjects(true) } : undefined}
+      user={user ? { name: user.me.full_name || user.me.email, onProfile: user.onProfile,
+        ...(viewer ? {} : { onProjects: () => setShowProjects(true), onShare: doc ? () => setShowShare(true) : undefined }),
+        ...(user.me.role === 'admin' ? { onUsers: () => setShowUsers(true) } : {}) } : undefined}
+      viewer={viewer ? { changes: changeCount(overrides), onFiles: viewer.onFiles,
+        onRestore: () => { dispatch({ type: 'open', project: viewer.base }); setStatus('Valores originales restaurados') } } : undefined}
       onMode={(m, model) => {
         if (m === 'ruler' && mode !== 'ruler') setRuler([])
         setMode(m)
@@ -591,7 +698,7 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
         cursor={cursorIdx !== null ? coordAt(cursorIdx) ?? null : null}
         profilePins={pins.map((i) => coordAt(i)).filter((c): c is [number, number] => !!c)}
         ruler={ruler}
-        onReady={(m) => { mapRef.current = m }}
+        onReady={(m) => { mapRef.current = m }} readOnly={!!viewer}
         onSelect={(s) => setSelection(s)}
         onMove={(kind, name, lat, lon) => dispatch({ type: 'move', kind, name, lat, lon })}
         onAdd={add}
@@ -645,7 +752,7 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
 
   const devicePanel = dev && selection ? (
     <DevicePanel key={`${selection.kind}:${selection.name}`} catalog={catalog} project={project}
-      kind={selection.kind} device={dev} link={links[dev.name]} cell={cells[dev.name]} served={served}
+      kind={selection.kind} device={dev} link={links[dev.name]} cell={cells[dev.name]} served={served} viewer={!!viewer}
       range={selection.kind === 'gateway' ? {
         shown: !!ranges[dev.name], loading: rangeLoading.has(dev.name),
         onToggle: () => (ranges[dev.name] ? hideRange([dev.name]) : showRange([dev.name])),
@@ -675,6 +782,10 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
           }}
           onClose={() => setShowProjects(false)} />
       )}
+      {showShare && doc && (
+        <ShareDialog projectId={doc.id} projectName={project.name} onClose={() => setShowShare(false)} />
+      )}
+      {showUsers && user && <UsersDialog me={user.me} onClose={() => setShowUsers(false)} />}
       {suggest && (
         <SuggestGatewaysDialog catalog={catalog} project={project} links={links} cellular={cellular}
           onClose={() => setSuggest(false)}
@@ -706,6 +817,9 @@ function Workspace({ catalog, user }: { catalog: Catalog; user?: { me: cloud.Me;
       {showReport && (
         <ReportDialog catalog={catalog} project={project} links={links} cells={cells} cellular={cellular} stations={stations}
           legend={mapLegend()} showCoverage={showCoverage} onClose={() => setShowReport(false)}
+          share={viewer ? (viewer.token ? { team: false, get: async () => shareUrl(viewer.token!) } : undefined)
+            : teamCloud && doc ? { team: true, get: async (showOwners) => shareUrl((await cloud.activeShare(doc.id, showOwners)).token) }
+              : undefined}
           onDone={(files) => { setShowReport(false); setStatus(`Reporte descargado: ${files.join(', ')}`) }} />
       )}
     </>

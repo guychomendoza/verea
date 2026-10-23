@@ -2,7 +2,7 @@
 // status colours, showing only what the project has.
 import { COLORS } from './colors'
 import { KIND_LABELS, type DeviceKind } from './deviceIcons'
-import { cellColor, nodeKindOf, type MapData } from './mapStyle'
+import { nodeKindOf, type MapData } from './mapStyle'
 
 export interface LegendItem {
   color: string
@@ -46,28 +46,5 @@ export function mapLegend(d: MapData, showCoverage: boolean): LegendItem[] {
     out.push({ color: '#3da3bc', label: 'Alcance del gateway (sensor SF10)' })
   }
   if (d.project.plots?.length) out.push({ line: true, color: '#9fb0c3', label: 'Parcela (contorno)' })
-  return out
-}
-
-/** Legend of one report card: its gateway, the node and the state of its link. */
-export function cardLegend(d: MapData, node: string, gateway?: string): LegendItem[] {
-  const kind = nodeKindOf(d, node)
-  const out: LegendItem[] = []
-  if (gateway) out.push({ icon: 'gateway', color: COLORS.gateway, label: `${gateway} (gateway)` })
-  const l = d.links[node]?.link
-  const c = d.cells[node]
-  const color = kind === 'cellular'
-    ? cellColor(c)
-    : (!l ? COLORS.none : l.viable ? COLORS.viable : l.margin_db > -5 ? COLORS.marginal : COLORS.fail)
-  out.push({ icon: kind, color, label: `${node} (${KIND_LABELS[kind]})` })
-  if (l) out.push({ line: true, color, label: l.viable ? 'Enlace viable' : l.margin_db > -5 ? 'Enlace marginal' : 'Enlace no viable' })
-  if (kind === 'cellular') {
-    out.push({ color: COLORS.cellOk, label: '4G garantizado' }, { color: COLORS.cellEdge, label: '4G incierto' },
-      { color: COLORS.cellPossible, label: '4G posible' },
-      { color: COLORS.cellNone, label: 'Sin 4G' })
-  }
-  if (d.project.gateways.length + d.project.nodes.length > (gateway ? 2 : 1)) {
-    out.push({ color: '#9aa4b2', label: 'Otros dispositivos (atenuados)' })
-  }
   return out
 }

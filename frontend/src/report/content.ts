@@ -1,11 +1,11 @@
-// Report text and tables, shared by the PDF and the HTML versions (ui/report.py, in Spanish).
+// Report text and tables for the PDF (ui/report.py, in Spanish).
 import { COLORS } from '../colors'
 import { networkCounts, type KindCount } from '../counts'
 import { nodeShortName } from '../project'
 import { distance, num } from '../geo'
-import { cellColor, cellShort, linkColor, withoutOperator } from '../mapStyle'
+import { cellColor, cellShort, linkColor } from '../mapStyle'
 import type { NodeDevice } from '../types'
-import type { NodeSection, ReportData } from './collect'
+import type { ReportData } from './collect'
 
 /** A table; `colors[i]` is the status colour of row i (a dot in its last cell). */
 export type Table = { title: string; head: string[]; rows: string[][]; colors: string[] }
@@ -97,11 +97,6 @@ export function byOwner(a: NodeDevice, b: NodeDevice): number {
   return key(a).localeCompare(key(b), 'es', { sensitivity: 'base' }) || a.name.localeCompare(b.name, 'es')
 }
 
-/** "AGU-D0248 · Trinidad Torres Contreras", or just the name. */
-export function nodeTitle(n: NodeDevice): string {
-  return n.owner ? `${nodeShortName(n)} · ${n.owner}` : n.name
-}
-
 export const hectares = (v?: number) => (v == null ? '—' : `${num(v, 2)} ha`)
 
 /** Settings in one line. */
@@ -165,33 +160,4 @@ export function cellTable(d: ReportData): Table | null {
     }),
     colors: nodes.map((n) => statusColor(d, n.name)),
   }
-}
-
-/** The few facts that matter for one node. */
-export function nodeFacts(d: ReportData, s: NodeSection): string[][] {
-  const n = s.node
-  const model = d.catalog.node_profiles[n.model]?.label ?? n.model
-  const info = [...(n.owner ? [['Titular', n.owner]] : []), ...(n.area_ha != null ? [['Superficie', hectares(n.area_ha)]] : [])]
-  if (s.cellular) {
-    const c = d.cells[n.name]
-    return [
-      ...info,
-      ['Estado 4G', c ? withoutOperator(c.text.replace(/^[^\p{L}\p{N}]+/u, ''), d.project.settings.cell_operator) : 'Sin revisar (elige un operador)'],
-      ['Cubierto alrededor (300 m)', c?.nearby_share != null ? `${Math.round(c.nearby_share * 100)} %` : '—'],
-      ...(c && !c.covered ? [['Cobertura más cercana', c.nearest_m != null ? distance(c.nearest_m) : '> 20 km']] : []),
-      ['Modelo', model],
-      ['Coordenadas', `${n.lat.toFixed(5)}, ${n.lon.toFixed(5)}`],
-    ]
-  }
-  const l = d.links[n.name]?.link
-  if (!l) return [...info, ['Modelo', model], ['Estado', status(d, n.name)], ['Coordenadas', `${n.lat.toFixed(5)}, ${n.lon.toFixed(5)}`]]
-  return [
-    ...info,
-    ['Gateway', l.gateway],
-    ['Distancia', distance(l.distance_m)],
-    ['Margen del enlace', `${num(l.margin_db, 1)} dB`],
-    ['RSSI / SNR', `${num(l.rssi_dbm, 0)} dBm / ${num(l.snr_db, 1)} dB`],
-    ['SF · entorno', `SF${n.sf ?? '—'} · ${envLabel(d, n.environment)}`],
-    ['Modelo', model],
-  ]
 }

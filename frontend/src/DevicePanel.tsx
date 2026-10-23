@@ -12,6 +12,7 @@ interface Props {
   cell?: CellStatus
   served: number                       // nodes whose best link is this gateway
   range?: { shown: boolean; loading: boolean; onToggle: () => void }
+  viewer?: boolean                     // read-only, except height and environment
   onRename: (next: string) => void
   onPatch: (patch: Partial<Gateway & NodeDevice>) => void
   onRemove: () => void
@@ -19,8 +20,8 @@ interface Props {
 }
 
 /** Number input that commits on blur / Enter, so typing does not trigger a recalculation per key. */
-function NumberField({ label, value, step = 0.5, min, max, onCommit }: {
-  label: string; value?: number; step?: number; min?: number; max?: number; onCommit: (v: number) => void
+function NumberField({ label, value, step = 0.5, min, max, disabled, onCommit }: {
+  label: string; value?: number; step?: number; min?: number; max?: number; disabled?: boolean; onCommit: (v: number) => void
 }) {
   const [text, setText] = useState(value?.toString() ?? '')
   useEffect(() => setText(value?.toString() ?? ''), [value])
@@ -35,7 +36,7 @@ function NumberField({ label, value, step = 0.5, min, max, onCommit }: {
   return (
     <label className="field">
       <span>{label}</span>
-      <input type="number" inputMode="decimal" step={step} min={min} max={max} value={text}
+      <input type="number" inputMode="decimal" step={step} min={min} max={max} value={text} disabled={disabled}
         onChange={(e) => setText(e.target.value)} onBlur={commit}
         onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
     </label>
@@ -43,15 +44,15 @@ function NumberField({ label, value, step = 0.5, min, max, onCommit }: {
 }
 
 /** Text input that commits on blur / Enter. */
-function TextField({ label, value, maxLength, onCommit }: {
-  label: string; value: string; maxLength: number; onCommit: (v: string) => void
+function TextField({ label, value, maxLength, disabled, onCommit }: {
+  label: string; value: string; maxLength: number; disabled?: boolean; onCommit: (v: string) => void
 }) {
   const [text, setText] = useState(value)
   useEffect(() => setText(value), [value])
   return (
     <label className="field">
       <span>{label}</span>
-      <input value={text} maxLength={maxLength} onChange={(e) => setText(e.target.value)}
+      <input value={text} maxLength={maxLength} disabled={disabled} onChange={(e) => setText(e.target.value)}
         onBlur={() => text.trim() !== value && onCommit(text.trim())}
         onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
     </label>
@@ -59,8 +60,8 @@ function TextField({ label, value, maxLength, onCommit }: {
 }
 
 /** Number that may be left empty (undefined). */
-function OptionalNumber({ label, value, onCommit }: {
-  label: string; value?: number; onCommit: (v: number | undefined) => void
+function OptionalNumber({ label, value, disabled, onCommit }: {
+  label: string; value?: number; disabled?: boolean; onCommit: (v: number | undefined) => void
 }) {
   const [text, setText] = useState(value?.toString() ?? '')
   useEffect(() => setText(value?.toString() ?? ''), [value])
@@ -72,7 +73,7 @@ function OptionalNumber({ label, value, onCommit }: {
   return (
     <label className="field">
       <span>{label}</span>
-      <input type="number" inputMode="decimal" step={0.01} min={0} value={text}
+      <input type="number" inputMode="decimal" step={0.01} min={0} value={text} disabled={disabled}
         onChange={(e) => setText(e.target.value)} onBlur={commit}
         onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
     </label>
@@ -98,6 +99,7 @@ export default function DevicePanel(p: Props) {
   const profiles = p.kind === 'gateway' ? p.catalog.gateway_profiles : p.catalog.node_profiles
   const prof = profiles[p.device.model]
   const best = p.link?.link
+  const ro = !!p.viewer
 
   const changeModel = (model: string) => {
     const pr = profiles[model]
@@ -116,7 +118,7 @@ export default function DevicePanel(p: Props) {
 
       <label className="field">
         <span>Nombre</span>
-        <input value={name} maxLength={40} onChange={(e) => setName(e.target.value)}
+        <input value={name} maxLength={40} disabled={ro} onChange={(e) => setName(e.target.value)}
           onBlur={() => (err ? setName(p.device.name) : name !== p.device.name && p.onRename(name))}
           onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
         {err && name !== p.device.name && <em className="error">{err}</em>}
@@ -124,17 +126,17 @@ export default function DevicePanel(p: Props) {
 
       <label className="field">
         <span>Modelo</span>
-        <select value={p.device.model} onChange={(e) => changeModel(e.target.value)}>
+        <select value={p.device.model} disabled={ro} onChange={(e) => changeModel(e.target.value)}>
           {Object.entries(profiles).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
         {prof && <small className="hint">{prof.source}{prof.estimated.length ? ` Valores estimados: ${prof.estimated.join(', ')}.` : ''}</small>}
       </label>
 
-      {node && (
+      {node && (!ro || node.owner || node.area_ha != null) && (
         <>
-          <TextField label="Titular" value={node.owner ?? ''} maxLength={80}
+          <TextField label="Titular" value={node.owner ?? ''} maxLength={80} disabled={ro}
             onCommit={(v) => p.onPatch({ owner: v || undefined })} />
-          <OptionalNumber label="Superficie (ha)" value={node.area_ha}
+          <OptionalNumber label="Superficie (ha)" value={node.area_ha} disabled={ro}
             onCommit={(v) => p.onPatch({ area_ha: v })} />
         </>
       )}
@@ -187,20 +189,20 @@ export default function DevicePanel(p: Props) {
 
       {/* ── properties ── */}
       <div className="grid grid-cols-2 gap-2">
-        <NumberField label="Latitud" value={p.device.lat} step={0.0001} min={-90} max={90} onCommit={(v) => p.onPatch({ lat: v })} />
-        <NumberField label="Longitud" value={p.device.lon} step={0.0001} min={-180} max={180} onCommit={(v) => p.onPatch({ lon: v })} />
+        <NumberField label="Latitud" value={p.device.lat} step={0.0001} min={-90} max={90} disabled={ro} onCommit={(v) => p.onPatch({ lat: v })} />
+        <NumberField label="Longitud" value={p.device.lon} step={0.0001} min={-180} max={180} disabled={ro} onCommit={(v) => p.onPatch({ lon: v })} />
         {!cellular && <>
           <NumberField label="Altura sobre el suelo (m)" value={p.device.height} min={0.5} max={gw ? 60 : 30} onCommit={(v) => p.onPatch({ height: v })} />
-          <NumberField label="Potencia TX (dBm)" value={p.device.tx_power} step={1} min={-10} max={gw ? 36 : 30} onCommit={(v) => p.onPatch({ tx_power: v })} />
-          <NumberField label="Ganancia de antena (dBi)" value={p.device.gain} min={-10} max={20} onCommit={(v) => p.onPatch({ gain: v })} />
-          <NumberField label="Pérdida en cable (dB)" value={p.device.cable_loss} min={0} max={20} onCommit={(v) => p.onPatch({ cable_loss: v })} />
+          <NumberField label="Potencia TX (dBm)" value={p.device.tx_power} step={1} min={-10} max={gw ? 36 : 30} disabled={ro} onCommit={(v) => p.onPatch({ tx_power: v })} />
+          <NumberField label="Ganancia de antena (dBi)" value={p.device.gain} min={-10} max={20} disabled={ro} onCommit={(v) => p.onPatch({ gain: v })} />
+          <NumberField label="Pérdida en cable (dB)" value={p.device.cable_loss} min={0} max={20} disabled={ro} onCommit={(v) => p.onPatch({ cable_loss: v })} />
         </>}
       </div>
       {node && !cellular && (
         <div className="grid grid-cols-2 gap-2">
           <label className="field">
             <span>Spreading factor</span>
-            <select value={node.sf} onChange={(e) => p.onPatch({ sf: Number(e.target.value) })}>
+            <select value={node.sf} disabled={ro} onChange={(e) => p.onPatch({ sf: Number(e.target.value) })}>
               {p.catalog.spreading_factors.map((sf) => <option key={sf} value={sf}>SF{sf}</option>)}
             </select>
           </label>
@@ -214,7 +216,7 @@ export default function DevicePanel(p: Props) {
       )}
       {gw && (
         <label className="field"><span>Conexión a internet</span>
-          <select value={gw.backhaul ?? 'red'} onChange={(e) => p.onPatch({ backhaul: e.target.value as '4g' | 'red' })}>
+          <select value={gw.backhaul ?? 'red'} disabled={ro} onChange={(e) => p.onPatch({ backhaul: e.target.value as '4g' | 'red' })}>
             <option value="4g">4G propio (solo necesita energía, p. ej. solar)</option>
             <option value="red">WiFi / Ethernet (necesita corriente y red)</option>
           </select>
@@ -222,14 +224,19 @@ export default function DevicePanel(p: Props) {
       )}
       {gw && (
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={gw.online} onChange={(e) => p.onPatch({ online: e.target.checked })} />
+          <input type="checkbox" checked={gw.online} disabled={ro} onChange={(e) => p.onPatch({ online: e.target.checked })} />
           En línea (se usa para los enlaces)
         </label>
       )}
 
-      <button className="btn-danger mt-2" onClick={() => confirm(`¿Eliminar ${p.device.name}?`) && p.onRemove()}>
-        Eliminar {p.device.name}
-      </button>
+      {ro ? (
+        <p className="hint">Modo lector: puedes probar otra altura{node && !cellular ? ' u otro entorno' : ''}; tus cambios
+          se guardan solo para ti y el proyecto original no cambia.</p>
+      ) : (
+        <button className="btn-danger mt-2" onClick={() => confirm(`¿Eliminar ${p.device.name}?`) && p.onRemove()}>
+          Eliminar {p.device.name}
+        </button>
+      )}
     </aside>
   )
 }

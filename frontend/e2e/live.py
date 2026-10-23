@@ -9,6 +9,7 @@ Needs the app on http://localhost:5173 in cloud mode and the API with SUPABASE_U
 """
 import json
 import os
+import re
 import sys
 import time
 import urllib.request
@@ -80,7 +81,9 @@ try:
         r = urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:8000/api/catalog", headers={"Authorization": f"Bearer {access}"}))
         print("API with real session:", r.status)
         # sign out, sign in with the new password
-        page.get_by_role("button", name="Cerrar sesión").click()
+        page.get_by_title("Mi perfil").click()
+        page.get_by_role("dialog", name="Mi perfil").get_by_role("button", name="Cerrar sesión").click()
+        page.get_by_role("button", name=re.compile("Soy del equipo")).click()
         page.get_by_label("Correo").fill(EMAIL)
         page.get_by_label("Contraseña", exact=True).fill("selftest-Passw0rd-xyz")
         page.get_by_role("button", name="Iniciar sesión").click()

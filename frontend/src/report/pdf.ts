@@ -1,6 +1,6 @@
 // PDF report (A4) built in the browser with jsPDF; loaded only when a report is made.
-// A summary: the whole project on the map and one table per kind of node (LoRa, 4G). The
-// detail of each node is in the interactive HTML report.
+// A summary: the whole project on the map and one table per kind of device. The detail of
+// each node is in the app itself: the shared link (and its QR code) under the map.
 import { BRAND, LOGO_RATIO, logoSvg, markSvg, svgToPng } from '../brand'
 import { deviceIconCanvas } from '../deviceIcons'
 import type { LegendItem } from '../legend'
@@ -24,7 +24,8 @@ function t(s: string): string {
 }
 
 export async function buildPdf(d: ReportData): Promise<Blob> {
-  const [{ jsPDF }, { default: autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')])
+  const [{ jsPDF }, { default: autoTable }, { default: qrcode }] = await Promise.all(
+    [import('jspdf'), import('jspdf-autotable'), import('qrcode-generator')])
   const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true })
   const [logo, mark] = await Promise.all([
     svgToPng(logoSvg('#ffffff', BRAND.teal), 860, Math.round(860 * LOGO_RATIO)),
@@ -136,6 +137,32 @@ export async function buildPdf(d: ReportData): Promise<Blob> {
     }
     y += h + 3
   }
+  /** Box with the shared link and its QR code: "see this project in detail online". */
+  const onlineBox = (url: string) => {
+    const qr = qrcode(0, 'M')
+    qr.addData(url)
+    qr.make()
+    const n = qr.getModuleCount()
+    const size = 26, pad = 4, cell = size / n
+    const h = size + 2 * pad
+    ensure(h + 4)
+    doc.setFillColor(...rgb(BRAND.rowAlt)).setDrawColor(...TEAL).setLineWidth(0.5).roundedRect(M, y, W, h, 2, 2, 'FD')
+    doc.setFillColor(255, 255, 255).rect(M + pad - 1, y + pad - 1, size + 2, size + 2, 'F')
+    doc.setFillColor(...NAVY)
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) if (qr.isDark(r, c)) doc.rect(M + pad + c * cell, y + pad + r * cell, cell + 0.02, cell + 0.02, 'F')
+    }
+    const tx = M + pad + size + 6, tw = W - (tx - M) - pad
+    doc.setFont('helvetica', 'bold').setFontSize(12).setTextColor(...NAVY).text('Ver este proyecto a detalle en línea', tx, y + pad + 5)
+    doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(...INK)
+    const lines = doc.splitTextToSize(t('Escanea el código o abre el link y entra con tu cuenta de Google: explora cada nodo en '
+      + 'el mapa, su enlace, su perfil de elevación y la cobertura 4G, y prueba otra altura o entorno.'), tw) as string[]
+    doc.text(lines, tx, y + pad + 11)
+    doc.setFont('helvetica', 'bold').setFontSize(8.5).setTextColor(...TEAL)
+    doc.textWithLink(url, tx, y + pad + 12 + lines.length * 4 + 2, { url })
+    y += h + 5
+  }
+
   // ── summary: header, figures, the whole project on the map, one table per kind of node ──
   const LOGO_W = 40
   doc.setFillColor(...NAVY).rect(0, 0, 210, 34, 'F')
@@ -154,6 +181,7 @@ export async function buildPdf(d: ReportData): Promise<Blob> {
     y -= 2
     legend(d.legend)
   }
+  if (d.shareUrl) onlineBox(d.shareUrl)
   stacked(summaryTables(d))
   paragraph(settingsLine(d), 8.5)
   for (const tb of [gatewayTable(d), loraTable(d), cellTable(d)]) {
@@ -166,7 +194,6 @@ export async function buildPdf(d: ReportData): Promise<Blob> {
   doc.text('Fuentes', M, y + 3)
   y += 4
   for (const src of SOURCES) paragraph(src, 7)
-  paragraph('El detalle de cada nodo (su enlace en el mapa, el Perfil de Elevación y sus datos) está en el reporte HTML interactivo.', 7)
 
   // ── page numbers ──
   const pages = doc.getNumberOfPages()

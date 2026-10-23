@@ -62,12 +62,7 @@ export function registerDeviceIcons(map: maplibregl.Map) {
   map.once('load', () => (Object.keys(GLYPHS) as DeviceKind[]).forEach((k) => add(iconImageId(k))))
 }
 
-/** PNG glyphs for the standalone HTML report (its map registers them the same way). */
-export function glyphPngs(): Record<string, string> {
-  return Object.fromEntries((Object.keys(GLYPHS) as DeviceKind[]).map((k) => [iconImageId(k), glyphCanvas(k, IMAGE_PX).toDataURL('image/png')]))
-}
-
-/** Circle + glyph as SVG text: side panel and HTML legend. */
+/** Circle + glyph as SVG text: side panel and symbology. */
 export function deviceIconSvg(kind: DeviceKind, color: string, size = 18): string {
   const glyph = GLYPHS[kind]
   const s = 0.68                             // glyph scale inside the circle

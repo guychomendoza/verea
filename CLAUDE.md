@@ -8,7 +8,7 @@ frontend, DB with users) is planned.
 
 ## Run and test
 - App: `.venv/bin/streamlit run app.py` (port 8501). Windows: `python -m streamlit run app.py`.
-- Tests: `.venv/bin/python -m pytest -q` (105 tests; `supabase/tests` needs requirements-dev.txt).
+- Tests: `.venv/bin/python -m pytest -q` (139 tests; `supabase/tests` needs requirements-dev.txt).
 - Web API: `VEREA_DEV=1 .venv/bin/uvicorn backend.main:app --port 8000` (docs at /docs).
   `pip install -r backend/requirements.txt` first.
 - Web frontend: `cd frontend && npm run dev` (port 5173; proxies /api to 8000, serves the PMTiles).
@@ -35,11 +35,11 @@ frontend, DB with users) is planned.
   and the report; `highlight` rings one link and dims the rest), `Sidebar.tsx`, `DevicePanel.tsx`,
   `counts.ts` (devices per kind / model and per status colour) feeds the map counter
   (`NetworkCounter.tsx`) and the report's three summary tables (gateways, LoRa, 4G),
-  `report/` (built in the browser; PDF with jsPDF = summary: whole-project map + gateway, LoRa
-  and 4G tables with owner/area, alphabetical, status dot; interactive HTML = the same plus one
-  card per node with its link on the map — from a hidden map in `snapshots.ts` — its profile and
-  few figures; node cards are only built when the HTML is requested, after the PDF has been
-  downloaded (`onSummary`); Cancelar / ✕ / Esc abort; no e-mail in reports),
+  `report/` (built in the browser; PDF only, with jsPDF = summary: whole-project map — from a
+  hidden map in `snapshots.ts` — + gateway, LoRa and 4G tables with owner/area, alphabetical,
+  status dot; in cloud mode a box "Ver este proyecto a detalle en línea" with the shared link and
+  a QR code (`qrcode-generator`). The HTML report with one card per node was dropped on
+  2026-10-23: the app itself is the detailed viewer. Cancelar / ✕ / Esc abort; no e-mail),
   nodes may carry optional `owner` (titular) and `area_ha` (in `core/project.py` `_NODE_KEYS`),
   `import/` ("Importar parcelas…", 2026-10-22): KML / KMZ (`@tmcw/togeojson` + JSZip) or XLSX
   (own reader that keeps cell formats) / CSV → `rules.ts` (column roles, coordinates without the
@@ -65,12 +65,28 @@ frontend, DB with users) is planned.
   4G sensor, weather station — inside the status-coloured circle; MapLibre images via
   `registerDeviceIcons`), `legend.ts` (types + status colours, used by exported images, PDF and HTML).
 - `supabase/` — database: `migrations/*.sql` (profiles, projects, RLS: all active members read
-  and edit, owner/admin delete, invite-only, optimistic locking on `updated_at`), `tests/` (RLS on a
+  and edit, owner/admin delete, optimistic locking on `updated_at`), `tests/` (RLS on a
   real PostgreSQL via pgserver + `supabase_shim.sql`). `scripts/supabase_setup.py` applies it and
-  configures auth through the Management API. Frontend `cloud.ts` / `Login.tsx` /
-  `ProjectsDialog.tsx`; without `VITE_SUPABASE_*` the app runs in local mode (no login).
+  configures auth through the Management API (Google from `GOOGLE_CLIENT_ID` / `_SECRET` env vars).
+  Frontend `cloud.ts` / `Login.tsx` / `ProjectsDialog.tsx`; without `VITE_SUPABASE_*` the app runs
+  in local mode (no login).
+- Viewers and shared links (2026-10-23): roles admin / member (= the team, `is_member()`) / viewer.
+  Anyone may sign in with Google and becomes a **viewer** (invited accounts become members; an admin
+  promotes in `UsersDialog.tsx`). A member shares a project (`ShareDialog.tsx` → `project_shares`,
+  server-made token, `show_owner_info` false by default) as `/v/<token>` (`share.ts` keeps the token
+  across the Google redirect); `claim_share()` gives the viewer access (`project_viewers`). Viewers
+  never read `projects`: `viewer_project()` returns the data, without owners / areas / plots (and the
+  owner cut out of node names, `node_short_name` = `nodeShortName`) unless the link shows them.
+  The viewer's workspace is the normal one with `viewer` set (`App.tsx`): read-only except node
+  height / environment and gateway height (`viewer.ts`: `viewerAllows`, `overridesOf`,
+  `applyOverrides`), kept in `project_viewers.overrides`, never in the project; `MyFiles.tsx` lists
+  their links; `ProfileDialog.tsx` (name, phone, company; viewers may delete their account);
+  `public/privacidad.html` (privacy notice draft with placeholders for the company's data).
+  Team-only API endpoints use `require_team` (`backend/auth.py`, reads the caller's profile through
+  Supabase REST with `SUPABASE_ANON_KEY`): `/api/suggest-gateways`. Shared links only work for
+  others once the app is deployed (phase 4); the PDF uses the address it was generated from.
   Browser tests (docstrings say how to start them): `frontend/e2e/run.py` (local mode, 5174 + dev
-  API 8001), `cloud.py` (fake Supabase, 5175), `live.py` (real Supabase; works only in its own
+  API 8001), `cloud.py` (fake Supabase with team, viewer and admin accounts, links, RPCs; 5175), `live.py` (real Supabase; works only in its own
   project — on 2026-10-22 an earlier version renamed the team's newest project).
 - `backend/` — FastAPI web API (`main.py`), request limits (`schemas.py`), Supabase JWT check
   (`auth.py`: no `SUPABASE_URL` and no `VEREA_DEV=1` → every protected request is refused).

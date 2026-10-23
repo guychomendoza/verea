@@ -21,7 +21,9 @@ interface Props {
   showCoverage: boolean
   showLabels: boolean
   status: string
-  user?: { name: string; onSignOut: () => void; onProjects: () => void }
+  user?: { name: string; onProfile: () => void; onProjects?: () => void; onShare?: () => void; onUsers?: () => void }
+  // Viewer mode: the project is read-only except heights / environments, which are the viewer's own
+  viewer?: { changes: number; onRestore: () => void; onFiles: () => void }
   onMode: (m: MapMode, model?: string) => void
   onSettings: (patch: Partial<Settings>) => void
   onMeta: (meta: { name?: string; description?: string }) => void
@@ -75,22 +77,43 @@ export default function Sidebar(p: Props) {
         <ThemeButton className="ml-auto" />
         {p.user && (
           <div className="flex flex-col items-end text-xs min-w-0">
-            <span className="truncate max-w-full" title={p.user.name}>{p.user.name}</span>
-            <button className="btn-ghost underline" onClick={p.user.onSignOut}>Cerrar sesión</button>
+            <button className="btn-ghost underline truncate max-w-full" title="Mi perfil" onClick={p.user.onProfile}>
+              👤 {p.user.name}</button>
+            {p.user.onUsers && <button className="btn-ghost underline" onClick={p.user.onUsers}>Usuarios</button>}
           </div>
         )}
       </div>
-      <input className="font-semibold" placeholder="Proyecto sin nombre" value={p.project.name}
-        maxLength={80} onChange={(e) => p.onMeta({ name: e.target.value })} aria-label="Nombre del proyecto" />
-      <textarea className="project-description" rows={2} maxLength={2000} placeholder="Descripción (aparece en el reporte)"
-        value={p.project.description} onChange={(e) => p.onMeta({ description: e.target.value })}
-        aria-label="Descripción del proyecto" />
+      {p.viewer ? (
+        <>
+          <h2 className="font-semibold">{p.project.name || 'Proyecto sin nombre'}</h2>
+          {p.project.description && <p className="project-description hint whitespace-pre-line">{p.project.description}</p>}
+          <div className="viewer-banner" role="note">
+            <span>👁 <b>Modo lector.</b> Puedes probar otra altura o entorno en los nodos; se guarda solo para ti.</span>
+            {p.viewer.changes > 0 && (
+              <button className="btn-ghost underline" onClick={p.viewer.onRestore}>
+                Restaurar valores originales ({p.viewer.changes})</button>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          <input className="font-semibold" placeholder="Proyecto sin nombre" value={p.project.name}
+            maxLength={80} onChange={(e) => p.onMeta({ name: e.target.value })} aria-label="Nombre del proyecto" />
+          <textarea className="project-description" rows={2} maxLength={2000} placeholder="Descripción (aparece en el reporte)"
+            value={p.project.description} onChange={(e) => p.onMeta({ description: e.target.value })}
+            aria-label="Descripción del proyecto" />
+        </>
+      )}
       <div className="flex flex-wrap gap-1.5">
-        {p.user && <button className="btn" onClick={p.user.onProjects}>Proyectos…</button>}
-        <button className="btn" onClick={p.onNew}>Nuevo</button>
-        <button className="btn" onClick={() => file.current?.click()}>{p.user ? 'Importar archivo…' : 'Abrir…'}</button>
-        <button className="btn" onClick={p.onExport}>Guardar archivo</button>
-        <button className="btn" onClick={p.onImportPlots} title="KML, KMZ, Excel o CSV con pines y parcelas">Importar parcelas…</button>
+        {p.viewer && <button className="btn" onClick={p.viewer.onFiles}>← Mis archivos</button>}
+        {p.user?.onProjects && <button className="btn" onClick={p.user.onProjects}>Proyectos…</button>}
+        {!p.viewer && <>
+          <button className="btn" onClick={p.onNew}>Nuevo</button>
+          <button className="btn" onClick={() => file.current?.click()}>{p.user ? 'Importar archivo…' : 'Abrir…'}</button>
+          <button className="btn" onClick={p.onExport}>Guardar archivo</button>
+          <button className="btn" onClick={p.onImportPlots} title="KML, KMZ, Excel o CSV con pines y parcelas">Importar parcelas…</button>
+        </>}
+        {p.user?.onShare && <button className="btn" onClick={p.user.onShare} title="Link para ver el proyecto en modo lector">🔗 Compartir</button>}
         <button className="btn btn-active" onClick={p.onReport}>📄 Reporte</button>
         <span className="history-btns flex gap-1 ml-auto">
           <button className="btn" onClick={p.history.onUndo} disabled={!p.history.canUndo} title="Deshacer (Ctrl+Z)" aria-label="Deshacer">↶</button>
@@ -102,7 +125,7 @@ export default function Sidebar(p: Props) {
       <p className="hint" role="status">{p.status}</p>
 
       {/* ── add devices / tools ── */}
-      <section>
+      {!p.viewer && <section>
         <h3>Agregar al mapa</h3>
         <div className="flex flex-wrap gap-1.5">
           <button className={`btn ${p.mode === 'addGateway' ? 'btn-active' : ''}`} title="G"
@@ -124,7 +147,7 @@ export default function Sidebar(p: Props) {
           </select>
         </div>
         {(p.mode === 'addGateway' || p.mode === 'addNode') && <p className="hint">Haz clic en el mapa para colocarlo. Esc para cancelar.</p>}
-      </section>
+      </section>}
 
       {/* ── devices ── */}
       <section>
@@ -150,7 +173,7 @@ export default function Sidebar(p: Props) {
         </ul>
         <div className="flex items-center justify-between gap-2">
           <h3>Nodos ({shown.length === p.project.nodes.length ? p.project.nodes.length : `${shown.length} de ${p.project.nodes.length}`})</h3>
-          {p.project.nodes.length > 0 && <button className="btn-ghost underline text-xs" onClick={() => p.onBulk()}>Cambiar modelo…</button>}
+          {p.project.nodes.length > 0 && !p.viewer && <button className="btn-ghost underline text-xs" onClick={() => p.onBulk()}>Cambiar modelo…</button>}
         </div>
         {p.project.nodes.length > 3 && (
           <>
@@ -185,6 +208,7 @@ export default function Sidebar(p: Props) {
       </section>
 
       {/* ── settings ── */}
+      <fieldset disabled={!!p.viewer} className="contents">
       <section>
         <h3>Radio</h3>
         <label className="field"><span>Frecuencia (MHz)</span>
@@ -210,6 +234,7 @@ export default function Sidebar(p: Props) {
           </select>
         </label>
       </section>
+      </fieldset>
 
       <section>
         <h3>Mapa</h3>
@@ -233,12 +258,12 @@ export default function Sidebar(p: Props) {
         {p.catalog.cell_operators.length ? (
           <>
             <label className="field"><span>Operador</span>
-              <select value={s.cell_operator ?? ''} onChange={(e) => p.onSettings({ cell_operator: e.target.value || undefined })}>
+              <select value={s.cell_operator ?? ''} disabled={!!p.viewer} onChange={(e) => p.onSettings({ cell_operator: e.target.value || undefined })}>
                 <option value="">—</option>
                 {p.catalog.cell_operators.map((o) => <option key={o}>{o}</option>)}
               </select>
             </label>
-            {noCell > 0 && (
+            {noCell > 0 && !p.viewer && (
               <button className="btn" onClick={() => p.onBulk({ groups: ['cell-none'], model: 'dragino_se0x_lb' })}>
                 Cambiar los {noCell} sensores sin 4G a LoRa…
               </button>
@@ -252,12 +277,12 @@ export default function Sidebar(p: Props) {
         ) : <p className="hint">El servidor no tiene datos de cobertura.</p>}
       </section>
 
-      <section>
+      {!p.viewer && <section>
         <h3>Atajos de teclado</h3>
         <dl className="shortcuts">
           {SHORTCUT_HELP.map(([k, v]) => (<div key={k}><dt><kbd>{k}</kbd></dt><dd>{v}</dd></div>))}
         </dl>
-      </section>
+      </section>}
     </aside>
   )
 }

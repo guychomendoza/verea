@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import core.network as net  # noqa: E402
-from backend.auth import require_user  # noqa: E402
+from backend.auth import require_team, require_user  # noqa: E402
 from backend.schemas import (  # noqa: E402
     CellRequest, CoverageRequest, LinkRequest, LinksRequest, ProjectBody, RadialRequest, SuggestGatewaysRequest,
 )
@@ -222,7 +222,7 @@ def coverage(req: CoverageRequest, user=Depends(require_user)):
 
 
 @app.post("/api/suggest-gateways")
-def suggest_gateways(req: SuggestGatewaysRequest, user=Depends(require_user)):
+def suggest_gateways(req: SuggestGatewaysRequest, user=Depends(require_team)):
     """Where to put 4G gateways for these LoRa nodes (high points with 4G, link budget, greedy)."""
     rf = net.RFSettings.from_project(req.settings.model_dump())
     srcs = coverage_sources().get(req.operator) if req.operator else None

@@ -38,6 +38,7 @@ interface Props {
   coverageAvailable: boolean            // the server has 4G coverage data
   onToggleCoverage: () => void
   onReady?: (map: maplibregl.Map) => void
+  readOnly?: boolean                    // viewer: devices are selected, never dragged
 }
 
 /** Map button for the ruler, under the zoom buttons. */
@@ -191,6 +192,7 @@ export default function MapView(props: Props) {
       const f = featureAt(e)
       if (!f || propsRef.current.mode !== 'select') return
       if ('points' in e && e.points.length !== 1) return
+      if (propsRef.current.readOnly) return       // the click selects it
       e.preventDefault()
       pressedDevice.current = true
       const { kind, name } = f.properties as { kind: 'gateway' | 'node'; name: string }
@@ -208,7 +210,7 @@ export default function MapView(props: Props) {
       const d = drag.current
       if (!d) {
         map.getCanvas().style.cursor = propsRef.current.mode !== 'select' ? 'crosshair'
-          : featureAt(e) ? 'grab' : ''
+          : featureAt(e) ? (propsRef.current.readOnly ? 'pointer' : 'grab') : ''
         return
       }
       d.moved = true
@@ -250,7 +252,14 @@ export default function MapView(props: Props) {
       pressedDevice.current = false
       if (p.mode === 'ruler') p.onRulerPoint(e.lngLat.lat, e.lngLat.lng)
       else if (p.mode !== 'select') p.onAdd(e.lngLat.lat, e.lngLat.lng)
-      else if (!pressed && !featureAt(e)) p.onSelect(null)
+      else if (!pressed) {
+        const f = featureAt(e)
+        if (!f) p.onSelect(null)
+        else if (p.readOnly) {
+          const { kind, name } = f.properties as { kind: 'gateway' | 'node'; name: string }
+          p.onSelect({ kind, name })
+        }
+      }
     })
     map.on('dblclick', () => { if (propsRef.current.mode === 'ruler') propsRef.current.onRulerDone() })
     // Once loaded, always draw the latest props (isStyleLoaded() can be false for a moment
