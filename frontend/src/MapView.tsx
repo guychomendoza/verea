@@ -268,7 +268,11 @@ export default function MapView(props: Props) {
       loaded.current = true
       applyProps(map, propsRef.current, !!drag.current)
     })
+    // The map may be created before its panel has its final size (or the panel changes later)
+    const resizer = new ResizeObserver(() => map.resize())
+    resizer.observe(container.current!)
     return () => {
+      resizer.disconnect()
       window.removeEventListener('mouseup', onWindowUp)
       map.remove()
     }

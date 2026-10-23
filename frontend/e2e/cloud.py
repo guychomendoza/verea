@@ -319,6 +319,9 @@ def main():
             assert side.get_by_role("button", name=name, exact=True).count() == 0, name
         assert page.get_by_label("Nombre del proyecto").count() == 0
         assert (pid, VERA["id"]) in VIEWERS
+        # the map fills its panel and frames the project (it used to stay a few pixels wide)
+        page.wait_for_function("() => { const c = document.querySelector('.maplibregl-canvas');"
+                               " return c && c.clientWidth > 600 && c.clientHeight > 300 }", timeout=10000)
         page.screenshot(path=f"{OUT}/viewer.png")
         side.get_by_role("button", name=re.compile(r"^N-1\b")).click()
         panel = page.get_by_role("complementary", name="Dispositivo")

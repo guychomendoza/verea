@@ -326,6 +326,7 @@ function Workspace({ catalog, user, viewer }: {
   // First open: the last project, else the most recent, else a new one (once: React's
   // development mode runs effects twice, which would create two empty projects)
   const startedRef = useRef(false)
+  useEffect(() => { if (viewer) showAll(project) }, []) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!teamCloud || startedRef.current) return
     startedRef.current = true
