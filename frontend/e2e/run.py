@@ -317,6 +317,7 @@ def main():
         assert rep.locator(".summary h3").all_inner_texts()[:2] == ["Gateways", "Sensores LoRa"], rep.locator(".summary h3").all_inner_texts()
         body = rep.locator("main").inner_text()
         assert "Señal declarada" not in body and "3.25 ha" in body and "5.06 ha" in body
+        assert "Telcel" not in body, "the report should not name the operator"
         assert rep.locator("main > .tbl td .dt").count() == n_nodes + 1          # every node and the gateway
         print("HTML: LoRa and 4G tables (owner, area, status dot), cards 'node · owner' in alphabetical order")
         first = Image.open(io.BytesIO(__import__("base64").b64decode(snaps.first.get_attribute("src").split(",", 1)[1]))).convert("RGB")

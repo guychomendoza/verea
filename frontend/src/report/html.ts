@@ -4,7 +4,7 @@ import { BRAND, logoSvg } from '../brand'
 import { COLORS, COVERAGE_URL } from '../colors'
 import { deviceIconSvg, glyphPngs, iconImageId } from '../deviceIcons'
 import type { LegendItem } from '../legend'
-import { cellColor, nodeKindOf } from '../mapStyle'
+import { cellColor, cellShort, nodeKindOf } from '../mapStyle'
 import { PLOTLY_CONFIG, PLOTLY_LOCALE } from '../profilePlot'
 import type { ReportData } from './collect'
 import { GLOSSARY, SOURCES, byOwner, cellTable, gatewayTable, loraTable, nodeFacts, nodeTitle, settingsLine, summaryTables, type Table } from './content'
@@ -69,14 +69,15 @@ export function buildHtml(d: ReportData): string {
   const verdict = (name: string, cellular: boolean) => {
     if (cellular) {
       const c = d.cells[name]
-      return [c ? c.short : 'Sin revisar', !c ? 'muted' : c.state === 'ok' ? 'ok' : c.state === 'none' ? 'bad' : 'warn']
+      return [c ? cellShort(c) : 'Sin revisar', !c ? 'muted' : c.state === 'ok' ? 'ok' : c.state === 'none' ? 'bad' : 'warn']
     }
     const r = d.links[name]
     const l = r?.link
     return [l ? (l.viable ? 'Enlace viable' : 'Enlace no viable') : (r?.error ?? 'Sin resultado'),
       !l ? 'muted' : l.viable ? 'ok' : l.margin_db > -5 ? 'warn' : 'bad']
   }
-  const order = new Map([...d.project.nodes].sort(byOwner).map((n, i) => [n.name, i]))
+  // LoRa nodes first, then the 4G sensors, each in alphabetical order (as the tables)
+  const order = new Map([...d.project.nodes].sort((a, b) => Number(d.cellular.has(a.name)) - Number(d.cellular.has(b.name)) || byOwner(a, b)).map((n, i) => [n.name, i]))
   const cards = d.nodes.map((s, i) => [s, i] as const).sort(([a], [b]) => order.get(a.node.name)! - order.get(b.node.name)!).map(([s, i]) => {
     const l = s.cellular ? null : d.links[s.node.name]?.link
     const [text, cls] = verdict(s.node.name, s.cellular)
@@ -146,11 +147,11 @@ export function buildHtml(d: ReportData): string {
 <header><div class="logo">${logoSvg('#ffffff', BRAND.teal, ' role="img" aria-label="Verea"')}</div><div><h1>${esc(title)}</h1><p>Reporte de red · ${esc(d.generatedAt.toLocaleString('es-MX'))}</p></div></header>
 <main>
 ${d.project.description.trim() ? `<p>${esc(d.project.description)}</p>` : ''}
-<h2>Resumen</h2><div class="summary">${summaryTables(d).map((tb) => `<div><h3>${esc(tb.title)}</h3>${tableHtml(tb.head, tb.rows, tb.colors, 0)}</div>`).join('')}</div>
-<p class="muted">${esc(settingsLine(d))}</p>
 <h2>Mapa</h2><div id="map"></div>
 ${legendHtml(d.legend)}
 <p class="muted">Pasa el mouse sobre un Perfil de Elevación para ver el punto en este mapa.</p>
+<h2>Resumen</h2><div class="summary">${summaryTables(d).map((tb) => `<div><h3>${esc(tb.title)}</h3>${tableHtml(tb.head, tb.rows, tb.colors, 0)}</div>`).join('')}</div>
+<p class="muted">${esc(settingsLine(d))}</p>
 ${statusTable(gatewayTable(d))}
 ${statusTable(loraTable(d))}
 ${statusTable(cellTable(d))}

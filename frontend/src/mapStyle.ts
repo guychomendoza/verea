@@ -53,6 +53,19 @@ export function linkColor(r?: LinkResult): string {
   return l.viable ? COLORS.viable : l.margin_db > -5 ? COLORS.marginal : COLORS.fail
 }
 
+/** 4G state in two or three words, without the operator's name (map labels, reports). */
+export function cellShort(c?: CellStatus): string {
+  if (!c) return '4G'
+  return { ok: '4G garantizado', edge: '4G incierto', differentiated: '4G sin garantía', possible: '4G posible', none: 'Sin 4G' }[c.state] ?? '4G'
+}
+
+/** A sentence about the 4G state with the operator's name taken out. */
+export function withoutOperator(text: string, operator?: string): string {
+  if (!operator) return text
+  const op = operator.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return text.replace(new RegExp(`\\s*\\b${op}\\b`, 'g'), '').replace(/\s{2,}/g, ' ').trim()
+}
+
 export function cellColor(c?: CellStatus): string {
   if (!c) return COLORS.none
   return c.state === 'ok' ? COLORS.cellOk : c.state === 'none' ? COLORS.cellNone
@@ -65,7 +78,7 @@ function subLabel(d: MapData, kind: 'gateway' | 'node', name: string): string {
     const n = Object.values(d.links).filter((r) => r.link?.gateway === name).length
     return n ? `${n} nodo${n === 1 ? '' : 's'}` : ''
   }
-  if (d.cellular.has(name)) return d.cells[name]?.short ?? '4G'
+  if (d.cellular.has(name)) return cellShort(d.cells[name])
   const l = d.links[name]?.link
   return l ? `${distance(l.distance_m)} · ${db(l.margin_db)}` : ''
 }

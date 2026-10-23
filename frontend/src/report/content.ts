@@ -2,7 +2,7 @@
 import { COLORS } from '../colors'
 import { networkCounts, type KindCount } from '../counts'
 import { distance, num } from '../geo'
-import { cellColor, linkColor } from '../mapStyle'
+import { cellColor, cellShort, linkColor, withoutOperator } from '../mapStyle'
 import type { NodeDevice } from '../types'
 import type { NodeSection, ReportData } from './collect'
 
@@ -67,7 +67,7 @@ export function summaryTables(d: ReportData): Table[] {
   const out: Table[] = []
   if (c.gateways.total) out.push(block('Gateways', c.gateways, [['Con 4G propio', c.gateways.cellular], ['Con WiFi / Ethernet', c.gateways.wired]]))
   if (c.lora.total) out.push(block('Sensores LoRa', c.lora))
-  if (c.cell.total) out.push(block(`Sensores 4G${d.project.settings.cell_operator ? ` (${d.project.settings.cell_operator})` : ''}`, c.cell))
+  if (c.cell.total) out.push(block('Sensores 4G', c.cell))
   return out
 }
 
@@ -105,13 +105,13 @@ export const hectares = (v?: number) => (v == null ? '—' : `${num(v, 2)} ha`)
 export function settingsLine(d: ReportData): string {
   const s = d.project.settings
   return `${s.freq_mhz} MHz · margen de seguridad ${num(s.safety_margin, 1)} dB · modelo `
-    + `${s.propagation_model === 'itm' ? 'ITM / ITU-R P.526' : 'simple'}${s.cell_operator ? ` · 4G: ${s.cell_operator}` : ''}`
+    + `${s.propagation_model === 'itm' ? 'ITM / ITU-R P.526' : 'simple'}`
 }
 
 function status(d: ReportData, name: string): string {
   if (d.cellular.has(name)) {
     const c = d.cells[name]
-    return c ? c.short : 'Sin revisar'
+    return c ? cellShort(c) : 'Sin revisar'
   }
   const r = d.links[name]
   return r?.link ? (r.link.viable ? 'Viable' : 'No viable') : (r?.error ?? 'Sin resultado')
@@ -154,7 +154,7 @@ export function cellTable(d: ReportData): Table | null {
   if (!nodes.length) return null
   const x = extras(nodes, true)
   return {
-    title: `Sensores 4G${d.project.settings.cell_operator ? ` (${d.project.settings.cell_operator})` : ''}`,
+    title: 'Sensores 4G',
     head: ['Nodo', ...x.head, 'Cubierto alrededor', 'Estado'],
     rows: nodes.map((n) => {
       const c = d.cells[n.name]
@@ -173,7 +173,7 @@ export function nodeFacts(d: ReportData, s: NodeSection): string[][] {
     const c = d.cells[n.name]
     return [
       ...info,
-      ['Estado 4G', c ? c.text.replace(/^[^\p{L}\p{N}]+/u, '') : 'Sin revisar (elige un operador)'],
+      ['Estado 4G', c ? withoutOperator(c.text.replace(/^[^\p{L}\p{N}]+/u, ''), d.project.settings.cell_operator) : 'Sin revisar (elige un operador)'],
       ['Cubierto alrededor (300 m)', c?.nearby_share != null ? `${Math.round(c.nearby_share * 100)} %` : '—'],
       ...(c && !c.covered ? [['Cobertura más cercana', c.nearest_m != null ? distance(c.nearest_m) : '> 20 km']] : []),
       ['Modelo', model],

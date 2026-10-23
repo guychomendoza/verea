@@ -143,13 +143,13 @@ export async function buildPdf(d: ReportData): Promise<Blob> {
   doc.text(t(`Reporte de red · ${d.generatedAt.toLocaleString('es-MX')}`), tx, 24)
   y = 42
   if (d.project.description.trim()) paragraph(d.project.description, 10, INK)
-  stacked(summaryTables(d))
-  paragraph(settingsLine(d), 8.5)
   if (d.mapImg) {
     image(d.mapImg, (d.mapSize[1] + 88) / (d.mapSize[0] + 32), 140)
     y -= 2
     legend(d.legend)
   }
+  stacked(summaryTables(d))
+  paragraph(settingsLine(d), 8.5)
   for (const tb of [gatewayTable(d), loraTable(d), cellTable(d)]) {
     if (!tb) continue
     heading(tb.title, 12)
