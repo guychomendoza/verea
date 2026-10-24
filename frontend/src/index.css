@@ -23,6 +23,7 @@
   --los: #23768b;
   --fresnel: #7b8794;
   --worst: #ef476f;
+  --font: "Inter Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color-scheme: light;
 }
 
@@ -72,7 +73,9 @@ html, body, #root { height: 100%; margin: 0; }
 body {
   background: var(--bg);
   color: var(--ink);
-  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: 14px/1.45 var(--font);
+  font-feature-settings: "cv11";        /* Inter: single-storey a, calmer at small sizes */
+  -webkit-font-smoothing: antialiased;
 }
 
 /* ── layout: [project | map over elevation profile | device], resizable and collapsible ── */
@@ -98,7 +101,7 @@ body {
 .edge-toggle {
   position: absolute; z-index: 6; display: grid; place-items: center; cursor: pointer;
   background: var(--panel); color: var(--ink); border: 1px solid var(--line);
-  box-shadow: 0 2px 8px rgb(0 0 0 / .3); font: 600 16px/1 system-ui, sans-serif;
+  box-shadow: 0 2px 8px rgb(0 0 0 / .3); font: 600 16px/1 var(--font);
   opacity: 0; transition: opacity .15s; padding: 0;
 }
 .resize-handle:hover .edge-toggle, .edge-toggle:focus-visible { opacity: 1; }
@@ -273,14 +276,14 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-
 .verea-coverage-ctrl[hidden], .verea-coverage-legend[hidden] { display: none; }
 .verea-coverage-btn {
   display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 999px; cursor: pointer;
-  background: #fff; color: #162a40; border: 0; font: 600 12px/1.2 system-ui, sans-serif;
+  background: #fff; color: #162a40; border: 0; font: 600 12px/1.2 var(--font);
   box-shadow: 0 0 0 2px rgb(0 0 0 / .1);
 }
 .verea-coverage-btn:hover { background: #eef3f7; }
 .verea-coverage-btn.active { background: var(--brand-navy); color: #fff; }
 .verea-coverage-legend {
   display: flex; flex-direction: column; gap: 2px; padding: 6px 9px; border-radius: 8px;
-  background: rgb(15 34 54 / .88); color: #e6edf4; font: 11px/1.3 system-ui, sans-serif;
+  background: rgb(15 34 54 / .88); color: #e6edf4; font: 11px/1.3 var(--font);
 }
 .verea-coverage-legend span { display: flex; align-items: center; gap: 6px; }
 .verea-coverage-legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
@@ -323,7 +326,7 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-
   position: absolute; left: 10px; top: 52px; z-index: 2; font-size: 12px; color: #e6edf4;
   background: rgb(15 34 54 / .86); border-radius: 8px; box-shadow: 0 2px 10px rgb(0 0 0 / .3); max-width: calc(100% - 80px);
 }
-.counter-head { background: none; border: 0; color: inherit; font: 600 12px/1.2 system-ui, sans-serif; padding: 6px 10px; cursor: pointer; }
+.counter-head { background: none; border: 0; color: inherit; font: 600 12px/1.2 var(--font); padding: 6px 10px; cursor: pointer; }
 .counter-rows { padding: 0 10px 7px; display: flex; flex-direction: column; gap: 4px; }
 .counter-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .counter-row .hint { color: #9fb0c3; font-size: 11px; }

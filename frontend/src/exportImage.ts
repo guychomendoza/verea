@@ -14,7 +14,7 @@ interface Frame {
   attribution?: string
 }
 
-const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'
+const FONT = '"Inter Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'   // the app's font (loaded by then)
 const PAD = 16
 const BG = BRAND.navyDeep
 const INK = '#e6edf4'

@@ -109,7 +109,7 @@ export function profileFigure(p: Profile, title: string, pins: number[] = []) {
   const layout = {
     title: { text: title, font: { color: PROFILE_INK, size: 14 } },
     paper_bgcolor: PROFILE_BG, plot_bgcolor: PROFILE_BG,
-    font: { color: PROFILE_MUTED, family: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif' },
+    font: { color: PROFILE_MUTED, family: '"Inter Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif' },
     margin: { l: 64, r: 24, t: 44, b: 64 },
     hovermode: 'x',
     hoverlabel: { font: { size: 11, color: PROFILE_INK }, bgcolor: '#16304b', bordercolor: BRAND.navyAxis },
