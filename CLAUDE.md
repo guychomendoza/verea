@@ -44,6 +44,17 @@ frontend, DB with users) is planned.
   localStorage, "Archivo ▾" menu, sensors grouped by technology — LoRa / 4G / stations, each folding — in natural
   alphabetical order, one environment for every LoRa node at once = `bulkEnvironment`, viewers too),
   `DevicePanel.tsx`,
+  Design (2026-10-24): Inter self-hosted (`@fontsource-variable/inter`), tokens in `index.css` (surface, field,
+  line-strong, ring, shadow-sm/-/-lg, radii, --ease/--dur; dark twins in both dark blocks), soft motion
+  (folding sections = `.fold` grid-rows 0fr→1fr, kept mounted but inert + visibility hidden once closed —
+  never name a class `collapse`, it is a Tailwind utility; dialogs pop in, menus drop in, device panel slides;
+  all off for prefers-reduced-motion), no emoji: line icons in `icons.tsx` plus `CloseButton` and `Alert`;
+  side panel top = project card (name, Proyectos button, description on demand, counts) + action rows;
+  split-screen login over `LoginArt.tsx` (SVG illustration); phones (< 900 px) = full-screen map with a
+  bottom sheet (`Sheet.tsx`: peek / half / full; a device shows its profile first). `frontend/e2e/shots.py`
+  takes review screenshots (light/dark, desktop/phone, team view via cloud.py's fake Supabase).
+  Addresses: team projects at `/p/<id>` (`route.ts`, History API; back/forward switch projects with the
+  unsaved-changes guard; Google returns to the same address; the empty `#` is cleaned).
   `autosave.ts` (since 2026-10-24 team projects save with the Guardar button / Ctrl+S; autosave is opt-in in
   Configuración → Guardado, off by default, per browser; unsaved edits are kept as a browser draft
   `verea.draft.<id>` offered back on reopen; opening / creating / importing another project with unsaved
@@ -51,8 +62,8 @@ frontend, DB with users) is planned.
   `counts.ts` (devices per kind / model and per status colour) feeds the map counter
   (`NetworkCounter.tsx`) and the report's three summary tables (gateways, LoRa, 4G),
   `report/` (built in the browser; PDF only, with jsPDF = summary: whole-project map — from a
-  hidden map in `snapshots.ts` — + gateway, LoRa and 4G tables with owner/area, alphabetical,
-  status dot; in cloud mode a box "Ver este proyecto a detalle en verea.app" (the link's host) with the shared link and
+  hidden map in `snapshots.ts` — + gateway table, then LoRa and 4G nodes grouped by state (coloured
+  title + count, natural order by name, owner/area columns, same widths per section); in cloud mode a box "Ver este proyecto a detalle en verea.app" (the link's host) with the shared link and
   a QR code (`qrcode-generator`). The HTML report with one card per node was dropped on
   2026-10-23: the app itself is the detailed viewer. Cancelar / ✕ / Esc abort; no e-mail),
   nodes may carry optional `owner` (titular) and `area_ha` (in `core/project.py` `_NODE_KEYS`),
@@ -104,7 +115,8 @@ frontend, DB with users) is planned.
   Browser tests (docstrings say how to start them): `frontend/e2e/run.py` (local mode, 5174 + dev
   API 8001), `cloud.py` (fake Supabase with team, viewer and admin accounts, links, RPCs; 5175), `live.py` (real Supabase; works only in its own
   project — on 2026-10-22 an earlier version renamed the team's newest project).
-- `backend/` — FastAPI web API (`main.py`), request limits (`schemas.py`), Supabase JWT check
+- `backend/` — FastAPI web API (`main.py`), request limits (`schemas.py`), per-client rate limit in memory
+  (`ratelimit.py`: 240/min, heavy endpoints lower, 429 + Retry-After, inside CORS), Supabase JWT check
   (`auth.py`: no `SUPABASE_URL` and no `VEREA_DEV=1` → every protected request is refused).
   Elevations from the local DEM (`core/dem.py`), sampled like Open-Meteo (cell containing the
   point, whole metres) so margins match the app exactly.
@@ -165,6 +177,10 @@ frontend, DB with users) is planned.
 - datos.gob.mx / repodatos block scripted downloads (403); download in a browser.
   The 4G "Diferenciada" files returned server errors in Oct 2026.
 - Elevation APIs reject > 100 points (falls back to flat terrain silently).
+- CSP (`frontend/public/_headers`): only self, the API, tiles, Esri, MapLibre glyphs and Supabase. A new external
+  host must be added there; never fetch() a data: URL (`dataUrlToBlob`). Check it by serving a `VITE_E2E=1`
+  production build with the header and running `e2e/run.py` against it (VEREA_E2E_URL). The field-test mode
+  (`docs/modo-campo.md`, not built) needs `geolocation=(self)` in Permissions-Policy.
 - Deploy (2026-10-23): `wrangler pages project create` needs `--force` (else wrangler 4.149+ turns the app
   into a Worker, rewriting vite.config.ts / package.json); `flyctl deploy` uses `--depot=false` (Depot hung on
   the org token); a deploy resets the VM to fly.toml's size. rasterio's wheel needs `libexpat1` in the image,
