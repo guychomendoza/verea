@@ -17,7 +17,7 @@ export interface ReportData {
   stations: Set<string>
   legend: LegendItem[]          // general map symbology
   showCoverage: boolean
-  shareUrl: string | null       // "Ver este proyecto a detalle en línea" (cloud projects)
+  shareUrl: string | null       // "Ver este proyecto a detalle en verea.app" (cloud projects)
 }
 
 function blobToDataUrl(b: Blob): Promise<string> {

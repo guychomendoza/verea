@@ -94,7 +94,7 @@ export default function ReportDialog(p: Props) {
           <>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={withLink} onChange={(e) => setWithLink(e.target.checked)} disabled={busy} />
-              Incluir «Ver este proyecto a detalle en línea» (link y código QR)
+              Incluir «Ver este proyecto a detalle en verea.app» (link y código QR)
             </label>
             {p.share.team && withLink && (
               <label className="flex items-center gap-2 text-sm pl-6">

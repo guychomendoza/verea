@@ -48,7 +48,7 @@ frontend, DB with users) is planned.
   (`NetworkCounter.tsx`) and the report's three summary tables (gateways, LoRa, 4G),
   `report/` (built in the browser; PDF only, with jsPDF = summary: whole-project map — from a
   hidden map in `snapshots.ts` — + gateway, LoRa and 4G tables with owner/area, alphabetical,
-  status dot; in cloud mode a box "Ver este proyecto a detalle en línea" with the shared link and
+  status dot; in cloud mode a box "Ver este proyecto a detalle en verea.app" (the link's host) with the shared link and
   a QR code (`qrcode-generator`). The HTML report with one card per node was dropped on
   2026-10-23: the app itself is the detailed viewer. Cancelar / ✕ / Esc abort; no e-mail),
   nodes may carry optional `owner` (titular) and `area_ha` (in `core/project.py` `_NODE_KEYS`),

@@ -153,7 +153,7 @@ export async function buildPdf(d: ReportData): Promise<Blob> {
       for (let c = 0; c < n; c++) if (qr.isDark(r, c)) doc.rect(M + pad + c * cell, y + pad + r * cell, cell + 0.02, cell + 0.02, 'F')
     }
     const tx = M + pad + size + 6, tw = W - (tx - M) - pad
-    doc.setFont('helvetica', 'bold').setFontSize(12).setTextColor(...NAVY).text('Ver este proyecto a detalle en línea', tx, y + pad + 5)
+    doc.setFont('helvetica', 'bold').setFontSize(12).setTextColor(...NAVY).text(`Ver este proyecto a detalle en ${new URL(url).host}`, tx, y + pad + 5)
     doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(...INK)
     const lines = doc.splitTextToSize(t('Escanea el código o abre el link para explorar cada nodo en el mapa.'), tw) as string[]
     doc.text(lines, tx, y + pad + 11)
