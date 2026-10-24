@@ -91,12 +91,6 @@ export function gatewayTable(d: ReportData): Table | null {
   }
 }
 
-/** Alphabetical by owner (titular), then by node name. */
-export function byOwner(a: NodeDevice, b: NodeDevice): number {
-  const key = (n: NodeDevice) => (n.owner || n.name)
-  return key(a).localeCompare(key(b), 'es', { sensitivity: 'base' }) || a.name.localeCompare(b.name, 'es')
-}
-
 export const hectares = (v?: number) => (v == null ? '—' : `${num(v, 2)} ha`)
 
 /** Settings in one line. */
@@ -129,35 +123,70 @@ function extras(nodes: NodeDevice[], area: boolean) {
   }
 }
 
-/** LoRa nodes: one row each (null when the project has none). */
-export function loraTable(d: ReportData): Table | null {
-  const nodes = d.project.nodes.filter((n) => !d.cellular.has(n.name)).sort(byOwner)
+/** A group of nodes in one state: its rows under a title with the state's colour and count. */
+export type Group = Table & { color: string }
+/** One kind of node (LoRa or 4G), split by state: the states that need attention last. */
+export type Section = { title: string; groups: Group[] }
+
+const byName = (a: NodeDevice, b: NodeDevice) =>
+  nodeShortName(a).localeCompare(nodeShortName(b), 'es', { numeric: true, sensitivity: 'base' })
+
+function grouped(nodes: NodeDevice[], states: { key: string; label: string; color: string }[], keyOf: (n: NodeDevice) => string,
+  head: string[], row: (n: NodeDevice) => string[]): Group[] {
+  return states.map((st) => {
+    const ns = nodes.filter((n) => keyOf(n) === st.key).sort(byName)
+    return { title: `${st.label} (${ns.length})`, head, rows: ns.map(row), colors: ns.map(() => st.color), color: st.color }
+  }).filter((g) => g.rows.length)
+}
+
+const LORA_STATES = [
+  { key: 'viable', label: 'Enlace viable', color: COLORS.viable },
+  { key: 'marginal', label: 'Margen bajo (hasta 5 dB abajo)', color: COLORS.marginal },
+  { key: 'fail', label: 'No viable', color: COLORS.fail },
+  { key: 'none', label: 'Sin resultado', color: COLORS.none },
+]
+
+function loraState(d: ReportData, n: NodeDevice): string {
+  const l = d.links[n.name]?.link
+  return !l ? 'none' : l.viable ? 'viable' : l.margin_db > -5 ? 'marginal' : 'fail'
+}
+
+/** LoRa nodes grouped by the state of their link, alphabetical inside each group (null when none). */
+export function loraSection(d: ReportData): Section | null {
+  const nodes = d.project.nodes.filter((n) => !d.cellular.has(n.name))
   if (!nodes.length) return null
   const x = extras(nodes, true)
   return {
     title: 'Nodos LoRa',
-    head: ['Nodo', ...x.head, 'Gateway', 'Distancia', 'Margen', 'Estado'],
-    rows: nodes.map((n) => {
-      const l = d.links[n.name]?.link
-      return [nodeShortName(n), ...x.cells(n), l?.gateway ?? '—', l ? distance(l.distance_m) : '—',
-        l ? `${num(l.margin_db, 1)} dB` : '—', status(d, n.name)]
-    }),
-    colors: nodes.map((n) => statusColor(d, n.name)),
+    groups: grouped(nodes, LORA_STATES, (n) => loraState(d, n),
+      ['Nodo', ...x.head, 'Gateway', 'Distancia', 'Margen', 'Estado'], (n) => {
+        const l = d.links[n.name]?.link
+        return [nodeShortName(n), ...x.cells(n), l?.gateway ?? '—', l ? distance(l.distance_m) : '—',
+          l ? `${num(l.margin_db, 1)} dB` : '—', status(d, n.name)]
+      }),
   }
 }
 
-/** 4G sensors: one row each (null when the project has none). */
-export function cellTable(d: ReportData): Table | null {
-  const nodes = d.project.nodes.filter((n) => d.cellular.has(n.name)).sort(byOwner)
+const CELL_STATES = [
+  { key: 'ok', label: 'Cobertura 4G garantizada', color: COLORS.cellOk },
+  { key: 'edge', label: 'Incierta: cerca del borde', color: COLORS.cellEdge },
+  { key: 'differentiated', label: 'Solo diferenciada (sin garantía)', color: COLORS.cellEdge },
+  { key: 'possible', label: 'Posible con LTE-M / NB-IoT (verificar en campo)', color: COLORS.cellPossible },
+  { key: 'none', label: 'Sin cobertura 4G', color: COLORS.cellNone },
+  { key: 'unchecked', label: 'Sin revisar', color: COLORS.none },
+]
+
+/** 4G sensors grouped by their connection state, alphabetical inside each group (null when none). */
+export function cellSection(d: ReportData): Section | null {
+  const nodes = d.project.nodes.filter((n) => d.cellular.has(n.name))
   if (!nodes.length) return null
   const x = extras(nodes, true)
   return {
     title: 'Sensores 4G',
-    head: ['Nodo', ...x.head, 'Cubierto alrededor', 'Estado'],
-    rows: nodes.map((n) => {
-      const c = d.cells[n.name]
-      return [nodeShortName(n), ...x.cells(n), c?.nearby_share != null ? `${Math.round(c.nearby_share * 100)} %` : '—', status(d, n.name)]
-    }),
-    colors: nodes.map((n) => statusColor(d, n.name)),
+    groups: grouped(nodes, CELL_STATES, (n) => d.cells[n.name]?.state ?? 'unchecked',
+      ['Nodo', ...x.head, 'Cubierto alrededor', 'Estado'], (n) => {
+        const c = d.cells[n.name]
+        return [nodeShortName(n), ...x.cells(n), c?.nearby_share != null ? `${Math.round(c.nearby_share * 100)} %` : '—', status(d, n.name)]
+      }),
   }
 }

@@ -5,7 +5,7 @@ import { BRAND, LOGO_RATIO, logoSvg, markSvg, svgToPng } from '../brand'
 import { deviceIconCanvas } from '../deviceIcons'
 import type { LegendItem } from '../legend'
 import type { ReportData } from './collect'
-import { SOURCES, cellTable, gatewayTable, loraTable, settingsLine, summaryTables, type Table } from './content'
+import { SOURCES, cellSection, gatewayTable, loraSection, settingsLine, summaryTables, type Table } from './content'
 
 const M = 14                       // page margin (mm)
 const W = 210 - 2 * M
@@ -183,10 +183,24 @@ export async function buildPdf(d: ReportData): Promise<Blob> {
   if (d.shareUrl) onlineBox(d.shareUrl)
   stacked(summaryTables(d))
   paragraph(settingsLine(d), 8.5)
-  for (const tb of [gatewayTable(d), loraTable(d), cellTable(d)]) {
-    if (!tb) continue
-    heading(tb.title, 12)
-    table(tb.head, tb.rows, [], tb.colors)
+  const gws = gatewayTable(d)
+  if (gws) {
+    heading(gws.title, 12)
+    table(gws.head, gws.rows, [], gws.colors)
+  }
+  // Nodes by kind, then by state (a coloured title with the count over each group's table)
+  for (const sec of [loraSection(d), cellSection(d)]) {
+    if (!sec) continue
+    heading(sec.title, 12)
+    for (const g of sec.groups) {
+      ensure(16)
+      doc.setFillColor(...rgb(g.color)).circle(M + 1.6, y + 3.1, 1.6, 'F')
+      doc.setFont('helvetica', 'bold').setFontSize(9.5).setTextColor(...INK).text(t(g.title), M + 5, y + 4.2)
+      y += 7
+      // the same column widths in every group of a section, so the tables line up
+      const first = W * 0.24, rest = (W - first) / (g.head.length - 1)
+      table(g.head, g.rows, g.head.map((_, i) => (i === 0 ? first : rest)), g.colors)
+    }
   }
   doc.setFont('helvetica', 'bold').setFontSize(8).setTextColor(...MUTED)
   ensure(12)
