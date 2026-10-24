@@ -6,7 +6,9 @@ import { api, ApiError, setToken } from './api'
 import * as cloud from './cloud'
 import DevicePanel from './DevicePanel'
 import { downloadBlob, mapToPng, safeName, type LegendItem } from './exportImage'
-import { distance, haversine } from './geo'
+import { db, distance, haversine } from './geo'
+import { COLORS } from './colors'
+import { cellColor, cellShort, linkColor } from './mapStyle'
 import { mapLegend as buildLegend } from './legend'
 import { Login, Notice, SetPassword } from './Login'
 import MapView, { type Focus, type MapMode } from './MapView'
@@ -31,13 +33,14 @@ import { shortcutFor } from './shortcuts'
 import { clearDraft, loadDraft, saveDraft, useAutosave, type Draft, type SaveState } from './autosave'
 import { cleanAuthHash, projectFromPath, showProject } from './route'
 import Sidebar from './Sidebar'
-import Sheet, { type SheetSize } from './Sheet'
+import { DeviceCard, PanelButton, PhoneOverlay } from './Phone'
 import type { Catalog, CellStatus, Gateway, LinkDetail, LinkResult, NodeDevice, Project, Radial, Selection } from './types'
 import { Alert, Icon } from './icons'
 
 const STORAGE_KEY = 'verea.project'     // local mode (no Supabase configured)
 const LAST_PROJECT_KEY = 'verea.lastProject'
 const VIEWER_FILE_KEY = 'verea.viewerFile'
+const EDIT_KEY = 'verea.editing'          // Ver / Editar, remembered per browser
 const OVERRIDES_DELAY_MS = 1000
 const RECALC_DELAY_MS = 400
 const SAVE_DELAY_MS = 1500                 // autosave (opt-in) after the last change
@@ -270,15 +273,15 @@ function Workspace({ catalog, user, viewer }: {
   const cloudMode = !!user
   const teamCloud = cloudMode && !viewer          // the team's projects table (viewers keep only their changes)
   const narrow = useNarrow()
-  const [sheet, setSheet] = useState<SheetSize>('peek')        // phones: the bottom sheet's height
+  const [phonePanel, setPhonePanel] = useState(false)          // phones: the project panel, full screen
+  const [phoneDetail, setPhoneDetail] = useState(false)        // phones: the picked device's detail
   const envKeys = Object.keys(catalog.environments)
   const [history, dispatchRaw] = useReducer(reduceHistory, null, () =>
     ({ present: viewer ? applyOverrides(viewer.base, viewer.overrides, envKeys)
       : (cloudMode ? null : loadLocal()) ?? emptyProject(catalog.defaults), past: [], future: [] }))
   const project = history.present
   const [selection, setSelection] = useState<Selection>(null)
-  // Phones: picking a device raises the sheet enough to read its panel
-  useEffect(() => { if (narrow && selection) setSheet((v) => (v === 'peek' ? 'half' : v)) }, [narrow, selection?.name]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!selection) setPhoneDetail(false) }, [selection])
   const [mode, setMode] = useState<MapMode>('select')
   const [addModel, setAddModel] = useState('')
   const [showCoverage, setShowCoverage] = useState(false)
@@ -305,8 +308,18 @@ function Workspace({ catalog, user, viewer }: {
   // Gateway range on the map: radials per gateway, kept while the gateway and settings stay the same
   const [ranges, setRanges] = useState<Record<string, { radials: Radial[]; sig: string }>>({})
   const [rangeLoading, setRangeLoading] = useState<Set<string>>(new Set())
-  // A viewer may only change heights / environments (the buttons for the rest are not shown either)
-  const dispatch = useCallback((a: HistoryAction) => { if (!viewer || viewerAllows(a)) dispatchRaw(a) }, [viewer])
+  // Ver / Editar: in Ver nothing can be moved or changed by accident (phones start in Ver)
+  const [editing, setEditingRaw] = useState(() => { const v = recall(EDIT_KEY); return v ? v === '1' : window.innerWidth >= NARROW_PX })
+  const locked = !viewer && !editing
+  const setEditing = (on: boolean) => {
+    store(EDIT_KEY, on ? '1' : '0')
+    setEditingRaw(on)
+    if (!on) setMode('select')
+  }
+  // A viewer may only change heights / environments; in Ver only another project may be opened
+  const dispatch = useCallback((a: HistoryAction) => {
+    if (viewer ? viewerAllows(a) : editing || a.type === 'open') dispatchRaw(a)
+  }, [viewer, editing])
   const [showShare, setShowShare] = useState(false)
   const [localSettings, setLocalSettings] = useState(false)     // local mode: appearance only
 
@@ -552,6 +565,7 @@ function Workspace({ catalog, user, viewer }: {
 
   const select = (s: Selection, fly = false) => {
     setSelection(s)
+    if (narrow) setPhonePanel(false)        // phones: back to the map, where the device's card shows
     const d = selected(project, s)
     if (fly && d) setFocus({ lat: d.lat, lon: d.lon, key: Date.now() })
   }
@@ -616,7 +630,7 @@ function Workspace({ catalog, user, viewer }: {
   keyHandler.current = (e: KeyboardEvent) => {
     const action = shortcutFor(e)
     if (!action || showReport || showProjects || showImport || bulk || suggest || showShare || localSettings || leaving) return
-    if (viewer && (action === 'addGateway' || action === 'addNode')) return
+    if ((viewer || locked) && (action === 'addGateway' || action === 'addNode')) return
     if (action === 'save' || action === 'undo' || action === 'redo' || (action === 'addGateway' && (e.ctrlKey || e.metaKey))) e.preventDefault()
     switch (action) {
       case 'addGateway':
@@ -720,6 +734,7 @@ function Workspace({ catalog, user, viewer }: {
       status={[saveText, status].filter(Boolean).join(' · ')}
       user={user && !viewer ? { onProjects: () => setShowProjects(true), onShare: doc ? () => setShowShare(true) : undefined } : undefined}
       save={teamCloud ? { state: saveState, savedAt, autosave, onSave: () => { saveNow() } } : undefined}
+      edit={viewer ? undefined : { on: editing, onChange: setEditing }}
       onConfig={user ? user.onSettings : () => setLocalSettings(true)}
       viewer={viewer ? { changes: changeCount(overrides), onFiles: viewer.onFiles,
         onRestore: () => { dispatch({ type: 'open', project: viewer.base }); setStatus('Valores originales restaurados') } } : undefined}
@@ -761,7 +776,7 @@ function Workspace({ catalog, user, viewer }: {
         cursor={cursorIdx !== null ? coordAt(cursorIdx) ?? null : null}
         profilePins={pins.map((i) => coordAt(i)).filter((c): c is [number, number] => !!c)}
         ruler={ruler}
-        onReady={(m) => { mapRef.current = m }} readOnly={!!viewer}
+        onReady={(m) => { mapRef.current = m }} readOnly={!!viewer || locked}
         onSelect={(s) => setSelection(s)}
         onMove={(kind, name, lat, lon) => dispatch({ type: 'move', kind, name, lat, lon })}
         onAdd={add}
@@ -777,7 +792,7 @@ function Workspace({ catalog, user, viewer }: {
           setPin({ lat: pl.lat, lon: pl.lon })
           setFocus({ lat: pl.lat, lon: pl.lon, zoom: pl.kind === 'coordinates' ? 16 : 14, key: Date.now() })
         }} />
-        <button className="btn map-btn" onClick={exportMap} title="Descargar el mapa como imagen PNG"><Icon name="image" /> Imagen del mapa</button>
+        <button className="btn map-btn" onClick={exportMap} title="Descargar el mapa como imagen PNG"><Icon name="image" /><span className="btn-label">Imagen del mapa</span></button>
       </div>
       <NetworkCounter counts={networkCounts(project, catalog, links, cells, cellular)} />
       {(mode === 'ruler' || ruler.length > 0) && (
@@ -830,7 +845,7 @@ function Workspace({ catalog, user, viewer }: {
 
   const devicePanel = dev && selection ? (
     <DevicePanel key={`${selection.kind}:${selection.name}`} catalog={catalog} project={project}
-      kind={selection.kind} device={dev} link={links[dev.name]} cell={cells[dev.name]} served={served} viewer={!!viewer}
+      kind={selection.kind} device={dev} link={links[dev.name]} cell={cells[dev.name]} served={served} viewer={!!viewer} locked={locked}
       range={selection.kind === 'gateway' ? {
         shown: !!ranges[dev.name], loading: rangeLoading.has(dev.name),
         onToggle: () => (ranges[dev.name] ? hideRange([dev.name]) : showRange([dev.name])),
@@ -921,14 +936,30 @@ function Workspace({ catalog, user, viewer }: {
   )
 
   if (narrow) {
-    // Phones: full-screen map, the project (or the selected device and its profile) in a bottom sheet
+    // Phones: the map stays free; the panel and a device's detail open full screen on demand
+    const kind = !dev ? 'lora' : selection?.kind === 'gateway' ? 'gateway' : cellular.has(dev.name) ? 'cellular'
+      : stations.has(dev.name) ? 'station' : 'lora'
+    const link = dev ? links[dev.name]?.link : undefined
+    const summary = !dev ? '' : selection?.kind === 'gateway' ? `${served} nodo${served === 1 ? '' : 's'} atendido${served === 1 ? '' : 's'}`
+      : cellular.has(dev.name) ? cellShort(cells[dev.name])
+      : link ? `${link.viable ? 'Viable' : 'No viable'} · ${db(link.margin_db)} · ${distance(link.distance_m)}` : 'Calculando enlace…'
+    const color = !dev ? '' : selection?.kind === 'gateway' ? ((dev as Gateway).online ? COLORS.gateway : COLORS.none)
+      : cellular.has(dev.name) ? cellColor(cells[dev.name]) : linkColor(links[dev.name])
     return (
-      <div className="app-phone">
+      <div className={`app-phone ${dev && !phoneDetail ? 'has-card' : ''}`}>
         <div className="phone-map">{mapArea}</div>
-        <Sheet size={sheet} onSize={setSheet} label={devicePanel ? 'Dispositivo' : 'Panel del proyecto'}
-          contentKey={selection ? `${selection.kind}:${selection.name}` : 'project'}>
-          {devicePanel ? <>{selNode && <div className="sheet-profile">{profile}</div>}{devicePanel}</> : sidebar}
-        </Sheet>
+        <PanelButton name={project.name} onClick={() => setPhonePanel(true)} />
+        {dev && selection && !phoneDetail && (
+          <DeviceCard kind={kind} name={dev.name} summary={summary} color={color}
+            onDetail={() => setPhoneDetail(true)} onClose={() => setSelection(null)} />
+        )}
+        {phonePanel && <PhoneOverlay label="Panel del proyecto" brand onClose={() => setPhonePanel(false)}>{sidebar}</PhoneOverlay>}
+        {phoneDetail && devicePanel && (
+          <PhoneOverlay label="Detalle del dispositivo" onClose={() => setPhoneDetail(false)}>
+            {selNode && <div className="phone-profile">{profile}</div>}
+            {devicePanel}
+          </PhoneOverlay>
+        )}
         {dialogs}
       </div>
     )

@@ -30,15 +30,22 @@ def workspace(b, theme, size):
     ctx = context(b, theme, size)
     page = ctx.new_page()
     page.goto(LOCAL)
+    if size == "phone":                             # the panel (and its file input) opens on demand
+        page.get_by_role("button", name="Abrir el panel del proyecto").click()
     page.locator("input[type=file]").first.set_input_files(str(SAMPLE))
     page.get_by_text("N-1").first.wait_for(timeout=20000)
+    if size == "phone":
+        page.get_by_role("button", name="Cerrar el panel").click()
     page.wait_for_timeout(4000)                     # links and map tiles
     page.screenshot(path=OUT / f"workspace-{size}-{theme}.png")
-    if size == "phone":                             # the bottom sheet: half, then a node with its profile
-        page.get_by_role("button", name="Ampliar el panel").click()
+    if size == "phone":                             # panel full screen, then a node: its card and its detail
+        page.get_by_role("button", name="Abrir el panel del proyecto").click()
         page.wait_for_timeout(600)
-        page.screenshot(path=OUT / f"sheet-half-{size}-{theme}.png")
+        page.screenshot(path=OUT / f"panel-{size}-{theme}.png")
         page.get_by_role("region", name="Lista de sensores").get_by_role("button", name="N-1").click()
+        page.wait_for_timeout(1500)
+        page.screenshot(path=OUT / f"card-{size}-{theme}.png")
+        page.get_by_role("button", name="Ver detalle").click()
         page.wait_for_timeout(3500)
         page.screenshot(path=OUT / f"node-{size}-{theme}.png")
     if size == "desktop":

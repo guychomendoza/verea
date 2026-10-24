@@ -16,6 +16,7 @@ interface Props {
   served: number                       // nodes whose best link is this gateway
   range?: { shown: boolean; loading: boolean; onToggle: () => void }
   viewer?: boolean                     // read-only, except height and environment
+  locked?: boolean                     // the team's Ver mode: read-only, all of it
   onRename: (next: string) => void
   onPatch: (patch: Partial<Gateway & NodeDevice>) => void
   onRemove: () => void
@@ -103,7 +104,7 @@ export default function DevicePanel(p: Props) {
   const profiles = p.kind === 'gateway' ? p.catalog.gateway_profiles : p.catalog.node_profiles
   const prof = profiles[p.device.model]
   const best = p.link?.link
-  const ro = !!p.viewer
+  const ro = !!p.viewer || !!p.locked
 
   const changeModel = (model: string) => {
     const pr = profiles[model]
@@ -203,7 +204,7 @@ export default function DevicePanel(p: Props) {
         <NumberField label="Latitud" value={p.device.lat} step={0.0001} min={-90} max={90} disabled={ro} onCommit={(v) => p.onPatch({ lat: v })} />
         <NumberField label="Longitud" value={p.device.lon} step={0.0001} min={-180} max={180} disabled={ro} onCommit={(v) => p.onPatch({ lon: v })} />
         {!cellular && <>
-          <NumberField label="Altura sobre el suelo (m)" value={p.device.height} min={0.5} max={gw ? 60 : 30} onCommit={(v) => p.onPatch({ height: v })} />
+          <NumberField label="Altura sobre el suelo (m)" value={p.device.height} min={0.5} max={gw ? 60 : 30} disabled={p.locked} onCommit={(v) => p.onPatch({ height: v })} />
           <NumberField label="Potencia TX (dBm)" value={p.device.tx_power} step={1} min={-10} max={gw ? 36 : 30} disabled={ro} onCommit={(v) => p.onPatch({ tx_power: v })} />
           <NumberField label="Ganancia de antena (dBi)" value={p.device.gain} min={-10} max={20} disabled={ro} onCommit={(v) => p.onPatch({ gain: v })} />
           <NumberField label="Pérdida en cable (dB)" value={p.device.cable_loss} min={0} max={20} disabled={ro} onCommit={(v) => p.onPatch({ cable_loss: v })} />
@@ -219,7 +220,7 @@ export default function DevicePanel(p: Props) {
           </label>
           <label className="field">
             <span>Entorno</span>
-            <select value={node.environment ?? p.project.settings.environment} onChange={(e) => p.onPatch({ environment: e.target.value })}>
+            <select value={node.environment ?? p.project.settings.environment} disabled={p.locked} onChange={(e) => p.onPatch({ environment: e.target.value })}>
               {Object.entries(p.catalog.environments).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </select>
           </label>
@@ -240,7 +241,9 @@ export default function DevicePanel(p: Props) {
         </label>
       )}
 
-      {ro ? (
+      {p.locked ? (
+        <p className="hint">Modo Ver: nada se puede mover ni cambiar. Cambia a «Editar» arriba del panel para modificarlo.</p>
+      ) : ro ? (
         <p className="hint">Modo lector: puedes probar otra altura{node && !cellular ? ' u otro entorno' : ''}; tus cambios
           se guardan solo para ti y el proyecto original no cambia.</p>
       ) : (

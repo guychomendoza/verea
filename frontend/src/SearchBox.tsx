@@ -34,7 +34,7 @@ export default function SearchBox({ onPick }: { onPick: (p: Place) => void }) {
         <input type="search" value={q} placeholder="Buscar un lugar o 21.88, -102.29"
           aria-label="Buscar ubicación" onChange={(e) => { setQ(e.target.value); setResults(null) }}
           onKeyDown={(e) => e.key === 'Escape' && setResults(null)} />
-        <button className="btn" type="submit" disabled={busy}>{busy ? '…' : 'Ir'}</button>
+        <button className="btn" type="submit" disabled={busy}>{busy ? 'Buscando…' : 'Buscar'}</button>
       </form>
       {error && <div className="search-results error">{error}</div>}
       {results && (

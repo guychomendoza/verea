@@ -25,6 +25,7 @@ interface Props {
   status: string
   user?: { onProjects?: () => void; onShare?: () => void }
   save?: { state: SaveState; savedAt: Date | null; autosave: boolean; onSave: () => void }   // team cloud projects
+  edit?: { on: boolean; onChange: (on: boolean) => void }     // Ver / Editar (not for viewers)
   onConfig: () => void                 // Configuración: account and appearance
   // Viewer mode: the project is read-only except heights / environments, which are the viewer's own
   viewer?: { changes: number; onRestore: () => void; onFiles: () => void }
@@ -126,6 +127,7 @@ function FileMenu({ items }: { items: MenuItem[] }) {
 export default function Sidebar(p: Props) {
   const file = useRef<HTMLInputElement>(null)
   const [describing, setDescribing] = useState(false)
+  const ro = !!p.viewer || (!!p.edit && !p.edit.on)      // nothing editable (a viewer, or Ver)
   const s = p.project.settings
   const lora = Object.entries(p.catalog.node_profiles).filter(([, v]) => v.link !== 'cellular')
   const cellModels = Object.entries(p.catalog.node_profiles).filter(([, v]) => v.link === 'cellular')
@@ -158,12 +160,12 @@ export default function Sidebar(p: Props) {
   const envs = new Set(loraNodes.map((n) => n.environment ?? s.environment))
   const commonEnv = envs.size === 1 ? [...envs][0] : ''
 
-  const fileItems: MenuItem[] = p.viewer ? [] : [
+  const fileItems: MenuItem[] = p.viewer ? [] : ([
     ['Nuevo', p.onNew, 'Un proyecto vacío', 'file-plus'],
     [p.user ? 'Importar archivo…' : 'Abrir…', () => file.current?.click(), 'Un proyecto .verea.json', 'upload'],
     ['Guardar archivo', p.onExport, 'Descargar el proyecto como .verea.json', 'download'],
     ['Importar parcelas…', p.onImportPlots, 'KML, KMZ, Excel o CSV con pines y parcelas', 'layers'],
-  ]
+  ] as MenuItem[]).filter(([label]) => !ro || label !== 'Importar parcelas…')
 
   const history = (
     <span className="history-btns">
@@ -178,14 +180,15 @@ export default function Sidebar(p: Props) {
     <aside className="panel side-panel" aria-label="Proyecto">
       <div className="brand-bar">
         <Logo width={104} />
-        <button className="icon-btn ml-auto" onClick={p.onConfig} title="Configuración: cuenta y apariencia"
+        {p.edit && <EditToggle {...p.edit} />}
+        <button className={`icon-btn ${p.edit ? '' : 'ml-auto'}`} onClick={p.onConfig} title="Configuración: cuenta y apariencia"
           aria-label="Configuración"><Icon name="settings" size={17} /></button>
       </div>
 
       {/* ── the project: name, description, what it has ── */}
       <div className="project-card">
         <div className="project-head">
-          {p.viewer ? (
+          {ro ? (
             <h2 className="project-title">{p.project.name || 'Proyecto sin nombre'}</h2>
           ) : (
             <input className="project-name" placeholder="Proyecto sin nombre" value={p.project.name}
@@ -196,7 +199,7 @@ export default function Sidebar(p: Props) {
               <Icon name="folder" /></button>
           )}
         </div>
-        {p.viewer ? (
+        {ro ? (
           p.project.description && <p className="project-description-text whitespace-pre-line">{p.project.description}</p>
         ) : (p.project.description || describing) ? (
           <textarea className="project-description" rows={2} maxLength={2000} placeholder="Descripción (aparece en el reporte)"
@@ -240,7 +243,7 @@ export default function Sidebar(p: Props) {
       <StatusLine text={p.status} />
 
       {/* ── add devices / tools ── */}
-      {!p.viewer && (
+      {!ro && (
         <Section id="add" title="Agregar al mapa" icon={<SectionIcon name="plus" />}>
           <div className="flex flex-wrap gap-1.5">
             <button className={`btn ${p.mode === 'addGateway' ? 'btn-active' : ''}`} title="G"
@@ -290,7 +293,7 @@ export default function Sidebar(p: Props) {
       {/* ── sensors, by technology ── */}
       <Section id="nodes" title="Sensores" icon={<SectionIcon name="sensors" />}
         count={shown.length === p.project.nodes.length ? p.project.nodes.length : `${shown.length} de ${p.project.nodes.length}`}
-        actions={p.project.nodes.length > 0 && !p.viewer && (
+        actions={p.project.nodes.length > 0 && !ro && (
           <button className="btn-ghost underline text-xs" onClick={() => p.onBulk()}>Cambiar modelo…</button>
         )}>
         {p.project.nodes.length === 0 && <p className="hint">Sin sensores todavía.</p>}
@@ -351,12 +354,12 @@ export default function Sidebar(p: Props) {
         {p.catalog.cell_operators.length ? (
           <>
             <label className="field"><span>Operador</span>
-              <select value={s.cell_operator ?? ''} disabled={!!p.viewer} onChange={(e) => p.onSettings({ cell_operator: e.target.value || undefined })}>
+              <select value={s.cell_operator ?? ''} disabled={ro} onChange={(e) => p.onSettings({ cell_operator: e.target.value || undefined })}>
                 <option value="">—</option>
                 {p.catalog.cell_operators.map((o) => <option key={o}>{o}</option>)}
               </select>
             </label>
-            {noCell > 0 && !p.viewer && (
+            {noCell > 0 && !ro && (
               <button className="btn" onClick={() => p.onBulk({ groups: ['cell-none'], model: 'dragino_se0x_lb' })}>
                 Cambiar los {noCell} sensores sin 4G a LoRa…
               </button>
@@ -374,7 +377,7 @@ export default function Sidebar(p: Props) {
 
       {/* ── radio settings ── */}
       <Section id="radio" title="Ajustes de radio" icon={<SectionIcon name="sliders" />} defaultOpen={false}>
-        <fieldset disabled={!!p.viewer} className="contents">
+        <fieldset disabled={ro} className="contents">
           <label className="field"><span>Frecuencia (MHz)</span>
             <select value={s.freq_mhz} onChange={(e) => p.onSettings({ freq_mhz: Number(e.target.value) })}>
               {p.catalog.freq_mhz.map((f) => <option key={f} value={f}>{f}</option>)}
@@ -464,5 +467,17 @@ function StatusLine({ text }: { text: string }) {
         ? <span key={i} className="status-error"><Icon name="alert" size={13} /> {t.replace(/^⚠\s*/, '')}</span>
         : <span key={i}>{t}</span>)}
     </p>
+  )
+}
+
+/** Ver / Editar: in Ver the map and the panels cannot change anything (no accidental drags). */
+function EditToggle({ on, onChange }: NonNullable<Props['edit']>) {
+  return (
+    <div className="segmented edit-toggle ml-auto" role="radiogroup" aria-label="Modo">
+      <button role="radio" aria-checked={!on} className={on ? '' : 'active'} onClick={() => onChange(false)}
+        title="Solo ver: nada se mueve por accidente"><Icon name="eye" size={14} /> Ver</button>
+      <button role="radio" aria-checked={on} className={on ? 'active' : ''} onClick={() => onChange(true)}
+        title="Mover, agregar y cambiar"><Icon name="pencil" size={14} /> Editar</button>
+    </div>
   )
 }
