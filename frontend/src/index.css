@@ -340,6 +340,11 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-
 .section-count { font-size: 11px; font-weight: 600; color: var(--muted); background: var(--bg); border-radius: 999px; padding: 0 7px; }
 .section-body { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.save-box { display: flex; align-items: center; gap: 8px; flex-basis: 100%; }
+.save-box .btn { display: inline-flex; align-items: center; gap: 6px; }
+.save-state { font-size: 12px; color: var(--muted); }
+.save-state.pending { color: var(--warn); }
+.save-state.error, .save-state.conflict { color: var(--bad); }
 .menu { position: relative; }
 .menu-list {
   position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 190px; display: flex; flex-direction: column;

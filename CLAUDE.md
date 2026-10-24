@@ -35,7 +35,7 @@ frontend, DB with users) is planned.
 - `app.py` — the whole Streamlit UI (sidebar, map, panels, report, projects, autosave).
 - `core/network.py` — device dicts → Gateway/EndNode, `RFSettings`, `analyze_link`, `best_link`,
   `cell_state`: the calculations shared by Streamlit and the API (results must stay identical).
-- `frontend/` — React + MapLibre web app: `App.tsx` (state, recalculation, autosave, shortcuts,
+- `frontend/` — React + MapLibre web app: `App.tsx` (state, recalculation, saving, shortcuts,
   resizable/collapsible panels via react-resizable-panels), `MapView.tsx` (map, drag, add, ruler,
   labels "name / km · dB", profile cursor and pins), `ProfilePanel.tsx` + `profilePlot.ts`
   ("Perfil de Elevación", Plotly loaded on demand from `plotly.ts`, same traces as
@@ -44,6 +44,10 @@ frontend, DB with users) is planned.
   localStorage, "Archivo ▾" menu, sensors grouped by technology — LoRa / 4G / stations, each folding — in natural
   alphabetical order, one environment for every LoRa node at once = `bulkEnvironment`, viewers too),
   `DevicePanel.tsx`,
+  `autosave.ts` (since 2026-10-24 team projects save with the Guardar button / Ctrl+S; autosave is opt-in in
+  Configuración → Guardado, off by default, per browser; unsaved edits are kept as a browser draft
+  `verea.draft.<id>` offered back on reopen; opening / creating / importing another project with unsaved
+  changes asks Guardar / Descartar / Cancelar; viewers' own changes still save by themselves),
   `counts.ts` (devices per kind / model and per status colour) feeds the map counter
   (`NetworkCounter.tsx`) and the report's three summary tables (gateways, LoRa, 4G),
   `report/` (built in the browser; PDF only, with jsPDF = summary: whole-project map — from a

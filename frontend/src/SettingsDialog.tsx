@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import type * as cloud from './cloud'
 import { Icon, type IconName } from './icons'
 import { applyTheme, savedTheme, type Theme } from './theme'
+import { isTeam } from './cloud'
+import { setAutosave, useAutosave } from './autosave'
 
-type Tab = 'account' | 'appearance' | 'admin'
+type Tab = 'account' | 'appearance' | 'saving' | 'admin'
 
 interface Props {
   // Cloud mode: the signed-in account (local mode has no account: appearance only)
@@ -25,6 +27,7 @@ export default function SettingsDialog({ account, onClose }: Props) {
   const tabs: [Tab, string, IconName][] = [
     ...(account ? [['account', 'Cuenta', 'user'] as [Tab, string, IconName]] : []),
     ['appearance', 'Apariencia', 'palette'],
+    ...(account && isTeam(account.me) ? [['saving', 'Guardado', 'save'] as [Tab, string, IconName]] : []),
     ...(account?.onUsers ? [['admin', 'Administración', 'users'] as [Tab, string, IconName]] : []),
   ]
   const [tab, setTab] = useState<Tab>(tabs[0][0])
@@ -51,6 +54,7 @@ export default function SettingsDialog({ account, onClose }: Props) {
           <div className="settings-panel" role="tabpanel" aria-label={tabs.find((t) => t[0] === tab)?.[1]}>
             {tab === 'account' && account && <AccountTab {...account} />}
             {tab === 'appearance' && <AppearanceTab />}
+            {tab === 'saving' && <SavingTab />}
             {tab === 'admin' && account?.onUsers && (
               <>
                 <p className="hint">
@@ -143,6 +147,22 @@ function AppearanceTab() {
         </div>
         <small className="hint">Automático sigue la configuración de tu sistema. Se recuerda en este navegador.</small>
       </div>
+    </div>
+  )
+}
+
+function SavingTab() {
+  const autosave = useAutosave()
+  return (
+    <div className="flex flex-col gap-3">
+      <label className="flex items-start gap-2">
+        <input type="checkbox" checked={autosave} onChange={(e) => setAutosave(e.target.checked)} />
+        <span><b>Autoguardado</b><br />
+          <small className="hint">Guarda el proyecto en la nube unos segundos después de cada cambio. Apagado, los cambios
+            se guardan solo con el botón Guardar o Ctrl+S.</small></span>
+      </label>
+      <small className="hint">Sin guardar, tus cambios quedan como borrador en este navegador: si cierras la pestaña,
+        Verea te ofrece recuperarlos la próxima vez. Se recuerda en este navegador.</small>
     </div>
   )
 }

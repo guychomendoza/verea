@@ -9,6 +9,7 @@ import { db } from './geo'
 import { STATE_GROUPS, nodeState } from './nodeStatus'
 import { isCellular, isStation } from './project'
 import { SHORTCUT_HELP } from './shortcuts'
+import type { SaveState } from './autosave'
 import type { Catalog, CellStatus, LinkResult, NodeDevice, Project, Selection, Settings } from './types'
 
 interface Props {
@@ -23,6 +24,7 @@ interface Props {
   showLabels: boolean
   status: string
   user?: { onProjects?: () => void; onShare?: () => void }
+  save?: { state: SaveState; savedAt: Date | null; autosave: boolean; onSave: () => void }   // team cloud projects
   onConfig: () => void                 // Configuración: account and appearance
   // Viewer mode: the project is read-only except heights / environments, which are the viewer's own
   viewer?: { changes: number; onRestore: () => void; onFiles: () => void }
@@ -183,6 +185,7 @@ export default function Sidebar(p: Props) {
         </>
       )}
       <div className="toolbar">
+        {p.save && <SaveButton {...p.save} />}
         {p.viewer && <button className="btn" onClick={p.viewer.onFiles}>← Mis archivos</button>}
         {fileItems.length > 0 && <FileMenu items={fileItems} />}
         {p.user?.onProjects && <button className="btn" onClick={p.user.onProjects}>Proyectos…</button>}
@@ -390,4 +393,25 @@ const SectionIcon = ({ name }: { name: IconName }) => <Icon name={name} size={15
 
 const GROUP_TITLES: Record<DeviceKind, string> = {
   gateway: 'Gateways', lora: 'Sensores LoRa', cellular: 'Sensores 4G', station: 'Estaciones meteorológicas',
+}
+
+/** Guardar (team cloud projects) with the save state beside it. */
+function SaveButton({ state, savedAt, autosave, onSave }: NonNullable<Props['save']>) {
+  const time = savedAt?.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
+  const text = {
+    saved: time ? `Guardado ${time}` : 'Guardado',
+    saving: 'Guardando…',
+    pending: autosave ? 'Se guardará en unos segundos' : 'Cambios sin guardar',
+    conflict: 'Sin guardar: hay otra versión',
+    error: 'No se pudo guardar',
+  }[state]
+  return (
+    <span className="save-box">
+      <button className={`btn ${state === 'pending' || state === 'error' ? 'btn-active' : ''}`} onClick={onSave}
+        disabled={state === 'saved' || state === 'saving' || state === 'conflict'} title="Guardar el proyecto (Ctrl+S)">
+        <Icon name="save" /> Guardar
+      </button>
+      <span className={`save-state ${state}`} aria-live="polite">{text}</span>
+    </span>
+  )
 }

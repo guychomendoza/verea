@@ -28,6 +28,7 @@ import ImportDialog from './import/ImportDialog'
 import ReportDialog from './report/ReportDialog'
 import SearchBox from './SearchBox'
 import { shortcutFor } from './shortcuts'
+import { clearDraft, loadDraft, saveDraft, useAutosave, type Draft, type SaveState } from './autosave'
 import Sidebar from './Sidebar'
 import type { Catalog, CellStatus, Gateway, LinkDetail, LinkResult, NodeDevice, Project, Radial, Selection } from './types'
 
@@ -36,7 +37,8 @@ const LAST_PROJECT_KEY = 'verea.lastProject'
 const VIEWER_FILE_KEY = 'verea.viewerFile'
 const OVERRIDES_DELAY_MS = 1000
 const RECALC_DELAY_MS = 400
-const SAVE_DELAY_MS = 1500
+const SAVE_DELAY_MS = 1500                 // autosave (opt-in) after the last change
+const DRAFT_DELAY_MS = 800                 // browser draft of unsaved edits
 const SHORTCUT_NODE_MODEL = 'dragino_lse01'
 const NARROW_PX = 900
 
@@ -258,8 +260,6 @@ interface CloudDoc {
   owner_id: string
 }
 
-type SaveState = 'saved' | 'saving' | 'pending' | 'conflict' | 'error'
-
 function Workspace({ catalog, user, viewer }: {
   catalog: Catalog; user?: User; viewer?: ViewerDoc & { onFiles: () => void }
 }) {
@@ -310,6 +310,10 @@ function Workspace({ catalog, user, viewer }: {
   const [showProjects, setShowProjects] = useState(false)
   const savedRef = useRef<Project | null>(null)       // the project as last loaded / saved
   const savingRef = useRef(false)
+  const autosave = useAutosave()
+  const [savedAt, setSavedAt] = useState<Date | null>(null)
+  const [recover, setRecover] = useState<Draft | null>(null)       // unsaved edits from an earlier session
+  const [leaving, setLeaving] = useState<{ next: () => void } | null>(null)   // "unsaved changes" dialog
 
   useEffect(() => { if (!cloudMode) store(STORAGE_KEY, JSON.stringify(project)) }, [project, cloudMode])
 
@@ -318,6 +322,8 @@ function Workspace({ catalog, user, viewer }: {
     dispatch({ type: 'open', project: p })
     setDoc(d)
     setSaveState('saved')
+    setSavedAt(new Date(d.updated_at))
+    setRecover(null)
     setSelection(null)
     store(LAST_PROJECT_KEY, d.id)
     showAll(p)
@@ -327,6 +333,9 @@ function Workspace({ catalog, user, viewer }: {
     const r = await cloud.loadProject(id)
     const p = { ...r.project, settings: { ...catalog.defaults, ...r.project.settings } }
     openDoc(p, { id, updated_at: r.updated_at, owner_id: r.owner_id })
+    const draft = loadDraft(id)
+    if (draft && JSON.stringify(draft.project) !== JSON.stringify(p)) setRecover(draft)
+    else if (draft) clearDraft(id)
   }, [catalog, openDoc])
 
   const createCloud = useCallback(async (p: Project) => {
@@ -352,41 +361,52 @@ function Workspace({ catalog, user, viewer }: {
     })().catch((e) => { setSaveState('error'); setSaveError(e.message) })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** Save the current project to the cloud now (autosave timer and Ctrl+S). */
+  /** Save the current project to the cloud now (Guardar, Ctrl+S, autosave); true when it is saved. */
   const projectRef = useRef(project)
   projectRef.current = project
   const docRef = useRef(doc)
   docRef.current = doc
-  const saveNow = useCallback(async () => {
+  const saveNow = useCallback(async (): Promise<boolean> => {
     const d = docRef.current
     const p = projectRef.current
-    if (!d || savingRef.current || p === savedRef.current) return
+    if (!d || savingRef.current) return false
+    if (p === savedRef.current) return true
     savingRef.current = true
     setSaveState('saving')
     try {
       const updated = await cloud.saveProject(d.id, p, d.updated_at)
       if (updated === null) {
         setSaveState('conflict')
-        return
+        return false
       }
       savedRef.current = p
       setDoc({ ...d, updated_at: updated })
+      setSavedAt(new Date())
+      if (projectRef.current === p) clearDraft(d.id)
       setSaveState(projectRef.current === p ? 'saved' : 'pending')
+      return true
     } catch (e) {
       setSaveState('error')
       setSaveError(e instanceof Error ? e.message : String(e))
+      return false
     } finally {
       savingRef.current = false
     }
   }, [])
 
-  // Autosave shortly after the last change
+  // After a change: autosave (if turned on) or keep a draft in this browser until Guardar
   useEffect(() => {
     if (!teamCloud || !doc || project === savedRef.current || saveState === 'conflict') return
     setSaveState('pending')
-    const t = setTimeout(saveNow, SAVE_DELAY_MS)
+    const t = autosave
+      ? setTimeout(saveNow, SAVE_DELAY_MS)
+      : setTimeout(() => saveDraft(doc.id, project, doc.updated_at), DRAFT_DELAY_MS)
     return () => clearTimeout(t)
-  }, [project, doc, teamCloud]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [project, doc, teamCloud, autosave]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Run `next` (open / create another project) after asking about unsaved changes. */
+  const unsaved = teamCloud && (saveState === 'pending' || saveState === 'saving' || saveState === 'error')
+  const guard = (next: () => void) => { if (unsaved) setLeaving({ next }); else next() }
 
   // Viewer: their changes (what differs from the shared project) are saved shortly after
   const overrides = useMemo(() => (viewer ? overridesOf(viewer.base, project) : {}), [viewer, project])
@@ -415,8 +435,8 @@ function Workspace({ catalog, user, viewer }: {
   const saveText = !cloudMode ? '' : viewer ? {
     saved: '', saving: '☁ Guardando tus cambios…', pending: '☁ Guardando tus cambios…',
     conflict: '', error: `⚠ Tus cambios no se guardaron: ${saveError}`,
-  }[saveState] : {
-    saved: '☁ Guardado', saving: '☁ Guardando…', pending: '☁ Cambios sin guardar…',
+  }[saveState] : {   // team projects: the Guardar button shows the state; problems also go here
+    saved: '', saving: '', pending: '',
     conflict: '⚠ Sin guardar: alguien más lo modificó', error: `⚠ Sin guardar: ${saveError}`,
   }[saveState]
 
@@ -571,7 +591,7 @@ function Workspace({ catalog, user, viewer }: {
   const keyHandler = useRef<(e: KeyboardEvent) => void>(() => {})
   keyHandler.current = (e: KeyboardEvent) => {
     const action = shortcutFor(e)
-    if (!action || showReport || showProjects || showImport || bulk || suggest || showShare || localSettings) return
+    if (!action || showReport || showProjects || showImport || bulk || suggest || showShare || localSettings || leaving) return
     if (viewer && (action === 'addGateway' || action === 'addNode')) return
     if (action === 'save' || action === 'undo' || action === 'redo' || (action === 'addGateway' && (e.ctrlKey || e.metaKey))) e.preventDefault()
     switch (action) {
@@ -617,7 +637,10 @@ function Workspace({ catalog, user, viewer }: {
       const n = await api.normalize(raw)
       const p: Project = { ...n, version: PROJECT_VERSION, settings: { ...catalog.defaults, ...n.settings } }
       if (cloudMode) {
-        await createCloud(p)             // an imported file becomes a new cloud project
+        guard(() => {                    // an imported file becomes a new cloud project
+          createCloud(p).then(() => setStatus(`Abierto: ${file.name}`)).catch((e) => setStatus(`⚠ ${e.message}`))
+        })
+        return
       } else {
         dispatch({ type: 'open', project: p })
         setSelection(null)
@@ -672,6 +695,7 @@ function Workspace({ catalog, user, viewer }: {
       mode={mode} addModel={addModel} showCoverage={showCoverage}
       status={[saveText, status].filter(Boolean).join(' · ')}
       user={user && !viewer ? { onProjects: () => setShowProjects(true), onShare: doc ? () => setShowShare(true) : undefined } : undefined}
+      save={teamCloud ? { state: saveState, savedAt, autosave, onSave: () => { saveNow() } } : undefined}
       onConfig={user ? user.onSettings : () => setLocalSettings(true)}
       viewer={viewer ? { changes: changeCount(overrides), onFiles: viewer.onFiles,
         onRestore: () => { dispatch({ type: 'open', project: viewer.base }); setStatus('Valores originales restaurados') } } : undefined}
@@ -696,7 +720,7 @@ function Workspace({ catalog, user, viewer }: {
         onUndo: () => undoRedo('undo'), onRedo: () => undoRedo('redo') }}
       onNew={() => {
         if (cloudMode) {
-          createCloud(emptyProject(catalog.defaults)).catch((e) => setStatus(`⚠ ${e.message}`))
+          guard(() => createCloud(emptyProject(catalog.defaults)).catch((e) => setStatus(`⚠ ${e.message}`)))
           return
         }
         if (!confirm('¿Empezar un proyecto vacío? Guarda antes el actual en un archivo si lo necesitas.')) return
@@ -746,11 +770,26 @@ function Workspace({ catalog, user, viewer }: {
         <div className="conflict-banner" role="alert">
           Alguien más guardó este proyecto después de que lo abriste. Tus últimos cambios no están guardados.
           <div className="flex gap-2 mt-2">
-            <button className="btn" onClick={() => openCloud(doc.id)}>Cargar su versión</button>
+            <button className="btn" onClick={() => { clearDraft(doc.id); openCloud(doc.id) }}>Cargar su versión</button>
             <button className="btn btn-active" onClick={() =>
               createCloud({ ...project, name: `${project.name || 'Sin nombre'} (mi copia)` })}>
               Guardar la mía como copia
             </button>
+          </div>
+        </div>
+      )}
+      {recover && doc && (
+        <div className="conflict-banner" role="alert">
+          Tienes cambios sin guardar de la última vez ({new Date(recover.at).toLocaleString('es-MX',
+            { dateStyle: 'medium', timeStyle: 'short' })}).
+          {recover.base !== doc.updated_at && ' Ojo: alguien guardó el proyecto después; si los recuperas y guardas, reemplazarás su versión.'}
+          <div className="flex gap-2 mt-2">
+            <button className="btn" onClick={() => { clearDraft(doc.id); setRecover(null) }}>Descartar</button>
+            <button className="btn btn-active" onClick={() => {
+              dispatch({ type: 'open', project: recover.project })
+              setRecover(null)
+              setStatus('Cambios recuperados: falta guardarlos')
+            }}>Recuperar</button>
           </div>
         </div>
       )}
@@ -787,7 +826,7 @@ function Workspace({ catalog, user, viewer }: {
     <>
       {showProjects && user && (
         <ProjectsDialog me={user.me} currentId={doc?.id ?? null}
-          onOpen={(id) => { setShowProjects(false); openCloud(id).catch((e) => setStatus(`⚠ ${e.message}`)) }}
+          onOpen={(id) => { setShowProjects(false); guard(() => openCloud(id).catch((e) => setStatus(`⚠ ${e.message}`))) }}
           onDeleted={(id) => {
             if (id === doc?.id) {
               setDoc(null)
@@ -799,6 +838,23 @@ function Workspace({ catalog, user, viewer }: {
       )}
       {showShare && doc && (
         <ShareDialog projectId={doc.id} projectName={project.name} onClose={() => setShowShare(false)} />
+      )}
+      {leaving && doc && (
+        <div className="dialog-backdrop" onClick={() => setLeaving(null)}>
+          <div className="dialog" role="alertdialog" aria-label="Cambios sin guardar" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-base font-semibold">Cambios sin guardar</h2>
+            <p className="hint">«{project.name || 'Proyecto sin nombre'}» tiene cambios que no se han guardado.</p>
+            <div className="flex gap-2 justify-end">
+              <button className="btn" onClick={() => setLeaving(null)}>Cancelar</button>
+              <button className="btn" onClick={() => { const next = leaving.next; clearDraft(doc.id); setLeaving(null); next() }}>
+                Descartar cambios</button>
+              <button className="btn btn-active" autoFocus onClick={async () => {
+                const next = leaving.next
+                if (await saveNow()) { setLeaving(null); next() }
+              }}>Guardar</button>
+            </div>
+          </div>
+        </div>
       )}
       {localSettings && <SettingsDialog onClose={() => setLocalSettings(false)} />}
       {suggest && (

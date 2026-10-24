@@ -3,7 +3,8 @@ End-to-end check of the cloud mode against a fake Supabase answered inside the b
 Playwright intercepts the auth, REST and RPC calls and serves them from in-memory tables.
 The real database rules are tested in supabase/tests.
 
-Covers: login (Google button, team login with show/hide password), autosave, team projects,
+Covers: login (Google button, team login with show/hide password), the Guardar button, the unsaved
+changes draft and dialog, opt-in autosave, team projects,
 edit conflicts; sharing a link; a viewer opening it (read-only workspace, owners hidden, their
 own height change saved apart and kept on reload, PDF with the link, their files, profile, lost
 access); an admin turning the viewer into an editor.
@@ -235,6 +236,7 @@ def pdf_from(page, downloads):
 def main():
     errors = []
     sample = json.load(open("frontend/e2e/sample.verea.json"))
+    add_project("Ana's field", ANA["id"], {**sample, "name": "Ana's field"})
     add_project("Beto's orchard", BETO["id"], {**sample, "name": "Beto's orchard"})
     with sync_playwright() as pw:
         b = pw.chromium.launch()
@@ -267,12 +269,49 @@ def main():
         expect(side.get_by_role("button", name="Configuración")).to_be_visible(timeout=20000)
         # opens the most recent team project (Beto's)
         expect(page.get_by_label("Nombre del proyecto")).to_have_value("Beto's orchard", timeout=20000)
-        # edit -> autosaved
+        save_state = side.locator(".save-state")
+        pid = next(k for k, v in PROJECTS.items() if v["name"] == "Beto's orchard")
+        # edit -> not saved until Guardar (autosave is off by default)
         page.get_by_label("Nombre del proyecto").fill("Beto's orchard v2")
-        expect(side.get_by_role("status")).to_contain_text("Guardado", timeout=10000)
-        pid = next(k for k, v in PROJECTS.items() if v["name"] == "Beto's orchard v2")
-        assert PROJECTS[pid]["updated_by"] == ANA["id"]
-        print("autosaved:", PROJECTS[pid]["name"])
+        expect(save_state).to_have_text("Cambios sin guardar")
+        time.sleep(2.5)
+        assert PROJECTS[pid]["name"] == "Beto's orchard", "nothing is saved without Guardar"
+        side.get_by_role("button", name="Guardar", exact=True).click()
+        expect(save_state).to_contain_text("Guardado", timeout=10000)
+        assert PROJECTS[pid]["name"] == "Beto's orchard v2" and PROJECTS[pid]["updated_by"] == ANA["id"]
+        print("Guardar button:", PROJECTS[pid]["name"])
+        # unsaved edits survive a reload as a draft offered back
+        page.get_by_label("Nombre del proyecto").fill("Beto's orchard draft")
+        time.sleep(1.5)
+        page.reload()
+        recover = page.get_by_role("alert").filter(has_text="cambios sin guardar de la última vez")
+        expect(recover).to_be_visible(timeout=20000)
+        expect(page.get_by_label("Nombre del proyecto")).to_have_value("Beto's orchard v2")
+        recover.get_by_role("button", name="Recuperar").click()
+        expect(page.get_by_label("Nombre del proyecto")).to_have_value("Beto's orchard draft")
+        expect(save_state).to_have_text("Cambios sin guardar")
+        print("draft recovered after reload")
+        # opening another project asks first; Cancelar keeps the edits
+        side.get_by_role("button", name="Proyectos…").click()
+        page.get_by_role("dialog", name="Proyectos del equipo").get_by_role("button", name=re.compile("^Ana's field")).click()
+        leave = page.get_by_role("alertdialog", name="Cambios sin guardar")
+        expect(leave).to_be_visible()
+        leave.get_by_role("button", name="Cancelar").click()
+        expect(page.get_by_label("Nombre del proyecto")).to_have_value("Beto's orchard draft")
+        side.get_by_role("button", name="Guardar", exact=True).click()
+        expect(save_state).to_contain_text("Guardado", timeout=10000)
+        assert PROJECTS[pid]["name"] == "Beto's orchard draft"
+        print("leave dialog: cancel keeps edits, then saved")
+        # autosave, turned on in Configuración
+        side.get_by_role("button", name="Configuración").click()
+        settings = page.get_by_role("dialog", name="Configuración")
+        settings.get_by_role("tab", name="Guardado").click()
+        settings.get_by_label(re.compile("Autoguardado")).check()
+        settings.get_by_role("button", name="Cerrar").click()
+        page.get_by_label("Nombre del proyecto").fill("Beto's orchard v3")
+        expect(save_state).to_contain_text("Guardado", timeout=10000)
+        assert PROJECTS[pid]["name"] == "Beto's orchard v3"
+        print("autosave on:", PROJECTS[pid]["name"])
         # someone else saves meanwhile -> my next save is refused, not overwritten
         PROJECTS[pid].update(name="Beto's edit", data={**PROJECTS[pid]["data"], "name": "Beto's edit"},
                              updated_at=now(), updated_by=BETO["id"])
