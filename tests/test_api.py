@@ -260,3 +260,25 @@ def test_gateway_suggestions_are_for_the_team(supabase, monkeypatch):
     assert r.status_code != 403
     c.post("/api/suggest-gateways", json=body, headers=hdr(viewer))
     assert asked.count(viewer) == 1                                            # role cached
+
+
+# ── rate limit ──
+def test_rate_limit_per_client_and_endpoint():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from backend.ratelimit import RateLimit
+
+    clock = [0.0]
+    mini = FastAPI()
+    mini.add_middleware(RateLimit, limits={"/api/heavy": 2}, default=3, clock=lambda: clock[0])
+    for path in ("/api/heavy", "/api/light", "/api/health"):
+        mini.add_api_route(path, lambda: {"ok": True})
+    c = TestClient(mini)
+    assert [c.get("/api/heavy").status_code for _ in range(3)] == [200, 200, 429]
+    r = c.get("/api/heavy")
+    assert r.status_code == 429 and int(r.headers["Retry-After"]) > 0
+    assert c.get("/api/light").status_code == 200                       # its own bucket
+    assert c.get("/api/heavy", headers={"Fly-Client-IP": "10.0.0.2"}).status_code == 200   # another client
+    assert all(c.get("/api/health").status_code == 200 for _ in range(10))  # never limited
+    clock[0] = 61.0                                                      # a minute later
+    assert c.get("/api/heavy").status_code == 200

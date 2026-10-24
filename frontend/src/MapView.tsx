@@ -183,7 +183,8 @@ export default function MapView(props: Props) {
     coverageCtl.current = coverage
     mapRef.current = map
     propsRef.current.onReady?.(map)
-    if (import.meta.env.DEV) (window as unknown as { __vereaMap: maplibregl.Map }).__vereaMap = map
+    // tests: the dev server, or a production build made with VITE_E2E=1 (CSP check)
+    if (import.meta.env.DEV || import.meta.env.VITE_E2E) (window as unknown as { __vereaMap: maplibregl.Map }).__vereaMap = map
 
     const featureAt = (e: MapMouseEvent | MapTouchEvent) =>
       map.queryRenderedFeatures(e.point, { layers: ['devices'] })[0]

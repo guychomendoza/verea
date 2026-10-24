@@ -9,6 +9,7 @@ for the web frontend. Run from the repository root:
 Environment:
   VEREA_CORS_ORIGINS   comma-separated origins allowed to call the API
   VEREA_DEV=1          accept requests without a login (local development only)
+  VEREA_RATE_LIMIT     requests per minute per client (default 240; heavy endpoints lower, ratelimit.py)
 """
 
 import json
@@ -33,6 +34,7 @@ sys.path.insert(0, str(ROOT))
 
 import core.network as net  # noqa: E402
 from backend.auth import require_team, require_user  # noqa: E402
+from backend.ratelimit import RateLimit  # noqa: E402
 from backend.schemas import (  # noqa: E402
     CellRequest, CoverageRequest, LinkRequest, LinksRequest, ProjectBody, RadialRequest, SuggestGatewaysRequest,
 )
@@ -84,6 +86,7 @@ def coverage_sources() -> dict:
 
 
 app = FastAPI(title="Verea API", version="0.1.0")
+app.add_middleware(RateLimit)            # added first = inside CORS, so a 429 still carries the CORS headers
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in os.environ.get("VEREA_CORS_ORIGINS", "").split(",") if o.strip()],

@@ -21,6 +21,14 @@ const INK = '#e6edf4'
 const MUTED = '#9fb0c3'
 const FAINT = '#7d90a6'
 
+/** A data: URL as a Blob, without fetch() (the Content-Security-Policy does not allow fetching data: URLs). */
+export function dataUrlToBlob(url: string): Blob {
+  const [head, body] = url.split(',', 2)
+  const type = /^data:([^;,]+)/.exec(head)?.[1] ?? 'application/octet-stream'
+  const bytes = head.includes(';base64') ? Uint8Array.from(atob(body), (c) => c.charCodeAt(0)) : new TextEncoder().encode(decodeURIComponent(body))
+  return new Blob([bytes], { type })
+}
+
 export function downloadBlob(blob: Blob, filename: string) {
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)

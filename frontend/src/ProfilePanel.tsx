@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { downloadBlob, safeName } from './exportImage'
+import { dataUrlToBlob, downloadBlob, safeName } from './exportImage'
 import { loadPlotly, plotlyLoaded } from './plotly'
 import { PLOTLY_CONFIG, PIN_TRACE, TERRAIN_TRACE, profileFigure } from './profilePlot'
 import type { Profile } from './types'
@@ -90,7 +90,7 @@ export default function ProfilePanel({ profile, title, status, pins, onPins, onH
     const Plotly = await loadPlotly()
     const w = Math.max(el.current.clientWidth, 900)
     const url = await Plotly.toImage(el.current, { format: 'png', width: w, height: Math.round(w * 0.5), scale: 2 })
-    downloadBlob(await (await fetch(url)).blob(), `${safeName(title)}.png`)
+    downloadBlob(dataUrlToBlob(url), `${safeName(title)}.png`)
   }
 
   return (

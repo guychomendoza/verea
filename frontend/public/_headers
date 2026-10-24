@@ -1,9 +1,12 @@
-# Cloudflare Pages response headers
+# Cloudflare Pages response headers. The CSP allows only the API, the 4G tiles, Esri imagery, MapLibre glyphs and
+# Supabase (checked with a production build under this header, 2026-10-24): add any new external host there.
+# The future field-test mode needs geolocation=(self) in Permissions-Policy.
 /*
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=()
   Strict-Transport-Security: max-age=31536000
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://server.arcgisonline.com; font-src 'self' data:; connect-src 'self' https://api.verea.app https://tiles.verea.app https://server.arcgisonline.com https://demotiles.maplibre.org https://kepelonejrqoxdfjdcgb.supabase.co wss://kepelonejrqoxdfjdcgb.supabase.co; worker-src 'self' blob:; child-src blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
