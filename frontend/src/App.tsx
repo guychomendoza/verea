@@ -29,6 +29,7 @@ import ReportDialog from './report/ReportDialog'
 import SearchBox from './SearchBox'
 import { shortcutFor } from './shortcuts'
 import { clearDraft, loadDraft, saveDraft, useAutosave, type Draft, type SaveState } from './autosave'
+import { cleanAuthHash, projectFromPath, showProject } from './route'
 import Sidebar from './Sidebar'
 import type { Catalog, CellStatus, Gateway, LinkDetail, LinkResult, NodeDevice, Project, Radial, Selection } from './types'
 import { Alert, Icon } from './icons'
@@ -145,10 +146,11 @@ function CloudGate({ catalog, error, onSession }: { catalog: Catalog | null; err
 
   useEffect(() => {
     const sb = cloud.supabase!
-    sb.auth.getSession().then(({ data }) => setSession(data.session))
+    sb.auth.getSession().then(({ data }) => { setSession(data.session); cleanAuthHash() })
     const { data } = sb.auth.onAuthStateChange((event, s) => {
       if (event === 'PASSWORD_RECOVERY') setMustSetPassword(true)
       setSession(s)
+      cleanAuthHash()
     })
     return () => data.subscription.unsubscribe()
   }, [])
@@ -314,7 +316,7 @@ function Workspace({ catalog, user, viewer }: {
   const autosave = useAutosave()
   const [savedAt, setSavedAt] = useState<Date | null>(null)
   const [recover, setRecover] = useState<Draft | null>(null)       // unsaved edits from an earlier session
-  const [leaving, setLeaving] = useState<{ next: () => void } | null>(null)   // "unsaved changes" dialog
+  const [leaving, setLeaving] = useState<{ next: () => void; cancel?: () => void } | null>(null)   // "unsaved changes" dialog
 
   useEffect(() => { if (!cloudMode) store(STORAGE_KEY, JSON.stringify(project)) }, [project, cloudMode])
 
@@ -327,6 +329,7 @@ function Workspace({ catalog, user, viewer }: {
     setRecover(null)
     setSelection(null)
     store(LAST_PROJECT_KEY, d.id)
+    showProject(d.id)
     showAll(p)
   }, [dispatch, showAll])
 
@@ -352,7 +355,7 @@ function Workspace({ catalog, user, viewer }: {
     if (!teamCloud || startedRef.current) return
     startedRef.current = true
     ;(async () => {
-      const last = recall(LAST_PROJECT_KEY)
+      const last = projectFromPath() ?? recall(LAST_PROJECT_KEY)     // the address first (/p/<id>)
       try {
         if (last) return await openCloud(last)
       } catch { /* deleted or not reachable: fall through */ }
@@ -407,7 +410,23 @@ function Workspace({ catalog, user, viewer }: {
 
   /** Run `next` (open / create another project) after asking about unsaved changes. */
   const unsaved = teamCloud && (saveState === 'pending' || saveState === 'saving' || saveState === 'error')
-  const guard = (next: () => void) => { if (unsaved) setLeaving({ next }); else next() }
+  const guard = (next: () => void, cancel?: () => void) => { if (unsaved) setLeaving({ next, cancel }); else next() }
+
+  // Back / forward between project addresses opens that project (asking first if unsaved)
+  const guardRef = useRef(guard)
+  guardRef.current = guard
+  useEffect(() => {
+    if (!teamCloud) return
+    const onPop = () => {
+      const id = projectFromPath()
+      const current = docRef.current?.id
+      if (!id || id === current) return
+      const back = () => { if (current) showProject(current, true) }
+      guardRef.current(() => { openCloud(id).catch((e) => { setStatus(`⚠ ${e.message}`); back() }) }, back)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [teamCloud, openCloud])
 
   // Viewer: their changes (what differs from the shared project) are saved shortly after
   const overrides = useMemo(() => (viewer ? overridesOf(viewer.base, project) : {}), [viewer, project])
@@ -841,12 +860,12 @@ function Workspace({ catalog, user, viewer }: {
         <ShareDialog projectId={doc.id} projectName={project.name} onClose={() => setShowShare(false)} />
       )}
       {leaving && doc && (
-        <div className="dialog-backdrop" onClick={() => setLeaving(null)}>
+        <div className="dialog-backdrop" onClick={() => { leaving.cancel?.(); setLeaving(null) }}>
           <div className="dialog" role="alertdialog" aria-label="Cambios sin guardar" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-base font-semibold">Cambios sin guardar</h2>
             <p className="hint">«{project.name || 'Proyecto sin nombre'}» tiene cambios que no se han guardado.</p>
             <div className="flex gap-2 justify-end">
-              <button className="btn" onClick={() => setLeaving(null)}>Cancelar</button>
+              <button className="btn" onClick={() => { leaving.cancel?.(); setLeaving(null) }}>Cancelar</button>
               <button className="btn" onClick={() => { const next = leaving.next; clearDraft(doc.id); setLeaving(null); next() }}>
                 Descartar cambios</button>
               <button className="btn btn-active" autoFocus onClick={async () => {

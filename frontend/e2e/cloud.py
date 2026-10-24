@@ -333,6 +333,21 @@ def main():
         page.reload()
         expect(page.get_by_label("Nombre del proyecto")).to_have_value("Beto's edit", timeout=20000)
         print("reload keeps session and project: ok")
+        # each project has its own address; back returns to the previous one; an address opens its project
+        assert urlparse(page.url).path == f"/p/{pid}", page.url
+        side.get_by_role("button", name="Proyectos…").click()
+        page.get_by_role("dialog", name="Proyectos del equipo").get_by_role("button", name=re.compile("^Ana's field")).click()
+        expect(page.get_by_label("Nombre del proyecto")).to_have_value("Ana's field", timeout=10000)
+        ana_pid = next(k for k, v in PROJECTS.items() if v["name"] == "Ana's field")
+        assert urlparse(page.url).path == f"/p/{ana_pid}", page.url
+        page.go_back()
+        expect(page.get_by_label("Nombre del proyecto")).to_have_value("Beto's edit", timeout=10000)
+        page.goto(URL.rstrip("/") + f"/p/{ana_pid}")
+        expect(page.get_by_label("Nombre del proyecto")).to_have_value("Ana's field", timeout=20000)
+        page.goto(URL.rstrip("/") + f"/p/{pid}")
+        expect(page.get_by_label("Nombre del proyecto")).to_have_value("Beto's edit", timeout=20000)
+        assert not page.url.endswith("#"), page.url
+        print("addresses: /p/<id>, back button, opened from the address")
 
         # ── share a link ──
         side.get_by_role("button", name="Compartir", exact=True).click()

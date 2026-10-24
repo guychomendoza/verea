@@ -308,9 +308,10 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 3px var
 .files { width: min(760px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
 .files-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
-.file-card { text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px;
-  cursor: pointer; color: inherit; display: flex; flex-direction: column; gap: 6px; border-top: 3px solid var(--brand-teal); }
-.file-card:hover { border-color: var(--accent); }
+.file-card { text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 16px;
+  cursor: pointer; color: inherit; display: flex; flex-direction: column; gap: 6px; box-shadow: var(--shadow-sm);
+  transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease), border-color var(--dur); }
+.file-card:hover { border-color: var(--line-strong); box-shadow: var(--shadow); transform: translateY(-2px); }
 .viewer-banner { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; padding: 6px 8px;
   border-radius: 8px; background: color-mix(in srgb, var(--brand-teal) 14%, var(--panel)); border: 1px solid var(--brand-teal); }
 .account-table { width: 100%; border-collapse: collapse; font-size: 12px; }

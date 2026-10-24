@@ -4,6 +4,7 @@ import { pendingShare } from './share'
 import { Logo, ThemeButton } from './Logo'
 import { Icon } from './icons'
 import LoginArt from './LoginArt'
+import { returnUrl } from './route'
 
 const FEATURES = [
   'Enlaces LoRaWAN sobre el relieve real',
@@ -91,7 +92,7 @@ export function Login() {
   const google = async () => {
     if (!supabase) return
     setBusy(true)
-    const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } })
+    const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: returnUrl() } })
     if (error) {
       setMsg(error.message.includes('provider is not enabled') ? 'El acceso con Google todavía no está activado.' : error.message)
       setBusy(false)
@@ -104,7 +105,7 @@ export function Login() {
     setBusy(true)
     setMsg('')
     if (forgot) {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin })
+      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: returnUrl() })
       setMsg(error ? error.message : 'Si ese correo tiene cuenta con contraseña, te llegará un enlace para crear una nueva.')
     } else {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
