@@ -459,24 +459,35 @@ def main():
         sw = page.evaluate("document.documentElement.scrollWidth")
         assert sw <= 390, sw
         print("reload keeps project; phone scrollWidth", sw)
-        # phone: the map stays free; the panel opens full screen; a node shows a card, then its detail
+        # phone: the map keeps the upper half; panel and devices open in a half-height sheet
         assert page.get_by_role("dialog", name="Panel del proyecto").count() == 0
         page.get_by_role("button", name="Abrir el panel del proyecto").click()
         panel = page.get_by_role("dialog", name="Panel del proyecto")
         expect(panel).to_be_visible()
         expect(panel.get_by_role("radio", name="Ver")).to_have_attribute("aria-checked", "false")   # this browser chose Editar
+        box = panel.bounding_box()
+        assert box["y"] > 844 * 0.4, box                       # half the screen, the map above
         panel.get_by_role("region", name="Lista de sensores").get_by_role("button", name="N-1").click()
         expect(panel).to_have_count(0)
-        card = page.get_by_role("region", name="Seleccionado: N-1")
-        expect(card).to_contain_text("Viable")
-        card.get_by_role("button", name="Ver detalle").click()
+        summary = page.get_by_role("dialog", name="Dispositivo seleccionado")
+        expect(summary).to_contain_text("Viable")
+        expect(summary.locator(".phone-profile")).to_be_visible()   # a LoRa node: its profile first
+        page.screenshot(path=f"{OUT}/8_phone_node.png")
+        summary.get_by_role("button", name="Ver más detalles").click()
         detail = page.get_by_role("dialog", name="Detalle del dispositivo")
         expect(detail.get_by_role("complementary", name="Dispositivo")).to_be_visible()
-        expect(detail.locator(".phone-profile")).to_be_visible()
-        page.screenshot(path=f"{OUT}/8_phone_node.png")
-        detail.get_by_role("button", name="Cerrar").click()
-        expect(card).to_have_count(0)
-        print("phone: panel full screen, node card, detail with profile, closed")
+        detail.get_by_role("button", name="Resumen").click()
+        expect(summary).to_be_visible()
+        summary.get_by_role("button", name=re.compile("^Cerrar")).click()
+        expect(summary).to_have_count(0)
+        # placing a device can be cancelled from the map
+        page.get_by_role("button", name="Abrir el panel del proyecto").click()
+        page.get_by_role("dialog", name="Panel del proyecto").get_by_role("button", name="Gateway", exact=True).click()
+        banner = page.get_by_role("status").filter(has_text="para colocar el gateway")
+        expect(banner).to_be_visible()
+        banner.get_by_role("button", name="Cancelar").click()
+        expect(banner).to_have_count(0)
+        print("phone: half sheets (panel, node profile first, details), placing cancelled")
         b.close()
     print("console errors:", errors)
     print("screenshots in", OUT)

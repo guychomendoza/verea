@@ -123,7 +123,7 @@ function AccountTab({ me, onSave, onDelete, onSignOut }: NonNullable<Props['acco
       </p>
       {msg && <p className="hint" role="status">{msg}</p>}
       <div className="flex gap-2 justify-between flex-wrap">
-        <button type="button" className="btn flex items-center gap-2" onClick={onSignOut}><Icon name="logout" /> Cerrar sesión</button>
+        <button type="button" className="btn-danger flex items-center gap-2" onClick={onSignOut}><Icon name="logout" /> Cerrar sesión</button>
         <button className="btn btn-active" type="submit" disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button>
       </div>
       {me.role === 'viewer' && (

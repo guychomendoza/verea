@@ -156,9 +156,10 @@ body {
 }
 .ruler-box b { color: #ffd166; } .ruler-box .hint { color: #9fb0c3; } .ruler-box button { color: #e6edf4; }
 
-/* ── phones (Phone.tsx): the map stays free; panel and detail open full screen; a picked device = a card ── */
-.app-phone { position: fixed; inset: 0; overflow: hidden; background: var(--bg); }
-.phone-map { position: absolute; inset: 0; }
+/* ── phones (Phone.tsx): the map keeps the upper half; panel and devices open in a half-height sheet ── */
+.app-phone { --sheet: 52%; position: fixed; inset: 0; overflow: hidden; background: var(--bg); }
+.phone-map { position: absolute; left: 0; right: 0; top: 0; bottom: 0; transition: bottom .3s var(--ease); }
+.app-phone.sheet-open .phone-map { bottom: calc(var(--sheet) - 16px); }
 .phone-map .map-area { height: 100%; }
 .phone-panel-btn { position: absolute; z-index: 4; top: 10px; left: 10px; max-width: calc(100% - 70px); display: inline-flex; align-items: center;
   gap: 8px; padding: 9px 14px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
@@ -166,45 +167,54 @@ body {
   color: var(--ink); font-weight: 600; font-size: 14px; cursor: pointer; }
 .phone-panel-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app-phone .map-tools { top: 60px; left: 10px; right: 56px; max-width: none; }
-.app-phone .search-box { flex: 1; width: auto; min-width: 0; }
-.app-phone .map-tools { flex-wrap: nowrap; }
-.app-phone .map-btn { flex-shrink: 0; padding: 6px 10px; }
+.app-phone.panel-open .map-tools { top: 10px; }
 .app-phone .network-counter { top: 108px; }
+.app-phone.panel-open .network-counter { top: 58px; }
 .app-phone .map-btn .btn-label { display: none; }
 .app-phone .verea-coverage-btn { white-space: nowrap; }
 .app-phone .maplibregl-ctrl-attrib { font-size: 10px; }
-.app-phone.has-card .maplibregl-ctrl-bottom-right, .app-phone.has-card .maplibregl-ctrl-bottom-left { margin-bottom: 92px; }
-/* the picked device */
-.device-card { position: absolute; z-index: 5; left: 10px; right: 10px; bottom: calc(10px + env(safe-area-inset-bottom));
-  display: flex; align-items: center; gap: 10px; padding: 10px 8px 10px 12px; border-radius: var(--r-xl);
-  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow-lg); animation: card-up .26s var(--ease); }
-@keyframes card-up { from { opacity: 0; transform: translateY(16px); } }
-.device-card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.device-card-text b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.device-card-text span { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.device-card .btn { padding: 8px 12px; }
-/* full-screen layers */
-.phone-overlay { position: absolute; inset: 0; z-index: 15; display: flex; flex-direction: column; background: var(--panel);
-  animation: overlay-in .26s var(--ease); padding-bottom: env(safe-area-inset-bottom); }
-@keyframes overlay-in { from { opacity: 0; transform: translateY(24px); } }
-.phone-overlay-bar { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
-.phone-overlay-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-.phone-overlay-body > .panel { height: auto; overflow: visible; max-width: 560px; margin: 0 auto; }
-.phone-profile { height: 300px; margin: 12px 12px 0; border-radius: var(--r-lg); overflow: hidden; }
-/* centred on phones: the panel's head, the project card and the action rows */
-.phone-overlay .brand-bar { justify-content: center; }
-.phone-overlay .brand-bar .logo { display: none; }
-.phone-overlay .brand-bar .edit-toggle { margin-left: 0; }
-.phone-overlay .project-card { text-align: center; align-items: center; }
-.phone-overlay .project-head { width: 100%; }
-.phone-overlay .project-name, .phone-overlay .project-title { text-align: center; margin-left: 0; }
-.phone-overlay .project-stats { justify-content: center; }
-.phone-overlay .project-description { width: 100%; }
-.phone-overlay .save-row, .phone-overlay .action-row { justify-content: center; }
-.phone-overlay .save-box { flex: 0 1 auto; }
-.phone-overlay .history-btns { margin-left: 0; }
-.phone-overlay .status-line { justify-content: center; text-align: center; }
-.phone-overlay .device-panel { animation: none; }
+.app-phone .mode-banner { bottom: 44px; max-width: calc(100% - 24px); }
+/* the sheet */
+.phone-sheet { position: absolute; left: 0; right: 0; bottom: 0; height: var(--sheet); z-index: 15; display: flex; flex-direction: column;
+  background: var(--panel); border-radius: 20px 20px 0 0; box-shadow: 0 -10px 30px rgb(6 14 24 / .28);
+  padding-bottom: env(safe-area-inset-bottom); animation: sheet-in .3s var(--ease); }
+@keyframes sheet-in { from { transform: translateY(40%); opacity: 0; } }
+.phone-sheet-bar { display: flex; align-items: center; gap: 10px; padding: 10px 8px 8px 14px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+.phone-sheet-title { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.device-head-text { min-width: 0; display: flex; flex-direction: column; }
+.device-head-text b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.device-head-text span { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phone-sheet:has(.device-head-text) .phone-sheet-title { justify-content: flex-start; }
+.phone-sheet-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.phone-sheet-body > .panel { height: auto; overflow: visible; max-width: 560px; margin: 0 auto; }
+.phone-sheet .device-panel { animation: none; }
+.device-summary { display: flex; flex-direction: column; gap: 12px; padding: 12px 14px 16px; max-width: 560px; margin: 0 auto; }
+.device-summary > .btn { align-self: center; }
+.phone-profile { height: 260px; border-radius: var(--r-lg); overflow: hidden; flex-shrink: 0; }
+.back-link { margin: 12px 16px 0; }
+/* centred on phones: the panel's head, the project card, the actions and every section */
+.phone-sheet .brand-bar { justify-content: center; }
+.phone-sheet .brand-bar .logo { display: none; }
+.phone-sheet .brand-bar .edit-toggle { margin-left: 0; }
+.phone-sheet .project-card { text-align: center; align-items: center; }
+.phone-sheet .project-head { width: 100%; }
+.phone-sheet .project-name, .phone-sheet .project-title { text-align: center; margin-left: 0; }
+.phone-sheet .project-stats { justify-content: center; }
+.phone-sheet .project-description { width: 100%; }
+.phone-sheet .project-card .link-btn { align-self: center; }
+.phone-sheet .save-row, .phone-sheet .action-row { justify-content: center; }
+.phone-sheet .save-box { flex: 0 1 auto; }
+.phone-sheet .history-btns { margin-left: 0; }
+.phone-sheet .status-line { justify-content: center; text-align: center; }
+.phone-sheet .section-head { justify-content: center; flex-wrap: wrap; text-align: center; }
+.phone-sheet .section-body { text-align: center; }
+.phone-sheet .section-body .flex-wrap, .phone-sheet .node-filters { justify-content: center; }
+.phone-sheet .field { align-items: center; text-align: center; }
+.phone-sheet .field > select, .phone-sheet .field > input, .phone-sheet .section-body > select { width: 100%; text-align-last: center; }
+.phone-sheet .color-key, .phone-sheet .symbology { align-items: center; justify-items: center; }
+.phone-sheet .color-key li { justify-content: center; }
+.phone-sheet .device-list button { text-align: left; }        /* rows keep name left, value right */
+.phone-sheet .shortcuts div { justify-content: center; }
 
 h3 { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 4px 0 6px; }
 
@@ -281,10 +291,14 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 3px var
 .metric-value { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 .mode-banner {
-  position: absolute; bottom: 36px; left: 50%; transform: translateX(-50%);
-  background: var(--primary); color: var(--primary-ink); padding: 7px 14px; border-radius: 999px;
-  font-size: 13px; font-weight: 500; box-shadow: var(--shadow); pointer-events: none; animation: rise-in var(--dur) var(--ease);
+  position: absolute; z-index: 4; bottom: 36px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px;
+  background: var(--primary); color: var(--primary-ink); padding: 6px 6px 6px 16px; border-radius: 999px;
+  font-size: 13px; font-weight: 500; box-shadow: var(--shadow); animation: rise-in var(--dur) var(--ease); white-space: nowrap;
 }
+.mode-banner span { overflow: hidden; text-overflow: ellipsis; }
+.mode-banner button { border: 0; border-radius: 999px; padding: 6px 14px; font: inherit; font-weight: 600; cursor: pointer;
+  background: color-mix(in srgb, var(--primary-ink) 18%, transparent); color: inherit; }
+.mode-banner button:hover { background: color-mix(in srgb, var(--primary-ink) 28%, transparent); }
 
 /* ── map tools: search + image ── */
 .map-tools {

@@ -84,6 +84,31 @@ function OptionalNumber({ label, value, disabled, onCommit }: {
   )
 }
 
+/** A 4G sensor's state: the verdict and the coverage figures (also the phone's summary). */
+export function CellResult({ cell, operator }: { cell?: CellStatus; operator?: string }) {
+  return (
+    <section className="result">
+      {cell ? (
+        <>
+          <div className={`verdict ${cell.state === 'ok' ? 'ok' : cell.state === 'none' ? 'bad' : 'warn'}`}>
+            <Icon name={cell.state === 'ok' ? 'check-circle' : cell.state === 'none' ? 'x-circle' : 'alert'} size={17} className="verdict-icon" />
+            {plainText(cell.text)}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Metric label="Cubierto alrededor (300 m)" value={`${Math.round((cell.nearby_share ?? 0) * 100)}%`} />
+            {cell.covered
+              ? <Metric label="Señal declarada" value={cell.level_dbm != null ? `${cell.level_dbm} dBm` : '—'} />
+              : <Metric label="Cobertura más cercana" value={cell.nearest_m != null ? distance(cell.nearest_m) : '> 20 km'} />}
+          </div>
+        </>
+      ) : (
+        <div className="hint">{operator ? 'Revisando cobertura 4G…' : 'Elige un operador 4G en los ajustes.'}</div>
+      )}
+      <small className="hint">Envía datos por la red celular (NB-IoT / LTE-M), no por un gateway LoRaWAN.</small>
+    </section>
+  )
+}
+
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="metric">
@@ -171,27 +196,7 @@ export default function DevicePanel(p: Props) {
           )}
         </section>
       )}
-      {cellular && (
-        <section className="result">
-          {p.cell ? (
-            <>
-              <div className={`verdict ${p.cell.state === 'ok' ? 'ok' : p.cell.state === 'none' ? 'bad' : 'warn'}`}>
-                <Icon name={p.cell.state === 'ok' ? 'check-circle' : p.cell.state === 'none' ? 'x-circle' : 'alert'} size={17} className="verdict-icon" />
-                {plainText(p.cell.text)}
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <Metric label="Cubierto alrededor (300 m)" value={`${Math.round((p.cell.nearby_share ?? 0) * 100)}%`} />
-                {p.cell.covered
-                  ? <Metric label="Señal declarada" value={p.cell.level_dbm != null ? `${p.cell.level_dbm} dBm` : '—'} />
-                  : <Metric label="Cobertura más cercana" value={p.cell.nearest_m != null ? distance(p.cell.nearest_m) : '> 20 km'} />}
-              </div>
-            </>
-          ) : (
-            <div className="hint">{p.project.settings.cell_operator ? 'Revisando cobertura 4G…' : 'Elige un operador 4G en los ajustes.'}</div>
-          )}
-          <small className="hint">Envía datos por la red celular (NB-IoT / LTE-M), no por un gateway LoRaWAN.</small>
-        </section>
-      )}
+      {cellular && <CellResult cell={p.cell} operator={p.project.settings.cell_operator} />}
       {gw && p.range && (
         <button className={`btn ${p.range.shown ? 'btn-active' : ''}`} onClick={p.range.onToggle} disabled={p.range.loading}>
           <Icon name="radar" /> {p.range.loading ? 'Calculando alcance…' : p.range.shown ? 'Ocultar alcance' : 'Ver alcance de la señal'}

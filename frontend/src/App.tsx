@@ -33,7 +33,8 @@ import { shortcutFor } from './shortcuts'
 import { clearDraft, loadDraft, saveDraft, useAutosave, type Draft, type SaveState } from './autosave'
 import { cleanAuthHash, projectFromPath, showProject } from './route'
 import Sidebar from './Sidebar'
-import { DeviceCard, PanelButton, PhoneOverlay } from './Phone'
+import { DeviceHead, PanelButton, PhoneSheet, ProjectHead } from './Phone'
+import { CellResult } from './DevicePanel'
 import type { Catalog, CellStatus, Gateway, LinkDetail, LinkResult, NodeDevice, Project, Radial, Selection } from './types'
 import { Alert, Icon } from './icons'
 
@@ -47,6 +48,7 @@ const SAVE_DELAY_MS = 1500                 // autosave (opt-in) after the last c
 const DRAFT_DELAY_MS = 800                 // browser draft of unsaved edits
 const SHORTCUT_NODE_MODEL = 'dragino_lse01'
 const NARROW_PX = 900
+const TOUCH = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches
 
 function loadLocal(): Project | null {
   try {
@@ -584,6 +586,7 @@ function Workspace({ catalog, user, viewer }: {
       setSelection({ kind: 'node', name: next.nodes[next.nodes.length - 1].name })
     }
     setMode('select')
+    if (narrow) setPhonePanel(false)        // phones: the new device's sheet replaces the panel
   }
 
   // Test sensor for the range: the LoRa model most used in the project (SE0X-LB if none), SF10
@@ -795,9 +798,9 @@ function Workspace({ catalog, user, viewer }: {
           setPin({ lat: pl.lat, lon: pl.lon })
           setFocus({ lat: pl.lat, lon: pl.lon, zoom: pl.kind === 'coordinates' ? 16 : 14, key: Date.now() })
         }} />
-        <button className="btn map-btn" onClick={exportMap} title="Descargar el mapa como imagen PNG"><Icon name="image" /><span className="btn-label">Imagen del mapa</span></button>
+        <button className="btn map-btn" onClick={exportMap} title="Descargar el mapa como imagen PNG"><Icon name="camera" /><span className="btn-label">Imagen del mapa</span></button>
       </div>
-      <NetworkCounter counts={networkCounts(project, catalog, links, cells, cellular)} />
+      <NetworkCounter counts={networkCounts(project, catalog, links, cells, cellular)} folded={narrow} />
       {(mode === 'ruler' || ruler.length > 0) && (
         <div className="ruler-box" role="region" aria-label="Regla">
           <strong className="inline-flex items-center gap-1"><Icon name="ruler" size={14} /> Regla</strong>{' '}
@@ -836,7 +839,10 @@ function Workspace({ catalog, user, viewer }: {
         </div>
       )}
       {(mode === 'addGateway' || mode === 'addNode') && (
-        <div className="mode-banner">Haz clic en el mapa para colocar el {mode === 'addGateway' ? 'gateway' : 'sensor'} · Esc para cancelar</div>
+        <div className="mode-banner" role="status">
+          <span>{TOUCH ? 'Toca' : 'Haz clic en'} el mapa para colocar el {mode === 'addGateway' ? 'gateway' : 'sensor'}</span>
+          <button onClick={() => setMode('select')}>Cancelar</button>
+        </div>
       )}
     </main>
   )
@@ -948,20 +954,29 @@ function Workspace({ catalog, user, viewer }: {
       : link ? `${link.viable ? 'Viable' : 'No viable'} · ${db(link.margin_db)} · ${distance(link.distance_m)}` : 'Calculando enlace…'
     const color = !dev ? '' : selection?.kind === 'gateway' ? ((dev as Gateway).online ? COLORS.gateway : COLORS.none)
       : cellular.has(dev.name) ? cellColor(cells[dev.name]) : linkColor(links[dev.name])
+    const head = dev ? <DeviceHead kind={kind} name={dev.name} summary={summary} color={color} /> : null
     return (
-      <div className={`app-phone ${dev && !phoneDetail ? 'has-card' : ''}`}>
+      <div className={`app-phone ${phonePanel || dev ? 'sheet-open' : ''} ${phonePanel ? 'panel-open' : ''}`}>
         <div className="phone-map">{mapArea}</div>
-        <PanelButton name={project.name} onClick={() => setPhonePanel(true)} />
-        {dev && selection && !phoneDetail && (
-          <DeviceCard kind={kind} name={dev.name} summary={summary} color={color}
-            onDetail={() => setPhoneDetail(true)} onClose={() => setSelection(null)} />
-        )}
-        {phonePanel && <PhoneOverlay label="Panel del proyecto" brand onClose={() => setPhonePanel(false)}>{sidebar}</PhoneOverlay>}
-        {phoneDetail && devicePanel && (
-          <PhoneOverlay label="Detalle del dispositivo" onClose={() => setPhoneDetail(false)}>
-            {selNode && <div className="phone-profile">{profile}</div>}
-            {devicePanel}
-          </PhoneOverlay>
+        {!phonePanel && <PanelButton name={project.name} onClick={() => setPhonePanel(true)} />}
+        {phonePanel ? (
+          <PhoneSheet label="Panel del proyecto" head={<ProjectHead />} onClose={() => setPhonePanel(false)}>{sidebar}</PhoneSheet>
+        ) : dev && selection && (
+          phoneDetail ? (
+            <PhoneSheet label="Detalle del dispositivo" onClose={() => setPhoneDetail(false)}>
+              <button className="link-btn back-link" onClick={() => setPhoneDetail(false)}><Icon name="arrow-left" size={14} /> Resumen</button>
+              {devicePanel}
+            </PhoneSheet>
+          ) : (
+            // essentials first: a LoRa node's profile, a 4G sensor's coverage; the rest behind «Ver más detalles»
+            <PhoneSheet label="Dispositivo seleccionado" head={head} onClose={() => setSelection(null)}>
+              <div className="device-summary">
+                {selNode && <div className="phone-profile">{profile}</div>}
+                {kind === 'cellular' && <CellResult cell={cells[dev.name]} operator={project.settings.cell_operator} />}
+                <button className="btn" onClick={() => setPhoneDetail(true)}>Ver más detalles</button>
+              </div>
+            </PhoneSheet>
+          )
         )}
         {dialogs}
       </div>

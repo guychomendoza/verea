@@ -48,6 +48,7 @@ interface Props {
 
 const MODEL_LABELS: Record<string, string> = { itm: 'Longley-Rice (ITM)', simple: 'Simple (espacio libre + difracción)' }
 const SECTIONS_KEY = 'verea.sections'
+const TOUCH = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches
 const byName = (a: NodeDevice, b: NodeDevice) => a.name.localeCompare(b.name, 'es', { numeric: true, sensitivity: 'base' })
 
 function dot(color: string) {
@@ -264,7 +265,7 @@ export default function Sidebar(p: Props) {
                 Sugerir gateways 4G…</button>
             )}
           </div>
-          {(p.mode === 'addGateway' || p.mode === 'addNode') && <p className="hint">Haz clic en el mapa para colocarlo. Esc para cancelar.</p>}
+          {(p.mode === 'addGateway' || p.mode === 'addNode') && <p className="hint">{TOUCH ? 'Toca el mapa para colocarlo.' : 'Haz clic en el mapa para colocarlo. Esc para cancelar.'}</p>}
         </Section>
       )}
 

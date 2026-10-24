@@ -6,8 +6,9 @@ import { Icon } from './icons'
 
 const KEY = 'verea.counterOpen'
 
-export default function NetworkCounter({ counts }: { counts: NetworkCounts }) {
-  const [open, setOpen] = useState(() => { try { return localStorage.getItem(KEY) !== '0' } catch { return true } })
+export default function NetworkCounter({ counts, folded = false }: { counts: NetworkCounts; folded?: boolean }) {
+  // folded: starts closed unless opened before (phones, where the map is small)
+  const [open, setOpen] = useState(() => { try { const v = localStorage.getItem(KEY); return v === null ? !folded : v !== '0' } catch { return !folded } })
   const toggle = () => {
     setOpen(!open)
     try { localStorage.setItem(KEY, open ? '0' : '1') } catch { /* not remembered */ }
