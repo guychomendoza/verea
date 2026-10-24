@@ -61,7 +61,7 @@ def main():
         page.on("console", lambda m: m.type == "error" and errors.append(m.text))
         page.on("pageerror", lambda e: errors.append(str(e)))
         page.goto(URL)
-        expect(page.get_by_role("button", name="Archivo ▾")).to_be_visible(timeout=30000)
+        expect(page.get_by_role("button", name="Archivo", exact=True)).to_be_visible(timeout=30000)
 
         # ── open the sample project ──
         page.locator("input[type=file]").set_input_files(str(SAMPLE))
@@ -268,7 +268,7 @@ def main():
         print("no English left on the main screen")
 
         # ── report: PDF (the detail of each node is the app itself, through a shared link) ──
-        side.get_by_role("button", name="📄 Reporte").click()
+        side.get_by_role("button", name="Reporte", exact=True).click()
         dialog = page.get_by_role("dialog", name="Reporte")
         assert dialog.get_by_text("HTML").count() == 0, "no HTML report any more"
         assert dialog.get_by_text("Ver este proyecto a detalle").count() == 0, "local mode: no link to share"
@@ -316,19 +316,19 @@ def main():
         # ── filters, bulk model change, undo / redo ──
         side.get_by_label("Buscar nodo").fill("Beto")
         sensors = side.get_by_role("region", name="Lista de sensores")
-        expect(sensors.locator("li")).to_have_count(1)
+        expect(sensors.locator("li:visible")).to_have_count(1)
         side.get_by_label("Buscar nodo").fill("")
         groups = sensors.locator(".section-toggle h3").all_inner_texts()
         assert groups == ["Sensores LoRa", "Sensores 4G", "Estaciones meteorológicas"], groups
         lora_tab = sensors.get_by_role("button", name=re.compile("Sensores LoRa"))
-        total = sensors.locator("li").count()
+        total = sensors.locator("li:visible").count()
         lora_tab.click()                                                       # each kind folds on its own
         expect(lora_tab).to_have_attribute("aria-expanded", "false")
-        expect(sensors.locator("li")).to_have_count(2)                         # the 4G sensor and the station
+        expect(sensors.locator("li:visible")).to_have_count(2)                         # the 4G sensor and the station
         lora_tab.click()
-        expect(sensors.locator("li")).to_have_count(total)
+        expect(sensors.locator("li:visible")).to_have_count(total)
         side.get_by_role("button", name=re.compile(r"^4G incierto")).click()
-        expect(sensors.locator("li")).to_have_count(1)
+        expect(sensors.locator("li:visible")).to_have_count(1)
         side.get_by_role("button", name=re.compile(r"^Todos")).click()
         side.get_by_role("button", name="Cambiar modelo…").click()
         bulk = page.get_by_role("dialog", name="Cambiar modelo de sensores")
@@ -408,7 +408,7 @@ def main():
 
         # ── import plots: KML (pins + polygons) then a CSV that updates one and adds one ──
         page.bring_to_front()
-        side.get_by_role("button", name="Archivo ▾").click()
+        side.get_by_role("button", name="Archivo", exact=True).click()
         page.get_by_role("menuitem", name="Importar parcelas…").click()
         imp = page.get_by_role("dialog", name="Importar parcelas")
         imp.get_by_label("Archivo a importar").set_input_files(str(HERE / "import_sample.kml"))
@@ -423,7 +423,7 @@ def main():
         assert {"TST-D0001", "TST-D0002", "TST-D0003", "TST-D0004"} <= set(got), got
         n_plots = page.evaluate("async () => (await window.__vereaMap.getSource('plots').getData()).features.length")
         assert n_plots == 3, n_plots
-        side.get_by_role("button", name="Archivo ▾").click()
+        side.get_by_role("button", name="Archivo", exact=True).click()
         page.get_by_role("menuitem", name="Importar parcelas…").click()
         imp.get_by_label("Archivo a importar").set_input_files(str(HERE / "import_sample.csv"))
         expect(imp.get_by_role("status")).to_contain_text("2 filas")

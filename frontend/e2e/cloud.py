@@ -335,7 +335,7 @@ def main():
         print("reload keeps session and project: ok")
 
         # ── share a link ──
-        side.get_by_role("button", name="🔗 Compartir").click()
+        side.get_by_role("button", name="Compartir", exact=True).click()
         share = page.get_by_role("dialog", name="Compartir")
         share.get_by_role("button", name="Crear link").click()
         link = share.get_by_label("Link para compartir")
@@ -346,7 +346,7 @@ def main():
         share.get_by_role("button", name="Cerrar").click()
         print("link created:", url)
         # the team's PDF carries the same link (owners hidden: the link already made is reused)
-        side.get_by_role("button", name="📄 Reporte").click()
+        side.get_by_role("button", name="Reporte", exact=True).click()
         pdf = pdf_from(page, downloads)
         assert f"/URI ({url})".encode() in pdf and len(SHARES) == 1, "the PDF links to the shared project"
         print("team PDF: link and QR")
@@ -360,7 +360,7 @@ def main():
         team_login(page, VERA["email"])
         expect(side.get_by_text("Modo lector")).to_be_visible(timeout=20000)
         expect(side.get_by_role("heading", name="Beto's edit")).to_be_visible()
-        for name in ("Archivo ▾", "+ Gateway", "Cambiar modelo…", "🔗 Compartir", "Proyectos…"):
+        for name in ("Archivo", "Gateway", "Cambiar modelo…", "Compartir", "Proyectos…"):
             assert side.get_by_role("button", name=name, exact=True).count() == 0, name
         assert page.get_by_label("Nombre del proyecto").count() == 0
         assert (pid, VERA["id"]) in VIEWERS
@@ -391,7 +391,7 @@ def main():
         side.get_by_role("button", name=re.compile(r"^N-1\b")).click()
         expect(panel.get_by_label("Altura sobre el suelo (m)")).to_have_value("3")
         print("viewer: change kept on reload")
-        side.get_by_role("button", name="📄 Reporte").click()
+        side.get_by_role("button", name="Reporte", exact=True).click()
         assert page.get_by_text("El link muestra titulares").count() == 0      # the team's choice
         pdf = pdf_from(page, downloads)
         assert f"/URI ({url})".encode() in pdf

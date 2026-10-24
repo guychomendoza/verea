@@ -55,6 +55,29 @@ def login(b, theme, size):
     ctx.close()
 
 
+def team_workspace(b, theme):
+    """The team's view (Guardar, Proyectos, Compartir) against cloud.py's fake Supabase."""
+    import json
+    import cloud
+    if not cloud.PROJECTS:
+        sample = json.load(open(SAMPLE))
+        cloud.add_project("Huerta de Beto", cloud.BETO["id"], {**sample, "name": "Huerta de Beto"})
+    ctx = context(b, theme, "desktop")
+    page = ctx.new_page()
+    page.route(f"{cloud.SUPA}/rest/v1/**", cloud.rest)
+    page.route(f"{cloud.SUPA}/auth/v1/**", cloud.auth)
+    page.goto(CLOUD)
+    cloud.team_login(page, cloud.ANA["email"])
+    page.get_by_label("Nombre del proyecto").wait_for(timeout=20000)
+    page.wait_for_timeout(4000)
+    page.screenshot(path=OUT / f"team-desktop-{theme}.png")
+    page.get_by_label("Nombre del proyecto").fill("Huerta de Beto (editado)")
+    page.get_by_role("button", name="Archivo", exact=True).click()
+    page.wait_for_timeout(400)
+    page.screenshot(path=OUT / f"team-menu-desktop-{theme}.png")
+    ctx.close()
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as pw:
@@ -63,6 +86,7 @@ def main():
             for size in SIZES:
                 workspace(b, theme, size)
                 login(b, theme, size)
+            team_workspace(b, theme)
         b.close()
     print("screenshots in", OUT)
 

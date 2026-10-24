@@ -57,7 +57,7 @@ try:
         expect(page.get_by_label("Nombre del proyecto")).to_be_visible(timeout=30000)
         # The team's projects are visible to every member: never edit them. Work in a new one.
         n_before = len(req(f"{BASE}/rest/v1/projects?select=id", H))
-        page.get_by_role("button", name="Archivo ▾").click()
+        page.get_by_role("button", name="Archivo", exact=True).click()
         page.get_by_role("menuitem", name="Nuevo").click()
         for _ in range(30):
             if len(req(f"{BASE}/rest/v1/projects?select=id&owner_id=eq.{uid}", H)) == 1:

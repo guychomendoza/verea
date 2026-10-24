@@ -912,7 +912,7 @@ function Workspace({ catalog, user, viewer }: {
   return (
     <div className="app">
       <PanelGroup direction="horizontal" autoSaveId="verea-layout-h">
-        <Panel id="left" order={1} ref={leftRef} defaultSize={22} minSize={14} collapsible collapsedSize={0}
+        <Panel id="left" order={1} ref={leftRef} defaultSize={24} minSize={16} collapsible collapsedSize={0}
           onCollapse={() => setCollapsed((c) => ({ ...c, left: true }))}
           onExpand={() => setCollapsed((c) => ({ ...c, left: false }))}>
           {sidebar}

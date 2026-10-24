@@ -92,8 +92,10 @@ function Section({ id, title, icon, count, defaultOpen = true, nested = false, a
   )
 }
 
-/** "Archivo ▾": the project file actions, out of the way of the everyday ones. */
-function FileMenu({ items }: { items: [string, () => void, string?][] }) {
+/** "Archivo": the project file actions, out of the way of the everyday ones. */
+type MenuItem = [label: string, run: () => void, title: string, icon: IconName]
+
+function FileMenu({ items }: { items: MenuItem[] }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -106,11 +108,14 @@ function FileMenu({ items }: { items: [string, () => void, string?][] }) {
   }, [open])
   return (
     <div className="menu" ref={ref}>
-      <button className="btn" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>Archivo ▾</button>
+      <button className="btn" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+        Archivo <Icon name="chevron" size={14} className={`menu-chev ${open ? 'open' : ''}`} />
+      </button>
       {open && (
         <div className="menu-list" role="menu">
-          {items.map(([label, run, title]) => (
-            <button key={label} role="menuitem" title={title} onClick={() => { setOpen(false); run() }}>{label}</button>
+          {items.map(([label, run, title, icon]) => (
+            <button key={label} role="menuitem" title={title} onClick={() => { setOpen(false); run() }}>
+              <Icon name={icon} /> {label}</button>
           ))}
         </div>
       )}
@@ -120,6 +125,7 @@ function FileMenu({ items }: { items: [string, () => void, string?][] }) {
 
 export default function Sidebar(p: Props) {
   const file = useRef<HTMLInputElement>(null)
+  const [describing, setDescribing] = useState(false)
   const s = p.project.settings
   const lora = Object.entries(p.catalog.node_profiles).filter(([, v]) => v.link !== 'cellular')
   const cellModels = Object.entries(p.catalog.node_profiles).filter(([, v]) => v.link === 'cellular')
@@ -152,24 +158,61 @@ export default function Sidebar(p: Props) {
   const envs = new Set(loraNodes.map((n) => n.environment ?? s.environment))
   const commonEnv = envs.size === 1 ? [...envs][0] : ''
 
-  const fileItems: [string, () => void, string?][] = p.viewer ? [] : [
-    ['Nuevo', p.onNew],
-    [p.user ? 'Importar archivo…' : 'Abrir…', () => file.current?.click(), 'Un proyecto .verea.json'],
-    ['Guardar archivo', p.onExport, 'Descargar el proyecto como .verea.json'],
-    ['Importar parcelas…', p.onImportPlots, 'KML, KMZ, Excel o CSV con pines y parcelas'],
+  const fileItems: MenuItem[] = p.viewer ? [] : [
+    ['Nuevo', p.onNew, 'Un proyecto vacío', 'file-plus'],
+    [p.user ? 'Importar archivo…' : 'Abrir…', () => file.current?.click(), 'Un proyecto .verea.json', 'upload'],
+    ['Guardar archivo', p.onExport, 'Descargar el proyecto como .verea.json', 'download'],
+    ['Importar parcelas…', p.onImportPlots, 'KML, KMZ, Excel o CSV con pines y parcelas', 'layers'],
   ]
+
+  const history = (
+    <span className="history-btns">
+      <button className="icon-btn" onClick={p.history.onUndo} disabled={!p.history.canUndo} title="Deshacer (Ctrl+Z)" aria-label="Deshacer">
+        <Icon name="undo" /></button>
+      <button className="icon-btn" onClick={p.history.onRedo} disabled={!p.history.canRedo} title="Rehacer (Ctrl+Y)" aria-label="Rehacer">
+        <Icon name="redo" /></button>
+    </span>
+  )
 
   return (
     <aside className="panel side-panel" aria-label="Proyecto">
       <div className="brand-bar">
-        <Logo width={112} />
+        <Logo width={104} />
         <button className="icon-btn ml-auto" onClick={p.onConfig} title="Configuración: cuenta y apariencia"
-          aria-label="Configuración"><Icon name="settings" size={18} /></button>
+          aria-label="Configuración"><Icon name="settings" size={17} /></button>
       </div>
-      {p.viewer ? (
-        <>
-          <h2 className="font-semibold">{p.project.name || 'Proyecto sin nombre'}</h2>
-          {p.project.description && <p className="project-description hint whitespace-pre-line">{p.project.description}</p>}
+
+      {/* ── the project: name, description, what it has ── */}
+      <div className="project-card">
+        <div className="project-head">
+          {p.viewer ? (
+            <h2 className="project-title">{p.project.name || 'Proyecto sin nombre'}</h2>
+          ) : (
+            <input className="project-name" placeholder="Proyecto sin nombre" value={p.project.name}
+              maxLength={80} onChange={(e) => p.onMeta({ name: e.target.value })} aria-label="Nombre del proyecto" />
+          )}
+          {p.user?.onProjects && (
+            <button className="icon-btn" onClick={p.user.onProjects} title="Abrir otro proyecto del equipo" aria-label="Proyectos…">
+              <Icon name="folder" /></button>
+          )}
+        </div>
+        {p.viewer ? (
+          p.project.description && <p className="project-description-text whitespace-pre-line">{p.project.description}</p>
+        ) : (p.project.description || describing) ? (
+          <textarea className="project-description" rows={2} maxLength={2000} placeholder="Descripción (aparece en el reporte)"
+            value={p.project.description} autoFocus={describing && !p.project.description}
+            onChange={(e) => p.onMeta({ description: e.target.value })}
+            onBlur={() => setDescribing(false)} aria-label="Descripción del proyecto" />
+        ) : (
+          <button className="link-btn self-start" onClick={() => setDescribing(true)}>
+            <Icon name="plus" size={13} /> Agregar descripción</button>
+        )}
+        <div className="project-stats" aria-label="Contenido del proyecto">
+          <span><DeviceIcon kind="gateway" color="#3da3bc" size={15} /> <b>{p.project.gateways.length}</b> {p.project.gateways.length === 1 ? 'gateway' : 'gateways'}</span>
+          <span><DeviceIcon kind="lora" color="#3da3bc" size={15} /> <b>{loraNodes.length}</b> LoRa</span>
+          <span><DeviceIcon kind="cellular" color="#3da3bc" size={15} /> <b>{p.project.nodes.length - loraNodes.length}</b> 4G</span>
+        </div>
+        {p.viewer && (
           <div className="viewer-banner" role="note">
             <Icon name="eye" /><span><b>Modo lector.</b> Puedes probar otra altura o entorno en los nodos; se guarda solo para ti.</span>
             {p.viewer.changes > 0 && (
@@ -177,38 +220,31 @@ export default function Sidebar(p: Props) {
                 Restaurar valores originales ({p.viewer.changes})</button>
             )}
           </div>
-        </>
-      ) : (
-        <>
-          <input className="font-semibold" placeholder="Proyecto sin nombre" value={p.project.name}
-            maxLength={80} onChange={(e) => p.onMeta({ name: e.target.value })} aria-label="Nombre del proyecto" />
-          <textarea className="project-description" rows={2} maxLength={2000} placeholder="Descripción (aparece en el reporte)"
-            value={p.project.description} onChange={(e) => p.onMeta({ description: e.target.value })}
-            aria-label="Descripción del proyecto" />
-        </>
-      )}
-      <div className="toolbar">
-        {p.save && <SaveButton {...p.save} />}
-        {p.viewer && <button className="btn" onClick={p.viewer.onFiles}><Icon name="arrow-left" /> Mis archivos</button>}
-        {fileItems.length > 0 && <FileMenu items={fileItems} />}
-        {p.user?.onProjects && <button className="btn" onClick={p.user.onProjects}>Proyectos…</button>}
-        {p.user?.onShare && <button className="btn" onClick={p.user.onShare} title="Link para ver el proyecto en modo lector">🔗 Compartir</button>}
-        <button className="btn btn-active" onClick={p.onReport}>📄 Reporte</button>
-        <span className="history-btns flex gap-1 ml-auto">
-          <button className="btn" onClick={p.history.onUndo} disabled={!p.history.canUndo} title="Deshacer (Ctrl+Z)" aria-label="Deshacer">↶</button>
-          <button className="btn" onClick={p.history.onRedo} disabled={!p.history.canRedo} title="Rehacer (Ctrl+Y)" aria-label="Rehacer">↷</button>
-        </span>
+        )}
+      </div>
+
+      {/* ── actions: save, file, share, report, undo ── */}
+      <div className="action-bar">
+        {p.save && <div className="save-row"><SaveButton {...p.save} />{history}</div>}
+        <div className="action-row">
+          {p.viewer && <button className="btn" onClick={p.viewer.onFiles}><Icon name="arrow-left" /> Mis archivos</button>}
+          {fileItems.length > 0 && <FileMenu items={fileItems} />}
+          {p.user?.onShare && <button className="btn" onClick={p.user.onShare} title="Link para ver el proyecto en modo lector">
+            <Icon name="link" /> Compartir</button>}
+          <button className="btn" onClick={p.onReport} title="Reporte PDF del proyecto"><Icon name="report" /> Reporte</button>
+          {!p.save && history}
+        </div>
         <input ref={file} type="file" accept=".json,application/json" hidden
           onChange={(e) => { const f = e.target.files?.[0]; if (f) p.onImport(f); e.target.value = '' }} />
       </div>
-      <p className="hint" role="status">{p.status}</p>
+      <StatusLine text={p.status} />
 
       {/* ── add devices / tools ── */}
       {!p.viewer && (
         <Section id="add" title="Agregar al mapa" icon={<SectionIcon name="plus" />}>
           <div className="flex flex-wrap gap-1.5">
             <button className={`btn ${p.mode === 'addGateway' ? 'btn-active' : ''}`} title="G"
-              onClick={() => p.onMode(p.mode === 'addGateway' ? 'select' : 'addGateway')}>+ Gateway</button>
+              onClick={() => p.onMode(p.mode === 'addGateway' ? 'select' : 'addGateway')}><Icon name="plus" size={14} /> Gateway</button>
             <select className="btn" value={p.mode === 'addNode' ? p.addModel : ''}
               onChange={(e) => p.onMode(e.target.value ? 'addNode' : 'select', e.target.value)}
               aria-label="Agregar nodo">
@@ -416,5 +452,17 @@ function SaveButton({ state, savedAt, autosave, onSave }: NonNullable<Props['sav
       </button>
       <span className={`save-state ${state}`} aria-live="polite">{text}</span>
     </span>
+  )
+}
+
+/** The status line; parts that start with ⚠ (errors) show as alerts. */
+function StatusLine({ text }: { text: string }) {
+  const parts = text.split(' · ').filter(Boolean)
+  return (
+    <p className="status-line" role="status">
+      {parts.map((t, i) => t.startsWith('⚠')
+        ? <span key={i} className="status-error"><Icon name="alert" size={13} /> {t.replace(/^⚠\s*/, '')}</span>
+        : <span key={i}>{t}</span>)}
+    </p>
   )
 }
