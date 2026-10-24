@@ -156,14 +156,27 @@ body {
 }
 .ruler-box b { color: #ffd166; } .ruler-box .hint { color: #9fb0c3; } .ruler-box button { color: #e6edf4; }
 
-/* ── narrow screens: stacked ── */
-.app-narrow { display: flex; flex-direction: column; min-height: 100%; }
-.narrow-map { height: 50vh; position: relative; }
-.narrow-profile { height: 300px; }
-.narrow-device .side-panel {
-  position: fixed; inset: auto 0 0 0; height: auto; max-height: 60vh; z-index: 10;
-  border-top: 1px solid var(--line); box-shadow: 0 -6px 20px rgb(0 0 0 / .2);
-}
+/* ── phones: full-screen map with a bottom sheet (Sheet.tsx) ── */
+.app-phone { --peek: 150px; position: fixed; inset: 0; overflow: hidden; background: var(--bg); }
+.phone-map { position: absolute; left: 0; right: 0; top: 0; bottom: calc(var(--peek) - 18px); }
+.phone-map .map-area { height: 100%; }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 10; height: var(--peek); display: flex; flex-direction: column;
+  background: var(--panel); border-radius: 20px 20px 0 0; box-shadow: 0 -10px 30px rgb(6 14 24 / .28);
+  transition: height .32s var(--ease); padding-bottom: env(safe-area-inset-bottom); }
+.sheet-half { height: 56%; }
+.sheet-full { height: calc(100% - 52px); }
+.sheet-grip { flex-shrink: 0; height: 24px; display: grid; place-items: center; cursor: grab; touch-action: none; border-radius: 20px 20px 0 0; }
+.sheet-bar { width: 42px; height: 5px; border-radius: 3px; background: var(--line-strong); }
+.sheet-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.sheet-peek .sheet-body { overflow: hidden; }
+.sheet-body > .panel { height: auto; overflow: visible; padding-top: 2px; }
+.sheet-profile { height: 300px; margin: 0 12px 16px; border-radius: var(--r-lg); overflow: hidden; }
+.app-phone .network-counter { top: 54px; }
+.app-phone .brand-bar .logo { width: 78px !important; height: 31px !important; }
+.app-phone .brand-bar { padding: 0; }
+.sheet-profile { margin: 4px 12px 0; }
+.app-phone .verea-coverage-btn { white-space: nowrap; }
+.app-phone .maplibregl-ctrl-attrib { font-size: 10px; }
 
 h3 { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 4px 0 6px; }
 
@@ -536,3 +549,22 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important;
     transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
+
+/* ── touch screens: bigger targets; phones: dialogs as sheets from the bottom ── */
+@media (pointer: coarse) {
+  .btn, .btn-danger { min-height: 40px; }
+  .icon-btn, .icon-close { width: 40px; height: 40px; }
+  .device-list button { padding: 10px 8px; }
+  .chip { padding: 6px 12px; font-size: 12.5px; }
+  input, select, textarea { font-size: 16px; }          /* iOS zooms into smaller fields */
+  .section-toggle { padding: 6px 0; }
+}
+@media (max-width: 560px) {
+  .dialog-backdrop { place-items: end stretch; padding: 0; }
+  .dialog { width: 100% !important; max-height: 92dvh; border-radius: 20px 20px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
+    animation: sheet-up .28s var(--ease); }
+  .map-tools { right: 56px; max-width: none; }
+  .search-box { width: 100%; }
+  .map-tools .map-btn { display: none; }               /* the map image export is a desk task */
+}
+@keyframes sheet-up { from { transform: translateY(40px); opacity: 0; } }

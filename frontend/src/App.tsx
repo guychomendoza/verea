@@ -31,6 +31,7 @@ import { shortcutFor } from './shortcuts'
 import { clearDraft, loadDraft, saveDraft, useAutosave, type Draft, type SaveState } from './autosave'
 import { cleanAuthHash, projectFromPath, showProject } from './route'
 import Sidebar from './Sidebar'
+import Sheet, { type SheetSize } from './Sheet'
 import type { Catalog, CellStatus, Gateway, LinkDetail, LinkResult, NodeDevice, Project, Radial, Selection } from './types'
 import { Alert, Icon } from './icons'
 
@@ -269,12 +270,15 @@ function Workspace({ catalog, user, viewer }: {
   const cloudMode = !!user
   const teamCloud = cloudMode && !viewer          // the team's projects table (viewers keep only their changes)
   const narrow = useNarrow()
+  const [sheet, setSheet] = useState<SheetSize>('peek')        // phones: the bottom sheet's height
   const envKeys = Object.keys(catalog.environments)
   const [history, dispatchRaw] = useReducer(reduceHistory, null, () =>
     ({ present: viewer ? applyOverrides(viewer.base, viewer.overrides, envKeys)
       : (cloudMode ? null : loadLocal()) ?? emptyProject(catalog.defaults), past: [], future: [] }))
   const project = history.present
   const [selection, setSelection] = useState<Selection>(null)
+  // Phones: picking a device raises the sheet enough to read its panel
+  useEffect(() => { if (narrow && selection) setSheet((v) => (v === 'peek' ? 'half' : v)) }, [narrow, selection?.name]) // eslint-disable-line react-hooks/exhaustive-deps
   const [mode, setMode] = useState<MapMode>('select')
   const [addModel, setAddModel] = useState('')
   const [showCoverage, setShowCoverage] = useState(false)
@@ -917,12 +921,14 @@ function Workspace({ catalog, user, viewer }: {
   )
 
   if (narrow) {
+    // Phones: full-screen map, the project (or the selected device and its profile) in a bottom sheet
     return (
-      <div className="app-narrow">
-        <div className="narrow-map">{mapArea}</div>
-        {selNode && <div className="narrow-profile">{profile}</div>}
-        {sidebar}
-        {devicePanel && <div className="narrow-device">{devicePanel}</div>}
+      <div className="app-phone">
+        <div className="phone-map">{mapArea}</div>
+        <Sheet size={sheet} onSize={setSheet} label={devicePanel ? 'Dispositivo' : 'Panel del proyecto'}
+          contentKey={selection ? `${selection.kind}:${selection.name}` : 'project'}>
+          {devicePanel ? <>{selNode && <div className="sheet-profile">{profile}</div>}{devicePanel}</> : sidebar}
+        </Sheet>
         {dialogs}
       </div>
     )

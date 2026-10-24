@@ -33,7 +33,14 @@ def workspace(b, theme, size):
     page.locator("input[type=file]").first.set_input_files(str(SAMPLE))
     page.get_by_text("N-1").first.wait_for(timeout=20000)
     page.wait_for_timeout(4000)                     # links and map tiles
-    page.screenshot(path=OUT / f"workspace-{size}-{theme}.png", full_page=size == "phone")
+    page.screenshot(path=OUT / f"workspace-{size}-{theme}.png")
+    if size == "phone":                             # the bottom sheet: half, then a node with its profile
+        page.get_by_role("button", name="Ampliar el panel").click()
+        page.wait_for_timeout(600)
+        page.screenshot(path=OUT / f"sheet-half-{size}-{theme}.png")
+        page.get_by_role("region", name="Lista de sensores").get_by_role("button", name="N-1").click()
+        page.wait_for_timeout(3500)
+        page.screenshot(path=OUT / f"node-{size}-{theme}.png")
     if size == "desktop":
         page.get_by_role("button", name="N-1", exact=False).first.click()
         page.wait_for_timeout(3500)                 # profile chart

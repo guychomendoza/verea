@@ -31,7 +31,10 @@ export default function ProfilePanel({ profile, title, status, pins, onPins, onH
     loadPlotly().then((Plotly) => {
       if (cancelled) return
       const { data, layout } = profileFigure(profile, title, pinsRef.current)
-      Plotly.react(div, data as Plotly.Data[], layout as Partial<Plotly.Layout>, PLOTLY_CONFIG as Partial<Plotly.Config>)
+      // phones: the legend would wrap over the axis; the traces keep their names on hover
+      const narrow = div.clientWidth > 0 && div.clientWidth < 520
+      const fitted = narrow ? { ...layout, showlegend: false, margin: { ...(layout.margin ?? {}), b: 40 } } : layout
+      Plotly.react(div, data as Plotly.Data[], fitted as Partial<Plotly.Layout>, PLOTLY_CONFIG as Partial<Plotly.Config>)
       setReady(true)
       const chart = div as unknown as Plotly.PlotlyHTMLElement
       chart.removeAllListeners?.('plotly_hover')
