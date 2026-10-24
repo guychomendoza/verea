@@ -3,16 +3,40 @@ import { supabase } from './cloud'
 import { pendingShare } from './share'
 import { Logo, ThemeButton } from './Logo'
 import { Icon } from './icons'
+import LoginArt from './LoginArt'
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+const FEATURES = [
+  'Enlaces LoRaWAN sobre el relieve real',
+  'Cobertura 4G declarada por los operadores',
+  'Reportes PDF y proyectos compartidos con el equipo',
+]
+
+/** Split screen: the illustration with what Verea does, and the card. */
+function Card({ title, heading, children }: { title: string; heading?: string; children: React.ReactNode }) {
   return (
     <div className="login-wrap">
-      <ThemeButton className="login-theme" />
-      <div className="login-card">
-        <div className="flex justify-center py-2"><Logo width={210} /></div>
-        <h1 className="text-base text-[var(--muted)]">{title}</h1>
-        {children}
-      </div>
+      <section className="login-art" aria-label="Verea">
+        <LoginArt />
+        <div className="login-art-text">
+          <p className="login-art-title">Verea</p>
+          <p className="login-art-sub">Planeación de redes IoT para el campo</p>
+          <ul>{FEATURES.map((f) => <li key={f}><Icon name="check" size={15} /> {f}</li>)}</ul>
+        </div>
+      </section>
+      <main className="login-side">
+        <ThemeButton className="login-theme" />
+        <div className="login-card">
+          <div className="flex justify-center"><Logo width={150} /></div>
+          {heading ? (
+            <div className="login-head">
+              <h1>{heading}</h1>
+              <p>{title}</p>
+            </div>
+          ) : <div className="login-head"><h1>{title}</h1></div>}
+          {children}
+        </div>
+        <p className="login-foot">© {new Date().getFullYear()} Verea</p>
+      </main>
     </div>
   )
 }
@@ -90,7 +114,9 @@ export function Login() {
   }
 
   return (
-    <Card title={forgot ? 'Restablecer tu contraseña' : shared ? 'Te compartieron un proyecto: entra para verlo' : 'Inicia sesión'}>
+    <Card heading={forgot ? 'Restablecer contraseña' : 'Bienvenido'}
+      title={forgot ? 'Te enviaremos un enlace para crear una nueva.' : shared ? 'Te compartieron un proyecto: entra para verlo'
+        : 'Inicia sesión para ver y planear tus redes'}>
       {!forgot && (
         <div className="flex flex-col gap-3">
           <button type="button" className="btn btn-google" onClick={google} disabled={busy}>
@@ -102,9 +128,12 @@ export function Login() {
           </p>
           {!withEmail && msg && <p className="hint" role="alert">{msg}</p>}
           {!withEmail && (
-            <button type="button" className="btn-ghost text-sm underline self-start" onClick={() => { setWithEmail(true); setMsg('') }}>
-              Soy del equipo: entrar con correo y contraseña
-            </button>
+            <>
+              <div className="login-divider"><span>o</span></div>
+              <button type="button" className="btn btn-email" onClick={() => { setWithEmail(true); setMsg('') }}>
+                <Icon name="user" /> Soy del equipo: entrar con correo
+              </button>
+            </>
           )}
         </div>
       )}
@@ -115,7 +144,7 @@ export function Login() {
         {!forgot && (
           <PasswordField label="Contraseña" autoComplete="current-password" value={password} onChange={setPassword} />
         )}
-        <button className="btn btn-active" type="submit" disabled={busy}>
+        <button className="btn btn-active btn-lg" type="submit" disabled={busy}>
           {busy ? '…' : forgot ? 'Enviar enlace' : 'Iniciar sesión'}
         </button>
         {msg && <p className="hint" role="alert">{msg}</p>}
@@ -156,7 +185,7 @@ export function SetPassword({ email, onDone }: { email: string; onDone: () => vo
       <form onSubmit={submit} className="flex flex-col gap-3">
         <PasswordField label="Nueva contraseña (10+ caracteres)" autoComplete="new-password" value={password} onChange={setPassword} />
         <PasswordField label="Repítela" autoComplete="new-password" value={repeat} onChange={setRepeat} />
-        <button className="btn btn-active" type="submit" disabled={busy}>{busy ? '…' : 'Guardar contraseña'}</button>
+        <button className="btn btn-active btn-lg" type="submit" disabled={busy}>{busy ? '…' : 'Guardar contraseña'}</button>
         {msg && <p className="hint" role="alert">{msg}</p>}
       </form>
     </Card>

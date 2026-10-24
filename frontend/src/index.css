@@ -270,14 +270,39 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 3px var
 }
 
 /* ── login, dialogs, conflicts ── */
-.login-wrap { min-height: 100%; display: grid; place-items: center; padding: 16px; box-sizing: border-box;
-  background: radial-gradient(circle at 30% 20%, #1f4466 0%, var(--brand-navy) 45%, var(--navy-deep) 100%); }
+.login-wrap { min-height: 100%; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(380px, 1fr); background: var(--bg); }
+.login-art { position: relative; overflow: hidden; background: var(--brand-navy); }
+.login-art-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.login-art-text { position: absolute; left: 48px; right: 48px; bottom: 48px; color: #fff; animation: rise-text .6s var(--ease) both; }
+@keyframes rise-text { from { opacity: 0; transform: translateY(10px); } }
+.login-art-title { margin: 0; font-size: 40px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; }
+.login-art-sub { margin: 6px 0 18px; font-size: 17px; color: #c9d8e6; }
+.login-art-text ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 14px; color: #dbe6f0; }
+.login-art-text li { display: flex; align-items: center; gap: 8px; }
+.login-art-text li .icon { color: var(--brand-teal); }
+.login-side { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+  padding: 32px 20px; box-sizing: border-box; min-height: 100vh; min-height: 100dvh; }
 .login-card {
-  width: min(380px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
-  padding: 24px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 10px 40px rgb(0 0 0 / .35);
-  border-top: 4px solid var(--brand-teal);
+  width: min(400px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 20px;
+  padding: 32px 28px; display: flex; flex-direction: column; gap: 16px; box-shadow: var(--shadow-lg); animation: pop-in .35s var(--ease);
 }
-.btn-google { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 9px 12px; font-size: 14px; font-weight: 500; }
+.login-head { text-align: center; display: flex; flex-direction: column; gap: 4px; }
+.login-head h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -.02em; }
+.login-head p { margin: 0; font-size: 14px; color: var(--muted); }
+.login-foot { margin: 0; font-size: 12px; color: var(--muted); }
+.login-divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
+.login-divider::before, .login-divider::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+.btn-google, .btn-email, .btn-lg { width: 100%; padding: 10px 14px; font-size: 14px; }
+.btn-google { gap: 10px; }
+.btn-email { gap: 8px; color: var(--ink); }
+.login-card .field input { padding: 9px 12px; }
+@media (max-width: 860px) {
+  .login-wrap { grid-template-columns: 1fr; }
+  .login-art { position: fixed; inset: 0; }
+  .login-art-text { display: none; }
+  .login-side { z-index: 1; }
+  .login-foot { color: #c9d8e6; }
+}
 /* ── viewer: files, read-only banner, account rows ── */
 .files-wrap { min-height: 100%; background: var(--bg); padding: 24px 16px; box-sizing: border-box; }
 .files { width: min(760px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
@@ -323,7 +348,7 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-
 
 .password-field { display: flex; align-items: stretch; gap: 0; }
 .password-field input { flex: 1; border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.password-field button { border: 1px solid var(--line); border-left: 0; border-radius: 0 6px 6px 0; padding: 0 10px; background: var(--bg); cursor: pointer; }
+.password-field button { border: 1px solid var(--line); border-left: 0; border-radius: 0 var(--r) var(--r) 0; padding: 0 12px; background: var(--field); color: var(--muted); cursor: pointer; box-shadow: none; }
 
 /* ── brand ── */
 .logo { display: block; color: var(--logo-ink); }
