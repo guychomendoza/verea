@@ -84,7 +84,6 @@ try:
         # sign out, sign in with the new password
         page.get_by_role("button", name="Configuración").click()
         page.get_by_role("dialog", name="Configuración").get_by_role("button", name="Cerrar sesión").click()
-        page.get_by_role("button", name=re.compile("Soy del equipo")).click()
         page.get_by_label("Correo").fill(EMAIL)
         page.get_by_label("Contraseña", exact=True).fill("selftest-Passw0rd-xyz")
         page.get_by_role("button", name="Iniciar sesión").click()

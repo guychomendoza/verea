@@ -198,7 +198,10 @@ function CloudGate({ catalog, error, onSession }: { catalog: Catalog | null; err
 
   if (session === undefined) return <div className="p-6">Cargando…</div>
   if (!session) return <Login />
-  if (mustSetPassword) return <SetPassword email={session.user.email ?? ''} onDone={() => setMustSetPassword(false)} />
+  // an invitation / reset link, or an account an admin created with a temporary password
+  if (mustSetPassword || session.user.user_metadata?.must_change_password) {
+    return <SetPassword email={session.user.email ?? ''} onDone={() => setMustSetPassword(false)} />
+  }
   if (me === undefined) return <div className="p-6">Cargando…</div>
   if (me === null || !me.active) {
     return (

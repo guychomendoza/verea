@@ -1,10 +1,11 @@
-import { useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { supabase } from './cloud'
 import { pendingShare } from './share'
 import { Logo, ThemeButton } from './Logo'
 import { Icon } from './icons'
 import LoginArt from './LoginArt'
 import { returnUrl } from './route'
+import { GOOGLE_CLIENT_ID, renderGoogleButton } from './google'
 
 const FEATURES = [
   'Enlaces LoRaWAN sobre el relieve real',
@@ -77,8 +78,8 @@ function GoogleMark() {
 }
 
 /**
- * Google sign-in (anyone: a new account is a viewer, it sees the projects shared with it) and
- * the team's email + password login with its password reset.
+ * Email + password first (the team's accounts, created by an admin), then Google: a new Google
+ * account is a viewer until an admin gives it a role.
  */
 export function Login() {
   const [email, setEmail] = useState('')
@@ -86,7 +87,6 @@ export function Login() {
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const [forgot, setForgot] = useState(false)
-  const [withEmail, setWithEmail] = useState(false)
   const shared = pendingShare() !== null
 
   const google = async () => {
@@ -117,46 +117,66 @@ export function Login() {
   return (
     <Card heading={forgot ? 'Restablecer contraseña' : 'Bienvenido'}
       title={forgot ? 'Te enviaremos un enlace para crear una nueva.' : shared ? 'Te compartieron un proyecto: entra para verlo'
-        : 'Inicia sesión para ver y planear tus redes'}>
-      {!forgot && (
-        <div className="flex flex-col gap-3">
-          <button type="button" className="btn btn-google" onClick={google} disabled={busy}>
-            <GoogleMark /> Continuar con Google
-          </button>
-          <p className="hint">
-            Con tu cuenta de Google ves los proyectos que te compartan, en modo lector. Al entrar aceptas el{' '}
-            <a href="/privacidad.html" target="_blank" rel="noopener" className="underline">aviso de privacidad</a>.
-          </p>
-          {!withEmail && msg && <p className="hint" role="alert">{msg}</p>}
-          {!withEmail && (
-            <>
-              <div className="login-divider"><span>o</span></div>
-              <button type="button" className="btn btn-email" onClick={() => { setWithEmail(true); setMsg('') }}>
-                <Icon name="user" /> Soy del equipo: entrar con correo
-              </button>
-            </>
-          )}
-        </div>
-      )}
-      {(withEmail || forgot) && <form onSubmit={submit} className="flex flex-col gap-3">
-        <label className="field"><span>Correo</span>
+        : 'Ingresa con tu cuenta para continuar'}>
+      <form onSubmit={submit} className="flex flex-col gap-3">
+        <label className="field"><span>Correo electrónico</span>
           <input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
         {!forgot && (
           <PasswordField label="Contraseña" autoComplete="current-password" value={password} onChange={setPassword} />
         )}
+        {!forgot && (
+          <button type="button" className="link-btn self-end" onClick={() => { setForgot(true); setMsg('') }}>
+            ¿Olvidaste tu contraseña?</button>
+        )}
         <button className="btn btn-active btn-lg" type="submit" disabled={busy}>
           {busy ? '…' : forgot ? 'Enviar enlace' : 'Iniciar sesión'}
         </button>
         {msg && <p className="hint" role="alert">{msg}</p>}
-        <button type="button" className="btn-ghost text-sm underline self-start"
-          onClick={() => { setForgot(!forgot); setMsg('') }}>
-          {forgot ? 'Volver a iniciar sesión' : '¿Olvidaste tu contraseña?'}
-        </button>
-        <p className="hint">Las cuentas del equipo son por invitación de un administrador.</p>
-      </form>}
+        {forgot && (
+          <button type="button" className="link-btn self-center" onClick={() => { setForgot(false); setMsg('') }}>
+            Volver a iniciar sesión</button>
+        )}
+      </form>
+      {!forgot && (
+        <>
+          <div className="login-divider"><span>o</span></div>
+          {GOOGLE_CLIENT_ID ? <GoogleButton onError={setMsg} /> : (
+            <button type="button" className="btn btn-google" onClick={google} disabled={busy}>
+              <GoogleMark /> Continuar con Google
+            </button>
+          )}
+          <p className="hint text-center">
+            Con Google entras como lector: ves los proyectos que te compartan. Al entrar aceptas el{' '}
+            <a href="/privacidad.html" target="_blank" rel="noopener" className="underline">aviso de privacidad</a>.
+          </p>
+        </>
+      )}
     </Card>
   )
+}
+
+/** Google's own button (google.ts); falls back to the redirect flow if it cannot load. */
+function GoogleButton({ onError }: { onError: (m: string) => void }) {
+  const el = useRef<HTMLDivElement>(null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    if (!el.current) return
+    const dark = document.documentElement.dataset.theme === 'dark'
+      || (document.documentElement.dataset.theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)
+    renderGoogleButton(el.current, dark, async (token, nonce) => {
+      const { error } = await supabase!.auth.signInWithIdToken({ provider: 'google', token, nonce })
+      if (error) onError(error.message)
+    }).catch(() => setFailed(true))
+  }, [onError])
+  if (failed) {
+    return (
+      <button type="button" className="btn btn-google" onClick={() => supabase?.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: returnUrl() } })}>
+        <GoogleMark /> Continuar con Google
+      </button>
+    )
+  }
+  return <div ref={el} className="google-btn" aria-label="Continuar con Google" />
 }
 
 /** After an invitation or reset link: choose the password for the account. */
@@ -172,7 +192,7 @@ export function SetPassword({ email, onDone }: { email: string; onDone: () => vo
     if (password.length < 10) return setMsg('Usa al menos 10 caracteres.')
     if (password !== repeat) return setMsg('Las contraseñas no coinciden.')
     setBusy(true)
-    const { error } = await supabase.auth.updateUser({ password })
+    const { error } = await supabase.auth.updateUser({ password, data: { must_change_password: false } })
     setBusy(false)
     if (error) setMsg(error.message)
     else {

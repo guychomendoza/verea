@@ -33,6 +33,7 @@ Zone › DNS: Edit (verea.app). Tokens live in `~/.config/verea/deploy.env` (out
    flyctl apps create verea-api
    flyctl volumes create verea_data --region dfw --size 10 --app verea-api --yes
    flyctl secrets set SUPABASE_ANON_KEY=<the public anon key> --app verea-api --stage
+   flyctl secrets set SUPABASE_SERVICE_ROLE_KEY=<the secret service_role key> --app verea-api --stage   # admins create accounts
    deploy/deploy.sh api
    # fill the volume on a bigger machine for an hour (≈ US$0.30), then back to 1 GB:
    flyctl scale vm performance-4x --memory 8192 --app verea-api --yes
@@ -49,6 +50,8 @@ Zone › DNS: Edit (verea.app). Tokens live in `~/.config/verea/deploy.env` (out
    `https://verea.app` and privacy policy `https://verea.app/privacidad.html` (verify `verea.app`
    in Google Search Console first);
    then Audience → Publish app.
+   Clients → the web client → Authorized JavaScript origins: `https://verea.app` and `http://localhost:5173`
+   (Google's own sign-in button, `VITE_GOOGLE_CLIENT_ID` in `frontend/.env.local`).
 
 ## Updates
 

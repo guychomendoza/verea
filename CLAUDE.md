@@ -50,8 +50,14 @@ frontend, DB with users) is planned.
   never name a class `collapse`, it is a Tailwind utility; dialogs pop in, menus drop in, device panel slides;
   all off for prefers-reduced-motion), no emoji: line icons in `icons.tsx` plus `CloseButton` and `Alert`;
   side panel top = project card (name, Proyectos button, description on demand, counts) + action rows;
-  split-screen login over `LoginArt.tsx` (SVG illustration); phones (< 900 px) = full-screen map with a
-  bottom sheet (`Sheet.tsx`: peek / half / full; a device shows its profile first). `frontend/e2e/shots.py`
+  split-screen login over `LoginArt.tsx` (SVG illustration): email + password first, then Google with Google's
+  own button (`google.ts`: Identity Services + `signInWithIdToken`, so Google shows verea.app, not the Supabase
+  address; needs `VITE_GOOGLE_CLIENT_ID` and the site in the OAuth client's "Authorized JavaScript origins";
+  without the variable it falls back to the redirect). Ver / Editar toggle beside Configuración (not for
+  viewers): in Ver the map cannot drag/add and panels are locked (`locked`); phones start in Ver, desktops in
+  Editar (`verea.editing`). Phones (< 900 px, `Phone.tsx`): the map stays free; a pill button opens the
+  project panel full screen (centred, ✕); a picked device = a card at the bottom (state, «Ver detalle», ✕),
+  its detail full screen with the profile first. `frontend/e2e/shots.py`
   takes review screenshots (light/dark, desktop/phone, team view via cloud.py's fake Supabase).
   Addresses: team projects at `/p/<id>` (`route.ts`, History API; back/forward switch projects with the
   unsaved-changes guard; Google returns to the same address; the empty `#` is cleaned).
@@ -109,8 +115,11 @@ frontend, DB with users) is planned.
   their links; `SettingsDialog.tsx` = the gear button «Configuración» (tabs Cuenta: name, phone, company, sign out,
   viewers may delete their account · Apariencia: theme · Administración: admins → `UsersDialog.tsx`);
   `public/privacidad.html` (privacy notice draft with placeholders for the company's data).
-  Team-only API endpoints use `require_team` (`backend/auth.py`, reads the caller's profile through
-  Supabase REST with `SUPABASE_ANON_KEY`): `/api/suggest-gateways`. The PDF uses the address it was
+  Team-only API endpoints use `require_team` (`backend/auth.py`, reads the caller's role through
+  Supabase REST with `SUPABASE_ANON_KEY`): `/api/suggest-gateways`; admin-only `require_admin`:
+  `/api/admin/users` (`backend/users.py`: «Crear usuario» in `UsersDialog.tsx` — email, name, role, temporary
+  password — through Supabase's admin API with the secret `SUPABASE_SERVICE_ROLE_KEY`, server only; the account
+  carries `must_change_password` in its metadata and the app asks for a new password at the first sign-in). The PDF uses the address it was
   generated from (verea.app in production).
   Browser tests (docstrings say how to start them): `frontend/e2e/run.py` (local mode, 5174 + dev
   API 8001), `cloud.py` (fake Supabase with team, viewer and admin accounts, links, RPCs; 5175), `live.py` (real Supabase; works only in its own

@@ -244,10 +244,10 @@ def test_gateway_suggestions_are_for_the_team(supabase, monkeypatch):
     """Viewers (people a project was shared with) use the calculations, not the planning tools."""
     c = TestClient(api.app)
     body = {"nodes": [], "settings": {}, "gateway": {"name": "g", "lat": 20, "lon": -103}}
-    roles = {"11111111-1111-1111-1111-111111111111": True, "22222222-2222-2222-2222-222222222222": False}
+    roles = {"11111111-1111-1111-1111-111111111111": "member", "22222222-2222-2222-2222-222222222222": "viewer"}
     asked = []
-    monkeypatch.setattr(auth, "_is_team", lambda url, key, token, uid: asked.append(uid) or roles[uid])
-    monkeypatch.setattr(auth, "_team_cache", {})
+    monkeypatch.setattr(auth, "_role", lambda url, key, token, uid: asked.append(uid) or roles[uid])
+    monkeypatch.setattr(auth, "_role_cache", {})
     hdr = lambda uid: {"Authorization": f"Bearer {supabase(sub=uid)}"}   # noqa: E731
     monkeypatch.delenv("SUPABASE_ANON_KEY", raising=False)
     assert c.post("/api/suggest-gateways", json=body, headers=hdr("11111111-1111-1111-1111-111111111111")).status_code == 503
@@ -282,3 +282,38 @@ def test_rate_limit_per_client_and_endpoint():
     assert all(c.get("/api/health").status_code == 200 for _ in range(10))  # never limited
     clock[0] = 61.0                                                      # a minute later
     assert c.get("/api/heavy").status_code == 200
+
+
+# ── admins create accounts ──
+def test_admin_creates_user(supabase, monkeypatch):
+    import urllib.error
+    from backend import users
+    c = TestClient(api.app)
+    admin, member = "11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"
+    monkeypatch.setattr(auth, "_role", lambda url, key, token, uid: {admin: "admin", member: "member"}[uid])
+    monkeypatch.setattr(auth, "_role_cache", {})
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "anon")
+    hdr = lambda uid: {"Authorization": f"Bearer {supabase(sub=uid)}"}   # noqa: E731
+    body = {"email": "Nuevo@Agricola.mx", "full_name": "Nuevo", "role": "member", "password": "temporal-123"}
+    assert c.post("/api/admin/users", json=body, headers=hdr(member)).status_code == 403
+    monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
+    assert c.post("/api/admin/users", json=body, headers=hdr(admin)).status_code == 503
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service")
+    calls = []
+
+    def fake(method, path, payload, key):
+        calls.append((method, path, payload, key))
+        return {"id": "33333333-3333-3333-3333-333333333333", "email": payload["email"]} if method == "POST" else None
+    monkeypatch.setattr(users, "_call", fake)
+    r = c.post("/api/admin/users", json=body, headers=hdr(admin))
+    assert r.status_code == 200 and r.json()["role"] == "member", r.text
+    (_, p1, created, k1), (_, p2, patch, _) = calls
+    assert p1 == "/auth/v1/admin/users" and k1 == "service" and created["email"] == "nuevo@agricola.mx"
+    assert created["email_confirm"] and created["user_metadata"]["must_change_password"]
+    assert p2.endswith("id=eq.33333333-3333-3333-3333-333333333333") and patch == {"role": "member", "full_name": "Nuevo"}
+    assert c.post("/api/admin/users", json={**body, "password": "corta"}, headers=hdr(admin)).status_code == 422
+
+    def taken(method, path, payload, key):
+        raise urllib.error.HTTPError(path, 422, "x", {}, __import__("io").BytesIO(b'{"msg":"User already registered"}'))
+    monkeypatch.setattr(users, "_call", taken)
+    assert c.post("/api/admin/users", json=body, headers=hdr(admin)).status_code == 409

@@ -13,7 +13,7 @@ Needs a development API (accepts any token) and a dev server in cloud mode point
 
     VEREA_DEV=1 VEREA_CORS_ORIGINS=http://127.0.0.1:5175 .venv/bin/uvicorn backend.main:app --port 8001
     cd frontend && VITE_API_URL=http://127.0.0.1:8001 VITE_SUPABASE_URL=https://fake.supabase.co \\
-        VITE_SUPABASE_ANON_KEY=x npx vite --host 127.0.0.1 --port 5175
+        VITE_SUPABASE_ANON_KEY=x VITE_GOOGLE_CLIENT_ID= npx vite --host 127.0.0.1 --port 5175
     .venv/bin/python frontend/e2e/cloud.py
 """
 import json
@@ -211,7 +211,6 @@ def auth(route, request):
 
 
 def team_login(page, email, password=PASSWORD):
-    page.get_by_role("button", name=re.compile("Soy del equipo")).click()
     page.get_by_label("Correo").fill(email)
     page.get_by_label("Contraseña", exact=True).fill(password)
     page.get_by_role("button", name="Iniciar sesión").click()
@@ -251,7 +250,6 @@ def main():
         expect(page.get_by_role("button", name="Continuar con Google")).to_be_visible(timeout=20000)
         page.screenshot(path=f"{OUT}/login.png")
         # team login
-        page.get_by_role("button", name=re.compile("Soy del equipo")).click()
         page.get_by_label("Correo").fill(ANA["email"])
         page.get_by_label("Contraseña", exact=True).fill("wrong")
         pw_input = page.get_by_label("Contraseña", exact=True)
@@ -451,6 +449,27 @@ def main():
         assert VERA["role"] == "member"
         page.screenshot(path=f"{OUT}/users.png")
         print("admin: viewer promoted to editor")
+        # ── an admin creates an account (the API's admin endpoint is answered here: no service key in tests) ──
+        created = []
+
+        def create(route, request):
+            body = request.post_data_json
+            created.append(body)
+            new = person(body["email"], body["full_name"], body["role"])
+            PROFILES[new["id"]] = new
+            route.fulfill(json={"id": new["id"], "email": body["email"], "role": body["role"]})
+        page.route("**/api/admin/users", create)
+        users.get_by_role("button", name="Crear usuario").click()
+        form = users.get_by_role("form", name="Crear usuario")
+        form.get_by_label("Correo").fill("tecnico@agricola.mx")
+        form.get_by_label("Nombre").fill("Técnico de campo")
+        temp = form.get_by_label("Contraseña temporal").input_value()
+        assert len(temp) >= 10, temp
+        form.get_by_role("button", name="Crear cuenta").click()
+        expect(form.get_by_role("status")).to_contain_text(temp)
+        assert created == [{"email": "tecnico@agricola.mx", "full_name": "Técnico de campo", "role": "member", "password": temp}]
+        expect(users).to_contain_text("tecnico@agricola.mx")
+        print("admin: account created with a temporary password")
         b.close()
     print("page errors:", errors)
     print("screenshots in", OUT)

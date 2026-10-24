@@ -6,6 +6,7 @@ Environment:
   SUPABASE_URL         https://<project>.supabase.co  (keys: <url>/auth/v1/.well-known/jwks.json)
   SUPABASE_JWT_SECRET  only for projects still on the legacy shared secret (HS256)
   SUPABASE_ANON_KEY    the project's public key: team-only endpoints read the caller's role with it
+  SUPABASE_SERVICE_ROLE_KEY  secret: only the admins' "create user" (Supabase's admin API) uses it
   VEREA_DEV=1          no login required (local development only)
 Without either, every protected request is refused: the safe default.
 """
@@ -23,9 +24,9 @@ from fastapi import Depends, Header, HTTPException
 AUDIENCE = "authenticated"
 log = logging.getLogger("verea.auth")
 CLOCK_LEEWAY_S = 30      # Supabase's clock can be a second or two ahead of ours (iat "in the future")
-TEAM_CACHE_S = 60        # how long a caller's role is trusted before asking again
+ROLE_CACHE_S = 60        # how long a caller's role is trusted before asking again
 _UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
-_team_cache: dict[str, tuple[float, bool]] = {}
+_role_cache: dict[str, tuple[float, str | None]] = {}
 
 
 @lru_cache(maxsize=1)
@@ -59,36 +60,48 @@ def require_user(authorization: str = Header(default="")) -> dict:
         raise HTTPException(401, "Sesión no válida o vencida")
 
 
-def _is_team(url: str, key: str, token: str, uid: str) -> bool:
-    """Whether the caller is an active admin / member, asked to the database as the caller
+def _role(url: str, key: str, token: str, uid: str) -> str | None:
+    """The caller's role if the account is active (else None), asked to the database as the caller
     (row level security lets everyone read their own profile)."""
     req = urllib.request.Request(f"{url.rstrip('/')}/rest/v1/profiles?id=eq.{uid}&select=role,active",
                                  headers={"apikey": key, "Authorization": f"Bearer {token}"})
     with urllib.request.urlopen(req, timeout=10) as r:
         rows = json.load(r)
-    return bool(rows) and bool(rows[0].get("active")) and rows[0].get("role") in ("admin", "member")
+    return rows[0].get("role") if rows and rows[0].get("active") else None
+
+
+def _caller_role(authorization: str, claims: dict, refuse: str) -> str | None:
+    url, key = os.environ.get("SUPABASE_URL", ""), os.environ.get("SUPABASE_ANON_KEY")
+    uid = str(claims.get("sub", ""))
+    if not key:
+        raise HTTPException(503, "Falta SUPABASE_ANON_KEY en este servidor")
+    if not _UUID.match(uid):
+        raise HTTPException(403, refuse)
+    hit = _role_cache.get(uid)
+    if hit and time.monotonic() - hit[0] < ROLE_CACHE_S:
+        return hit[1]
+    try:
+        role = _role(url, key, authorization.partition(" ")[2], uid)
+    except Exception as e:  # noqa: BLE001 - network / Supabase errors: refuse, never let through
+        log.warning("role check failed: %s", e)
+        raise HTTPException(503, "No se pudo comprobar tu cuenta; intenta de nuevo")
+    _role_cache[uid] = (time.monotonic(), role)
+    return role
 
 
 def require_team(authorization: str = Header(default=""), claims: dict = Depends(require_user)) -> dict:
     """Like require_user, for the team only: viewers (people a project was shared with) get 403."""
     if os.environ.get("VEREA_DEV") == "1":
         return claims
-    url, key = os.environ.get("SUPABASE_URL", ""), os.environ.get("SUPABASE_ANON_KEY")
-    uid = str(claims.get("sub", ""))
-    if not key:
-        raise HTTPException(503, "Falta SUPABASE_ANON_KEY en este servidor")
-    if not _UUID.match(uid):
+    if _caller_role(authorization, claims, "Solo para el equipo") not in ("admin", "member"):
         raise HTTPException(403, "Solo para el equipo")
-    hit = _team_cache.get(uid)
-    if hit and time.monotonic() - hit[0] < TEAM_CACHE_S:
-        team = hit[1]
-    else:
-        try:
-            team = _is_team(url, key, authorization.partition(" ")[2], uid)
-        except Exception as e:  # noqa: BLE001 - network / Supabase errors: refuse, never let through
-            log.warning("role check failed: %s", e)
-            raise HTTPException(503, "No se pudo comprobar tu cuenta; intenta de nuevo")
-        _team_cache[uid] = (time.monotonic(), team)
-    if not team:
-        raise HTTPException(403, "Solo para el equipo")
+    return claims
+
+
+def require_admin(authorization: str = Header(default=""), claims: dict = Depends(require_user)) -> dict:
+    """Like require_user, for administrators only."""
+    if os.environ.get("VEREA_DEV") == "1":
+        return claims
+    if _caller_role(authorization, claims, "Solo para administradores") != "admin":
+        raise HTTPException(403, "Solo para administradores")
     return claims

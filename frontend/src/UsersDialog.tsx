@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import * as cloud from './cloud'
+import { api } from './api'
 import { Alert, CloseButton, Icon } from './icons'
 
 interface Props {
@@ -44,9 +45,10 @@ export default function UsersDialog({ me, onClose }: Props) {
           <CloseButton onClick={onClose} />
         </div>
         <p className="hint">
-          Quien entra con Google queda como <b>lector</b> (solo ve los links que le comparten). Para que alguien del equipo
-          edite, pídele que entre una vez y cámbialo aquí a <b>Editor</b>.
+          Crea cuentas con correo y una contraseña temporal (la persona la cambia al entrar), o cambia el rol de quien
+          entró con Google: quien entra con Google queda como <b>lector</b> hasta que le des otro rol aquí.
         </p>
+        <NewUser onCreated={load} />
         <input type="search" placeholder="Buscar por correo, nombre o empresa" value={filter} onChange={(e) => setFilter(e.target.value)}
           aria-label="Buscar usuarios" />
         {error && <Alert>{error}</Alert>}
@@ -74,5 +76,58 @@ export default function UsersDialog({ me, onClose }: Props) {
         )}
       </div>
     </div>
+  )
+}
+
+/** A random temporary password the admin passes on (12 characters, no look-alike letters). */
+function temporaryPassword(): string {
+  const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  return Array.from(crypto.getRandomValues(new Uint32Array(12)), (n) => chars[n % chars.length]).join('')
+}
+
+/** «Crear usuario»: email, name, role and a temporary password (shown once, to pass on). */
+function NewUser({ onCreated }: { onCreated: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState({ email: '', full_name: '', role: 'member', password: temporaryPassword() })
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  if (!open) {
+    return <button className="btn self-start" onClick={() => { setOpen(true); setMsg(null) }}><Icon name="plus" /> Crear usuario</button>
+  }
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    setMsg(null)
+    try {
+      await api.createUser(form)
+      setMsg({ ok: true, text: `Cuenta creada. Pásale a ${form.email} su contraseña temporal: ${form.password} (la cambiará al entrar).` })
+      setForm({ email: '', full_name: '', role: 'member', password: temporaryPassword() })
+      onCreated()
+    } catch (err) {
+      setMsg({ ok: false, text: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <form className="new-user" onSubmit={submit} aria-label="Crear usuario">
+      <div className="new-user-grid">
+        <label className="field"><span>Correo</span>
+          <input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label>
+        <label className="field"><span>Nombre</span>
+          <input value={form.full_name} maxLength={120} onChange={(e) => setForm({ ...form, full_name: e.target.value })} /></label>
+        <label className="field"><span>Rol</span>
+          <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+            {ROLES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select></label>
+        <label className="field"><span>Contraseña temporal</span>
+          <input value={form.password} minLength={10} required onChange={(e) => setForm({ ...form, password: e.target.value })} /></label>
+      </div>
+      <div className="flex gap-2 justify-end">
+        <button type="button" className="btn" onClick={() => setOpen(false)}>Cancelar</button>
+        <button className="btn btn-active" disabled={busy}>{busy ? 'Creando…' : 'Crear cuenta'}</button>
+      </div>
+      {msg && (msg.ok ? <p className="ok-line" role="status">{msg.text}</p> : <Alert>{msg.text}</Alert>)}
+    </form>
   )
 }

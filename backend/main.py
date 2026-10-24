@@ -33,10 +33,12 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import core.network as net  # noqa: E402
-from backend.auth import require_team, require_user  # noqa: E402
+from backend.auth import require_admin, require_team, require_user  # noqa: E402
+from backend.users import create_user  # noqa: E402
 from backend.ratelimit import RateLimit  # noqa: E402
 from backend.schemas import (  # noqa: E402
-    CellRequest, CoverageRequest, LinkRequest, LinksRequest, ProjectBody, RadialRequest, SuggestGatewaysRequest,
+    CellRequest, CoverageRequest, LinkRequest, LinksRequest, NewUserRequest, ProjectBody, RadialRequest,
+    SuggestGatewaysRequest,
 )
 from config import ENVIRONMENT_PROFILES, US915_UPLINK_SF  # noqa: E402
 from core.cellular import find_sources  # noqa: E402
@@ -222,6 +224,12 @@ def coverage(req: CoverageRequest, user=Depends(require_user)):
                                req.radius_km * 1000, n_radials=req.radials,
                                n_points=MAX_RADIAL_POINTS, api=ELEVATIONS, **net.budget_kwargs(rf))
     return {"radials": [_radial_dict(r) for r in radials]}
+
+
+@app.post("/api/admin/users")
+def admin_create_user(req: NewUserRequest, admin=Depends(require_admin)):
+    """An administrator creates an account (email + temporary password, changed at the first sign-in)."""
+    return create_user(req.email, req.full_name, req.role, req.password)
 
 
 @app.post("/api/suggest-gateways")

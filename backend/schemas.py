@@ -107,3 +107,11 @@ class SuggestGatewaysRequest(BaseModel):
     operator: Optional[str] = Field(None, max_length=40)
     max_gateways: int = Field(5, ge=1, le=20)
     max_link_km: float = Field(8, ge=1, le=15)
+
+
+class NewUserRequest(BaseModel):
+    """An account an administrator creates: it signs in with this password and must change it."""
+    email: str = Field(min_length=3, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    full_name: str = Field("", max_length=120)
+    role: str = Field("member", pattern="^(admin|member|viewer)$")
+    password: str = Field(min_length=10, max_length=128)

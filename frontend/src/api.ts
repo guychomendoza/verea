@@ -67,4 +67,6 @@ export const api = {
   suggestGateways: (body: { nodes: NodeDevice[]; gateway: Gateway; settings: Settings; operator?: string;
     max_gateways: number; max_link_km: number }, signal?: AbortSignal) => call<GatewaySuggestion>('/api/suggest-gateways', body, signal),
   normalize: (project: unknown) => call<Omit<Project, 'version'>>('/api/project/normalize', { project }),
+  createUser: (body: { email: string; full_name: string; role: string; password: string }) =>
+    call<{ id: string; email: string; role: string }>('/api/admin/users', body),
 }

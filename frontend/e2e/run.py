@@ -4,7 +4,7 @@ End-to-end check of the web frontend in Chromium (Playwright), local mode (no lo
 Needs a development API and a dev server in local mode, e.g.:
 
     VEREA_DEV=1 VEREA_CORS_ORIGINS=http://127.0.0.1:5174 .venv/bin/uvicorn backend.main:app --port 8001
-    cd frontend && VITE_API_URL=http://127.0.0.1:8001 VITE_SUPABASE_URL= VITE_SUPABASE_ANON_KEY= \\
+    cd frontend && VITE_API_URL=http://127.0.0.1:8001 VITE_SUPABASE_URL= VITE_SUPABASE_ANON_KEY= VITE_GOOGLE_CLIENT_ID= \\
         npx vite --host 127.0.0.1 --port 5174
     .venv/bin/python frontend/e2e/run.py [screenshot dir]
 
