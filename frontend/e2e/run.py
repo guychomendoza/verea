@@ -138,7 +138,7 @@ def main():
         print("profile hover -> map cursor, click -> pin on chart and map")
         page.screenshot(path=f"{OUT}/1_profile.png")
         with page.expect_download() as dl:
-            page.get_by_role("button", name="📈 Descargar imagen").click()
+            page.get_by_role("button", name="Descargar imagen").click()
         img = png(Path(dl.value.path()))
         assert img.getpixel((5, 5))[0] < 40, "profile image background should be dark"
         print("profile image:", img.size, dl.value.suggested_filename)
@@ -254,7 +254,7 @@ def main():
         side.get_by_role("button", name=re.compile(r"N-1")).click()
         page.wait_for_timeout(2500)
         with page.expect_download() as dl:
-            page.get_by_role("button", name="📷 Imagen del mapa").click()
+            page.get_by_role("button", name="Imagen del mapa").click()
         img = png(Path(dl.value.path()))
         bg = img.getpixel((3, 3))
         assert bg == (15, 34, 54), bg      # brand navy
@@ -379,7 +379,7 @@ def main():
         # ── gateway range (one click) ──
         side.get_by_role("button", name=re.compile(r"GW-1")).click()
         dev = page.get_by_role("complementary", name="Dispositivo")
-        dev.get_by_role("button", name="📡 Ver alcance de la señal").click()
+        dev.get_by_role("button", name="Ver alcance de la señal").click()
         expect(dev.get_by_role("button", name="Ocultar alcance")).to_be_visible(timeout=60000)
         n_range = page.evaluate("async () => (await window.__vereaMap.getSource('range').getData()).features.length")
         assert n_range > 24, n_range

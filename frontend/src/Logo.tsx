@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { logoSvg, LOGO_RATIO } from './brand'
 import { deviceIconSvg, type DeviceKind } from './deviceIcons'
+import { Icon } from './icons'
 import { NEXT, THEME_LABELS, applyTheme, savedTheme, type Theme } from './theme'
 
 const SVG = logoSvg('currentColor', undefined, ' role="img" aria-label="Verea"')
@@ -15,13 +16,15 @@ export function DeviceIcon({ kind, color, size = 18 }: { kind: DeviceKind; color
   return <span className="device-icon" dangerouslySetInnerHTML={{ __html: deviceIconSvg(kind, color, size) }} />
 }
 
+const THEME_ICON = { auto: 'monitor', light: 'sun', dark: 'moon' } as const
+
 /** Cycles automatic → light → dark. */
 export function ThemeButton({ className = '' }: { className?: string }) {
   const [theme, setTheme] = useState<Theme>(savedTheme)
-  const [icon, label] = THEME_LABELS[theme]
+  const [, label] = THEME_LABELS[theme]
   return (
     <button type="button" className={`theme-btn ${className}`} title={`${label}. Clic para cambiar`}
       aria-label={`${label}. Cambiar tema`}
-      onClick={() => { const t = NEXT[theme]; applyTheme(t); setTheme(t) }}>{icon}</button>
+      onClick={() => { const t = NEXT[theme]; applyTheme(t); setTheme(t) }}><Icon name={THEME_ICON[theme]} /></button>
   )
 }

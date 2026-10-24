@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import * as cloud from './cloud'
+import { CloseButton } from './icons'
 
 interface Props {
   me: cloud.Me
@@ -47,7 +48,7 @@ export default function ProjectsDialog({ me, currentId, onOpen, onDeleted, onClo
       <div className="dialog" role="dialog" aria-label="Proyectos del equipo" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold">Proyectos del equipo</h2>
-          <button className="btn-ghost" onClick={onClose} aria-label="Cerrar">✕</button>
+          <CloseButton onClick={onClose} />
         </div>
         <input type="search" placeholder="Filtrar por nombre" value={filter} onChange={(e) => setFilter(e.target.value)}
           aria-label="Filtrar proyectos" />

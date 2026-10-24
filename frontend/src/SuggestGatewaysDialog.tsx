@@ -7,6 +7,7 @@ import { COLORS } from './colors'
 import { registerDeviceIcons } from './deviceIcons'
 import { MAP_LOCALE, buildStyle, ensurePmtiles } from './mapStyle'
 import type { Catalog, LinkResult, NodeDevice, Project } from './types'
+import { Alert, CloseButton } from './icons'
 
 interface Props {
   catalog: Catalog
@@ -65,7 +66,7 @@ export default function SuggestGatewaysDialog(p: Props) {
       <div className="dialog import-dialog" role="dialog" aria-label="Sugerir gateways 4G">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold">Sugerir gateways 4G</h2>
-          <button className="btn-ghost" onClick={p.onClose} aria-label="Cerrar">✕</button>
+          <CloseButton onClick={p.onClose} />
         </div>
         <p className="hint">
           Busca en los puntos altos del terreno cercanos a los nodos LoRa, descarta los que no tienen 4G del operador
@@ -97,8 +98,8 @@ export default function SuggestGatewaysDialog(p: Props) {
             </button>
           </div>
         )}
-        {!p.project.settings.cell_operator && <p className="hint">⚠ Sin operador 4G elegido: no se revisa si hay 4G en los puntos propuestos.</p>}
-        {error && <p className="error" role="alert">⚠ {error}</p>}
+        {!p.project.settings.cell_operator && <Alert tone="warn">Sin operador 4G elegido: no se revisa si hay 4G en los puntos propuestos.</Alert>}
+        {error && <Alert>{error}</Alert>}
         {result && (
           <>
             <p className="text-sm" role="status">

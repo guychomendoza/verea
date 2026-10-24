@@ -8,6 +8,7 @@ import type { Catalog, Project } from '../types'
 import { applyImport, type ImportSummary } from './apply'
 import { readFile, type ReadResult } from './readers'
 import { ROLE_LABELS, detectRoles, nodeName, rowsFromFeatures, rowsFromTable, valid, type ImportRow, type Naming, type Role } from './rules'
+import { Alert, CloseButton, Icon } from '../icons'
 
 interface Props {
   catalog: Catalog
@@ -80,18 +81,18 @@ export default function ImportDialog(p: Props) {
       <div className="dialog import-dialog" role="dialog" aria-label="Importar parcelas">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold">Importar parcelas y sensores</h2>
-          <button className="btn-ghost" onClick={p.onClose} aria-label="Cerrar">✕</button>
+          <CloseButton onClick={p.onClose} />
         </div>
         <p className="hint">
           KML o KMZ (Google Earth: pines y polígonos de parcelas), Excel (.xlsx) o CSV. El archivo se lee en tu
-          navegador; no se sube a ningún lado. Cada pin o parcela será un sensor; revisa las filas marcadas con ⚠.
+          navegador; no se sube a ningún lado. Cada pin o parcela será un sensor; revisa las filas marcadas en amarillo.
         </p>
         <label className="btn self-start">
           {reading ? 'Leyendo…' : file ? `Cambiar archivo (${file.name})` : 'Elegir archivo…'}
           <input type="file" hidden accept=".kml,.kmz,.xlsx,.csv,.tsv,.txt" aria-label="Archivo a importar"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) open(f); e.target.value = '' }} />
         </label>
-        {error && <p className="error" role="alert">⚠ {error}</p>}
+        {error && <Alert>{error}</Alert>}
 
         {file?.data.kind === 'table' && (
           <details open={!roles.includes('folio') || !(roles.includes('latlon') || (roles.includes('lat') && roles.includes('lon')))}>
@@ -113,7 +114,7 @@ export default function ImportDialog(p: Props) {
         {file && (
           <>
             <p className="text-sm" role="status">
-              <b>{rows.length}</b> filas · ✓ {counts.ok} listas · ⚠ {counts.issues} por revisar · {counts.fixed} reparadas
+              <b>{rows.length}</b> filas · {counts.ok} listas · {counts.issues} por revisar · {counts.fixed} reparadas
               {counts.plots ? ` · ${counts.plots} parcelas` : ''}{base.ignored ? ` · ${base.ignored} elementos sin punto ni polígono ignorados` : ''}
             </p>
             <div className="import-body">
@@ -143,7 +144,7 @@ export default function ImportDialog(p: Props) {
                               }} />
                           </td>
                           <td>
-                            {r.issues.length ? '⚠' : '✓'} {name}
+                            <Icon name={r.issues.length ? 'alert' : 'check'} size={13} className={r.issues.length ? 'mark-warn' : 'mark-ok'} /> {name}
                             {existing.has(name) && <span className="hint"> · actualiza</span>}
                           </td>
                           <td><input value={r.folio ?? ''} aria-label={`Folio de ${name}`}
@@ -152,7 +153,7 @@ export default function ImportDialog(p: Props) {
                             onChange={(e) => setEdits({ ...edits, [r.key]: { ...edits[r.key], owner: e.target.value || undefined } })} /></td>
                           <td>{r.area_ha != null ? `${r.area_ha.toFixed(2)} ha` : '—'}</td>
                           <td className="import-details">
-                            {r.issues.map((x, i) => <div key={`i${i}`} className="issue">⚠ {x}</div>)}
+                            {r.issues.map((x, i) => <div key={`i${i}`} className="issue"><Icon name="alert" size={12} /> {x}</div>)}
                             {r.notes.map((x, i) => <div key={`n${i}`} className="hint">ℹ {x}</div>)}
                           </td>
                         </tr>

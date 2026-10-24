@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type * as cloud from './cloud'
-import { Icon, type IconName } from './icons'
+import { CloseButton, Icon, type IconName } from './icons'
 import { applyTheme, savedTheme, type Theme } from './theme'
 import { isTeam } from './cloud'
 import { setAutosave, useAutosave } from './autosave'
@@ -42,7 +42,7 @@ export default function SettingsDialog({ account, onClose }: Props) {
       <div className="dialog settings" role="dialog" aria-label="Configuración" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold flex items-center gap-2"><Icon name="settings" size={18} /> Configuración</h2>
-          <button className="btn-ghost" onClick={onClose} aria-label="Cerrar">✕</button>
+          <CloseButton onClick={onClose} />
         </div>
         <div className="settings-body">
           <nav className="settings-tabs" role="tablist" aria-label="Secciones de la configuración">

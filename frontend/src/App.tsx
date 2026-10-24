@@ -31,6 +31,7 @@ import { shortcutFor } from './shortcuts'
 import { clearDraft, loadDraft, saveDraft, useAutosave, type Draft, type SaveState } from './autosave'
 import Sidebar from './Sidebar'
 import type { Catalog, CellStatus, Gateway, LinkDetail, LinkResult, NodeDevice, Project, Radial, Selection } from './types'
+import { Alert, Icon } from './icons'
 
 const STORAGE_KEY = 'verea.project'     // local mode (no Supabase configured)
 const LAST_PROJECT_KEY = 'verea.lastProject'
@@ -118,7 +119,7 @@ export default function App() {
     if (!cloud.cloudEnabled) api.catalog().then(setCatalog).catch((e) => setError(apiError(e)))
   }, [])
   if (!cloud.cloudEnabled) {
-    if (error) return <div className="p-6 text-red-600">⚠ {error}</div>
+    if (error) return <div className="p-6"><Alert>{error}</Alert></div>
     if (!catalog) return <div className="p-6">Cargando…</div>
     return <Workspace catalog={catalog} />
   }
@@ -220,7 +221,7 @@ function CloudGate({ catalog, error, onSession }: { catalog: Catalog | null; err
   if (!cloud.isTeam(me) && !file) {
     content = <MyFiles me={me} notice={notice} onOpen={openFile} onSettings={user.onSettings} />
   } else if (error) {
-    content = <div className="p-6 text-red-600">⚠ {error}</div>
+    content = <div className="p-6"><Alert>{error}</Alert></div>
   } else if (!catalog) {
     content = <div className="p-6">Cargando…</div>
   } else if (!cloud.isTeam(me)) {
@@ -433,7 +434,7 @@ function Workspace({ catalog, user, viewer }: {
   }, [cloudMode, saveState])
 
   const saveText = !cloudMode ? '' : viewer ? {
-    saved: '', saving: '☁ Guardando tus cambios…', pending: '☁ Guardando tus cambios…',
+    saved: '', saving: 'Guardando tus cambios…', pending: 'Guardando tus cambios…',
     conflict: '', error: `⚠ Tus cambios no se guardaron: ${saveError}`,
   }[saveState] : {   // team projects: the Guardar button shows the state; problems also go here
     saved: '', saving: '', pending: '',
@@ -753,12 +754,12 @@ function Workspace({ catalog, user, viewer }: {
           setPin({ lat: pl.lat, lon: pl.lon })
           setFocus({ lat: pl.lat, lon: pl.lon, zoom: pl.kind === 'coordinates' ? 16 : 14, key: Date.now() })
         }} />
-        <button className="btn map-btn" onClick={exportMap} title="Descargar el mapa como imagen PNG">📷 Imagen del mapa</button>
+        <button className="btn map-btn" onClick={exportMap} title="Descargar el mapa como imagen PNG"><Icon name="image" /> Imagen del mapa</button>
       </div>
       <NetworkCounter counts={networkCounts(project, catalog, links, cells, cellular)} />
       {(mode === 'ruler' || ruler.length > 0) && (
         <div className="ruler-box" role="region" aria-label="Regla">
-          <strong>📏 Regla</strong>{' '}
+          <strong className="inline-flex items-center gap-1"><Icon name="ruler" size={14} /> Regla</strong>{' '}
           {ruler.length < 2 ? <span>Haz clic en el mapa para medir</span> : (
             <span>Total <b data-testid="ruler-total">{distance(rulerTotal)}</b> · {ruler.length - 1} tramo{ruler.length > 2 ? 's' : ''}</span>
           )}

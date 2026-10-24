@@ -187,6 +187,20 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 3px var
 .field input, .field select { font-size: 14px; color: var(--ink); }
 .hint { font-size: 12px; color: var(--muted); }
 .error { font-size: 12px; color: var(--bad); font-style: normal; }
+.alert-line { display: flex; align-items: flex-start; gap: 7px; font-size: 12.5px; margin: 0; padding: 8px 10px; border-radius: var(--r);
+  color: var(--bad); background: color-mix(in srgb, var(--bad) 9%, transparent); border: 1px solid color-mix(in srgb, var(--bad) 25%, transparent); }
+.alert-line.warn { color: color-mix(in srgb, var(--warn) 80%, var(--ink)); background: color-mix(in srgb, var(--warn) 10%, transparent);
+  border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
+.alert-line .icon { margin-top: 1px; }
+.icon-close { width: 32px; height: 32px; padding: 0; border-radius: var(--r); color: var(--muted); }
+.icon-close:hover { color: var(--ink); }
+.verdict-icon { flex-shrink: 0; }
+.verdict.ok .verdict-icon { color: var(--ok); } .verdict.warn .verdict-icon { color: var(--warn); } .verdict.bad .verdict-icon { color: var(--bad); }
+.mark-ok { color: var(--ok); } .mark-warn { color: var(--warn); }
+.counter-head { display: inline-flex; align-items: center; gap: 4px; }
+.counter-chev { transition: transform var(--dur) var(--ease); }
+.counter-chev.closed { transform: rotate(-90deg); }
+.viewer-banner .icon { color: var(--brand-teal); }
 .btn, .btn-danger, .btn-ghost {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   border: 1px solid var(--line); border-radius: var(--r); padding: 6px 12px;

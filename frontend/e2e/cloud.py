@@ -397,7 +397,7 @@ def main():
         assert f"/URI ({url})".encode() in pdf
         print("viewer PDF: same link")
         # their files and profile
-        side.get_by_role("button", name="← Mis archivos").click()
+        side.get_by_role("button", name="Mis archivos").click()
         expect(page.get_by_role("heading", name="Mis archivos")).to_be_visible(timeout=10000)
         expect(page.get_by_role("button", name="Abrir Beto's edit")).to_be_visible()
         page.screenshot(path=f"{OUT}/files.png")

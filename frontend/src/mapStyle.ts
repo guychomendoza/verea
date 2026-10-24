@@ -59,6 +59,11 @@ export function cellShort(c?: CellStatus): string {
   return { ok: '4G garantizado', edge: '4G incierto', differentiated: '4G sin garantía', possible: '4G posible', none: 'Sin 4G' }[c.state] ?? '4G'
 }
 
+/** A server sentence without its emoji (older API versions start the 4G states with one). */
+export function plainText(text: string): string {
+  return text.replace(/[\p{Extended_Pictographic}\uFE0F]/gu, '').replace(/\s{2,}/g, ' ').trim()
+}
+
 /** A sentence about the 4G state with the operator's name taken out. */
 export function withoutOperator(text: string, operator?: string): string {
   if (!operator) return text

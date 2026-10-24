@@ -3,6 +3,7 @@ import { downloadBlob, safeName } from './exportImage'
 import { loadPlotly, plotlyLoaded } from './plotly'
 import { PLOTLY_CONFIG, PIN_TRACE, TERRAIN_TRACE, profileFigure } from './profilePlot'
 import type { Profile } from './types'
+import { Icon } from './icons'
 
 interface Props {
   profile: Profile | null
@@ -100,7 +101,7 @@ export default function ProfilePanel({ profile, title, status, pins, onPins, onH
           <div className="flex gap-2 items-center">
             <span className="hint hidden md:inline">Clic en la gráfica: marcar un punto · rueda: zoom</span>
             {pins.length > 0 && <button className="btn btn-dark" onClick={() => onPins([])}>Borrar puntos ({pins.length})</button>}
-            <button className="btn btn-dark" onClick={download}>📈 Descargar imagen</button>
+            <button className="btn btn-dark" onClick={download}><Icon name="download" size={14} /> Descargar imagen</button>
           </div>
         )}
       </div>

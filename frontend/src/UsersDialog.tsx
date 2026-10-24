@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import * as cloud from './cloud'
+import { Alert, CloseButton, Icon } from './icons'
 
 interface Props {
   me: cloud.Me
@@ -39,8 +40,8 @@ export default function UsersDialog({ me, onClose }: Props) {
     <div className="dialog-backdrop" onClick={onClose}>
       <div className="dialog" role="dialog" aria-label="Usuarios" onClick={(e) => e.stopPropagation()} style={{ width: 'min(820px, 100%)' }}>
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold">👥 Usuarios</h2>
-          <button className="btn-ghost" onClick={onClose} aria-label="Cerrar">✕</button>
+          <h2 className="text-base font-semibold flex items-center gap-2"><Icon name="users" size={18} /> Usuarios</h2>
+          <CloseButton onClick={onClose} />
         </div>
         <p className="hint">
           Quien entra con Google queda como <b>lector</b> (solo ve los links que le comparten). Para que alguien del equipo
@@ -48,7 +49,7 @@ export default function UsersDialog({ me, onClose }: Props) {
         </p>
         <input type="search" placeholder="Buscar por correo, nombre o empresa" value={filter} onChange={(e) => setFilter(e.target.value)}
           aria-label="Buscar usuarios" />
-        {error && <p className="error" role="alert">⚠ {error}</p>}
+        {error && <Alert>{error}</Alert>}
         {rows === null ? <p className="hint">Cargando…</p> : (
           <table className="account-table">
             <thead><tr><th>Cuenta</th><th>Empresa · teléfono</th><th>Rol</th><th>Activa</th><th>Alta</th></tr></thead>

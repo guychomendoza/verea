@@ -164,26 +164,26 @@ def best_link(gateways: list, nd: dict, analyze) -> tuple[Optional[dict], Option
 def cell_state(operator: str, hit, diff) -> dict:
     """4G state of a cellular node from its guaranteed (`hit`) and differentiated (`diff`) status."""
     if hit and hit.covered and hit.margin_ok:
-        state = ("ok", f"✅ {operator} 4G garantizado", f"{operator} 4G ✓")
+        state = ("ok", f"{operator} 4G garantizado", f"{operator} 4G garantizado")
     elif hit and hit.covered:
         terrain = ("hueco pequeño" if hit.margin_m <= SMALL_GAP_MARGIN_M
                    else "terreno abrupto" if hit.margin_m <= MARGIN_STEEP_M + 20
                    else "terreno plano" if hit.margin_m >= MARGIN_FLAT_M - 50 else "terreno ondulado")
-        state = ("edge", f"⚠️ {operator} 4G incierto: a {hit.edge_m:,.0f} m de una zona sin "
+        state = ("edge", f"{operator} 4G incierto: a {hit.edge_m:,.0f} m de una zona sin "
                          f"señal (margen ahí {hit.margin_m:,.0f} m, {terrain})",
                  f"{operator} 4G incierto")
     elif diff and diff.covered:
-        state = ("differentiated", f"⚠️ {operator} 4G solo diferenciado (sin garantía)",
+        state = ("differentiated", f"{operator} 4G solo diferenciado (sin garantía)",
                  f"{operator} 4G sin garantía")
     elif hit and hit.possible:
         where = ("en un hueco pequeño de la cobertura" if hit.reach_m is None
                  else f"a {hit.nearest_m:,.0f} m de la cobertura (alcance estimado ahí {hit.reach_m:,.0f} m)")
-        state = ("possible", f"🟠 {operator} 4G posible con LTE-M / NB-IoT: {where}; verificar en campo",
+        state = ("possible", f"{operator} 4G posible con LTE-M / NB-IoT: {where}; verificar en campo",
                  f"{operator} 4G posible")
     else:
         near = (f"la más cercana a {hit.nearest_m:,.0f} m" if hit and hit.nearest_m is not None
                 else "ninguna en 20 km")
-        state = ("none", f"❌ Sin 4G {operator} declarado ({near})", f"sin 4G {operator}")
+        state = ("none", f"Sin 4G {operator} declarado ({near})", f"sin 4G {operator}")
     return {"state": state[0], "text": state[1], "short": state[2]}
 
 

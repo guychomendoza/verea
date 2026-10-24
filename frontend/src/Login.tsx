@@ -2,6 +2,7 @@ import { useId, useState } from 'react'
 import { supabase } from './cloud'
 import { pendingShare } from './share'
 import { Logo, ThemeButton } from './Logo'
+import { Icon } from './icons'
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -32,7 +33,7 @@ function PasswordField({ label, value, onChange, autoComplete }: {
           aria-label={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
           title={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
           onClick={() => setVisible(!visible)}>
-          {visible ? '🙈' : '👁'}
+          <Icon name={visible ? 'eye-off' : 'eye'} />
         </button>
       </div>
     </div>

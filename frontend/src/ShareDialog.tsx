@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import * as cloud from './cloud'
 import { shareUrl } from './share'
+import { Alert, CloseButton, Icon } from './icons'
 
 interface Props {
   projectId: string
@@ -55,22 +56,22 @@ export default function ShareDialog({ projectId, projectName, onClose }: Props) 
     <div className="dialog-backdrop" onClick={onClose}>
       <div className="dialog" role="dialog" aria-label="Compartir" onClick={(e) => e.stopPropagation()} style={{ width: 'min(720px, 100%)' }}>
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold">🔗 Compartir "{projectName || 'Sin nombre'}"</h2>
-          <button className="btn-ghost" onClick={onClose} aria-label="Cerrar">✕</button>
+          <h2 className="text-base font-semibold flex items-center gap-2"><Icon name="link" size={18} /> Compartir «{projectName || 'Sin nombre'}»</h2>
+          <CloseButton onClick={onClose} />
         </div>
         <p className="hint">
           Quien abra el link entra con su cuenta de Google como <b>lector</b>: explora el mapa, cada nodo y su perfil de
           elevación, y puede probar otra altura o entorno solo para él. No puede editar el proyecto. El link también va en
           el PDF.
         </p>
-        {error && <p className="error" role="alert">⚠ {error}</p>}
+        {error && <Alert>{error}</Alert>}
         {shares === null ? <p className="hint">Cargando…</p> : (
           <>
             {live.map((s) => (
               <div key={s.id} className="flex flex-col gap-1">
                 <div className="share-link">
                   <input readOnly value={shareUrl(s.token)} aria-label="Link para compartir" onFocus={(e) => e.target.select()} />
-                  <button className="btn" onClick={() => copy(s.token)}>{copied === s.token ? '✓ Copiado' : 'Copiar'}</button>
+                  <button className="btn" onClick={() => copy(s.token)}>{copied === s.token ? <><Icon name="check" /> Copiado</> : 'Copiar'}</button>
                   <button className="btn-danger text-xs" onClick={run(() => cloud.revokeShare(s.id))}>Revocar</button>
                 </div>
                 <span className="hint">{s.show_owner_info ? 'Muestra titulares, hectáreas y parcelas' : 'Sin titulares, hectáreas ni parcelas'} · creado {when(s.created_at)}</span>

@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { STATE_GROUPS, nodeState } from './nodeStatus'
 import type { Catalog, CellStatus, LinkResult, Project } from './types'
+import { CloseButton } from './icons'
 
 interface Props {
   catalog: Catalog
@@ -42,7 +43,7 @@ export default function BulkModelDialog(p: Props) {
       <div className="dialog" role="dialog" aria-label="Cambiar modelo de sensores" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold">Cambiar modelo de sensores</h2>
-          <button className="btn-ghost" onClick={p.onClose} aria-label="Cerrar">✕</button>
+          <CloseButton onClick={p.onClose} />
         </div>
         <p className="hint">Se conservan nombre, ubicación, titular, superficie y parcela; potencia, altura, ganancia y SF
           pasan a los del modelo nuevo. Se puede deshacer con Ctrl+Z.</p>

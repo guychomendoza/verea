@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { downloadBlob, safeName, type LegendItem } from '../exportImage'
 import type { Catalog, CellStatus, LinkResult, Project } from '../types'
 import { collectReport } from './collect'
+import { Alert, CloseButton, Icon } from '../icons'
 
 interface Props {
   catalog: Catalog
@@ -82,8 +83,8 @@ export default function ReportDialog(p: Props) {
     <div className="dialog-backdrop" onClick={() => !busy && close()}>
       <div className="dialog" role="dialog" aria-label="Reporte" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold">📄 Reporte de la red</h2>
-          <button className="btn-ghost" onClick={close} aria-label="Cerrar">✕</button>
+          <h2 className="text-base font-semibold flex items-center gap-2"><Icon name="report" size={18} /> Reporte de la red</h2>
+          <CloseButton onClick={close} />
         </div>
         <p className="hint">
           {p.project.gateways.length} gateways · {lora.length} nodos LoRa ({withLinkCount} con enlace) ·{' '}
@@ -115,7 +116,7 @@ export default function ReportDialog(p: Props) {
           </div>
         )}
         {cellPending && !busy && <p className="hint" role="status">Calculando la cobertura 4G de los sensores… el reporte se habilita al terminar.</p>}
-        {error && <p className="error" role="alert">⚠ {error}</p>}
+        {error && <Alert>{error}</Alert>}
         <div className="flex gap-2 justify-end">
           {busy
             ? <button className="btn btn-danger" onClick={() => ctrl.current?.abort()}>Cancelar</button>

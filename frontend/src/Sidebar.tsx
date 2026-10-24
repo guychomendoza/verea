@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MapMode } from './MapView'
 import { COLORS } from './colors'
-import { cellColor } from './mapStyle'
+import { cellColor, cellShort } from './mapStyle'
 import { KIND_LABELS, type DeviceKind } from './deviceIcons'
 import { DeviceIcon, Logo } from './Logo'
 import { Icon, type IconName } from './icons'
@@ -171,7 +171,7 @@ export default function Sidebar(p: Props) {
           <h2 className="font-semibold">{p.project.name || 'Proyecto sin nombre'}</h2>
           {p.project.description && <p className="project-description hint whitespace-pre-line">{p.project.description}</p>}
           <div className="viewer-banner" role="note">
-            <span>👁 <b>Modo lector.</b> Puedes probar otra altura o entorno en los nodos; se guarda solo para ti.</span>
+            <Icon name="eye" /><span><b>Modo lector.</b> Puedes probar otra altura o entorno en los nodos; se guarda solo para ti.</span>
             {p.viewer.changes > 0 && (
               <button className="btn-ghost underline" onClick={p.viewer.onRestore}>
                 Restaurar valores originales ({p.viewer.changes})</button>
@@ -189,7 +189,7 @@ export default function Sidebar(p: Props) {
       )}
       <div className="toolbar">
         {p.save && <SaveButton {...p.save} />}
-        {p.viewer && <button className="btn" onClick={p.viewer.onFiles}>← Mis archivos</button>}
+        {p.viewer && <button className="btn" onClick={p.viewer.onFiles}><Icon name="arrow-left" /> Mis archivos</button>}
         {fileItems.length > 0 && <FileMenu items={fileItems} />}
         {p.user?.onProjects && <button className="btn" onClick={p.user.onProjects}>Proyectos…</button>}
         {p.user?.onShare && <button className="btn" onClick={p.user.onShare} title="Link para ver el proyecto en modo lector">🔗 Compartir</button>}
@@ -297,7 +297,7 @@ export default function Sidebar(p: Props) {
                         onClick={() => p.onSelect({ kind: 'node', name: n.name }, true)}>
                         <DeviceIcon kind={g.kind} color={nodeColor(n.name, cell)} /> {n.name}
                         <span className="hint ml-auto">
-                          {cell ? (p.cells[n.name]?.short ?? '4G') : l ? db(l.margin_db) : ''}
+                          {cell ? cellShort(p.cells[n.name]) : l ? db(l.margin_db) : ''}
                         </span>
                       </button>
                     </li>

@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import type { NetworkCounts } from './counts'
 import { DeviceIcon } from './Logo'
+import { Icon } from './icons'
 
 const KEY = 'verea.counterOpen'
 
@@ -19,7 +20,7 @@ export default function NetworkCounter({ counts }: { counts: NetworkCounts }) {
   return (
     <div className="network-counter" role="region" aria-label="Resumen de la red">
       <button className="counter-head" onClick={toggle} aria-expanded={open} title={open ? 'Ocultar resumen' : 'Mostrar resumen'}>
-        Red: {g.total} GW · {lora.total + cell.total} {lora.total + cell.total === 1 ? 'sensor' : 'sensores'} {open ? '▾' : '▸'}
+        Red: {g.total} GW · {lora.total + cell.total} {lora.total + cell.total === 1 ? 'sensor' : 'sensores'} <Icon name="chevron" size={13} className={`counter-chev ${open ? '' : 'closed'}`} />
       </button>
       {open && (
         <div className="counter-rows">

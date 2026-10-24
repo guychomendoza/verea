@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { db, distance, num } from './geo'
-import { isCellular, nameError } from './project'
+import { isCellular, isStation, nameError } from './project'
+import { DeviceIcon } from './Logo'
+import { CloseButton, Icon } from './icons'
+import { plainText } from './mapStyle'
 import type { Catalog, CellStatus, Gateway, LinkResult, NodeDevice, Project } from './types'
 
 interface Props {
@@ -96,6 +99,7 @@ export default function DevicePanel(p: Props) {
   const node = p.kind === 'node' ? (p.device as NodeDevice) : null
   const gw = p.kind === 'gateway' ? (p.device as Gateway) : null
   const cellular = node ? isCellular(p.catalog, node) : false
+  const station = node ? isStation(p.catalog, node) : false
   const profiles = p.kind === 'gateway' ? p.catalog.gateway_profiles : p.catalog.node_profiles
   const prof = profiles[p.device.model]
   const best = p.link?.link
@@ -112,8 +116,11 @@ export default function DevicePanel(p: Props) {
   return (
     <aside className="panel side-panel device-panel" aria-label="Dispositivo">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-base font-semibold">{gw ? '📡 Gateway' : cellular ? '📶 Sensor 4G' : '📱 Nodo'}</h2>
-        <button className="btn-ghost" onClick={p.onClose} aria-label="Cerrar">✕</button>
+        <h2 className="text-base font-semibold flex items-center gap-2">
+          <DeviceIcon kind={gw ? 'gateway' : cellular ? 'cellular' : station ? 'station' : 'lora'} color="#3da3bc" size={20} />
+          {gw ? 'Gateway' : cellular ? 'Sensor 4G' : station ? 'Estación meteorológica' : 'Nodo LoRa'}
+        </h2>
+        <CloseButton onClick={p.onClose} />
       </div>
 
       <label className="field">
@@ -147,7 +154,8 @@ export default function DevicePanel(p: Props) {
           {best ? (
             <>
               <div className={`verdict ${best.viable ? 'ok' : best.margin_db > -5 ? 'warn' : 'bad'}`}>
-                {best.viable ? '✅ Enlace viable' : '❌ Enlace no viable'} con {best.gateway}
+                <Icon name={best.viable ? 'check-circle' : 'x-circle'} size={17} className="verdict-icon" />
+                {best.viable ? 'Enlace viable' : 'Enlace no viable'} con {best.gateway}
               </div>
               <div className="grid grid-cols-3 gap-2">
                 <Metric label="Margen" value={db(best.margin_db)} />
@@ -158,7 +166,7 @@ export default function DevicePanel(p: Props) {
               <small className="hint">El Perfil de Elevación de este enlace está en el panel inferior.</small>
             </>
           ) : (
-            <div className="verdict warn">⚠ {p.link?.error ?? 'Calculando…'}</div>
+            <div className="verdict warn"><Icon name="alert" size={16} className="verdict-icon" /> {p.link?.error ?? 'Calculando…'}</div>
           )}
         </section>
       )}
@@ -166,7 +174,10 @@ export default function DevicePanel(p: Props) {
         <section className="result">
           {p.cell ? (
             <>
-              <div className={`verdict ${p.cell.state === 'ok' ? 'ok' : p.cell.state === 'none' ? 'bad' : 'warn'}`}>{p.cell.text}</div>
+              <div className={`verdict ${p.cell.state === 'ok' ? 'ok' : p.cell.state === 'none' ? 'bad' : 'warn'}`}>
+                <Icon name={p.cell.state === 'ok' ? 'check-circle' : p.cell.state === 'none' ? 'x-circle' : 'alert'} size={17} className="verdict-icon" />
+                {plainText(p.cell.text)}
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <Metric label="Cubierto alrededor (300 m)" value={`${Math.round((p.cell.nearby_share ?? 0) * 100)}%`} />
                 {p.cell.covered
@@ -182,7 +193,7 @@ export default function DevicePanel(p: Props) {
       )}
       {gw && p.range && (
         <button className={`btn ${p.range.shown ? 'btn-active' : ''}`} onClick={p.range.onToggle} disabled={p.range.loading}>
-          {p.range.loading ? 'Calculando alcance…' : p.range.shown ? 'Ocultar alcance' : '📡 Ver alcance de la señal'}
+          <Icon name="radar" /> {p.range.loading ? 'Calculando alcance…' : p.range.shown ? 'Ocultar alcance' : 'Ver alcance de la señal'}
         </button>
       )}
       {gw && <p className="hint">{p.served ? `Mejor gateway para ${p.served} nodo${p.served === 1 ? '' : 's'}.` : 'Todavía no es el mejor gateway de ningún nodo.'}</p>}
