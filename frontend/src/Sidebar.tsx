@@ -77,14 +77,17 @@ function Section({ id, title, icon, count, defaultOpen = true, nested = false, a
     <section className={`side-section ${nested ? 'nested' : ''}`}>
       <div className="section-head">
         <button type="button" className="section-toggle" aria-expanded={open} onClick={toggle}>
-          <span className="chev" aria-hidden="true">{open ? '▾' : '▸'}</span>
+          <Icon name="chevron" size={14} className="chev" />
           {icon}
           <h3>{title}</h3>
           {count !== undefined && <span className="section-count">{count}</span>}
         </button>
         {open && actions}
       </div>
-      {open && <div className="section-body">{children}</div>}
+      {/* kept mounted so it can fold smoothly; hidden from keyboard and screen readers while closed */}
+      <div className={`fold ${open ? 'open' : ''}`} aria-hidden={!open} inert={!open}>
+        <div className="fold-inner"><div className="section-body">{children}</div></div>
+      </div>
     </section>
   )
 }

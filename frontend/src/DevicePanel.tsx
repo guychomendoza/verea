@@ -110,7 +110,7 @@ export default function DevicePanel(p: Props) {
   }
 
   return (
-    <aside className="panel side-panel" aria-label="Dispositivo">
+    <aside className="panel side-panel device-panel" aria-label="Dispositivo">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-base font-semibold">{gw ? '📡 Gateway' : cellular ? '📶 Sensor 4G' : '📱 Nodo'}</h2>
         <button className="btn-ghost" onClick={p.onClose} aria-label="Cerrar">✕</button>
