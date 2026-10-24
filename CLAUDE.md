@@ -23,11 +23,13 @@ frontend, DB with users) is planned.
   `coverage-2026Q2`: operator GeoPackage 1.2 GB + map tiles ≈130 MB + relief grid 22 MB
   into `data/coverage/`).
 
-- Deploy (phase 4, 2026-10-23): `deploy/README.md` and `deploy/deploy.sh tiles|api|web` — Cloudflare Pages
-  (web, `frontend/public/_redirects` + `_headers`), R2 (PMTiles), Fly.io (`Dockerfile`, `fly.toml`, API in qro
-  with volume /data filled by `scripts/server_data.py`: DEM from AWS, GeoPackage + relief from the release,
-  national 4G tile cache via `scripts/prebuild_coverage_cache.py`). Tokens only in
-  `~/.config/verea/deploy.env` (outside the repo). flyctl is in `~/.fly/bin`, wrangler in frontend devDeps.
+- Live since 2026-10-23 (phase 4): https://verea.app (Cloudflare Pages project `verea`), API https://api.verea.app
+  (Fly.io app `verea-api`, Dallas `dfw` — Querétaro was retired — shared-cpu-1x 1 GB, stops when idle, ≈6 s cold
+  start), tiles https://tiles.verea.app (R2 bucket `verea-tiles`); domain verea.app on Cloudflare (user's own
+  account). `deploy/README.md` and `deploy/deploy.sh tiles|api|web`. Volume /data filled by
+  `scripts/server_data.py`: DEM from AWS, GeoPackage + relief from the release, national 4G tile cache
+  (14,812 tiles, 2.4 GB) via `scripts/prebuild_coverage_cache.py`. Tokens only in `~/.config/verea/deploy.env`
+  (outside the repo; FLY_API_TOKEN quoted: it has a space). flyctl is in `~/.fly/bin`, wrangler in frontend devDeps.
 
 ## Layout
 - `app.py` — the whole Streamlit UI (sidebar, map, panels, report, projects, autosave).
@@ -93,8 +95,8 @@ frontend, DB with users) is planned.
   viewers may delete their account · Apariencia: theme · Administración: admins → `UsersDialog.tsx`);
   `public/privacidad.html` (privacy notice draft with placeholders for the company's data).
   Team-only API endpoints use `require_team` (`backend/auth.py`, reads the caller's profile through
-  Supabase REST with `SUPABASE_ANON_KEY`): `/api/suggest-gateways`. Shared links only work for
-  others once the app is deployed (phase 4); the PDF uses the address it was generated from.
+  Supabase REST with `SUPABASE_ANON_KEY`): `/api/suggest-gateways`. The PDF uses the address it was
+  generated from (verea.app in production).
   Browser tests (docstrings say how to start them): `frontend/e2e/run.py` (local mode, 5174 + dev
   API 8001), `cloud.py` (fake Supabase with team, viewer and admin accounts, links, RPCs; 5175), `live.py` (real Supabase; works only in its own
   project — on 2026-10-22 an earlier version renamed the team's newest project).
@@ -159,6 +161,13 @@ frontend, DB with users) is planned.
 - datos.gob.mx / repodatos block scripted downloads (403); download in a browser.
   The 4G "Diferenciada" files returned server errors in Oct 2026.
 - Elevation APIs reject > 100 points (falls back to flat terrain silently).
+- Deploy (2026-10-23): `wrangler pages project create` needs `--force` (else wrangler 4.149+ turns the app
+  into a Worker, rewriting vite.config.ts / package.json); `flyctl deploy` uses `--depot=false` (Depot hung on
+  the org token); a deploy resets the VM to fly.toml's size. rasterio's wheel needs `libexpat1` in the image,
+  else LocalDEM.open() quietly falls back to the online APIs (check `/api/health` → "elevation"). The 4G
+  prebuild peaks at ~4–8 GB per 5×5 block in dense areas: use `--block 2`, one worker per ~4.5 GB. Tiles are
+  fsynced before the rename (a restart left 0-byte tiles). Over `flyctl ssh` there is no pgrep/free, and a
+  check whose own command line contains the pattern always matches itself; /tmp is wiped when the machine stops.
 - Copernicus GLO-90 is a surface model (buildings, canopy): cities and forests read a bit
   rougher than bare ground, so their margin comes out somewhat smaller.
 - Worker processes must not share an open `np.load` npz from the parent (corrupt reads):
@@ -188,8 +197,8 @@ are close, real PDF report, cloud projects with users, LoRa calibration with Chi
 ## Web migration (plan approved 2026-10-21; team only, invite-only accounts)
 React + TypeScript + Vite + MapLibre (PMTiles from Cloudflare R2) on Cloudflare Pages; FastAPI on
 Fly.io with a volume for data; Supabase for Auth + Postgres (projects as the JSON of
-`core/project.py`, Row Level Security). No own domain yet. Phases: 1 API (done) → 2 frontend MVP (done) →
-3 accounts/cloud (code done, needs the Supabase project) → 4 deploy → 5 PDF report + parity, retire Streamlit.
+`core/project.py`, Row Level Security). Domain verea.app. Phases: 1 API (done) → 2 frontend MVP (done) →
+3 accounts/cloud (done) → 4 deploy (done 2026-10-23) → 5 PDF report + parity, retire Streamlit.
 - Deploy note: a cold 4G lookup reads the 1.2 GB GeoPackage (1.36 GB RAM peak, 7–10 s). On the
   server, pre-build the national 0.2° tile cache instead (≈3–5 GB) and skip the GeoPackage.
 - Open-Meteo has an hourly request limit (hit on 2026-10-21): the API must use the local DEM.

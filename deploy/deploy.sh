@@ -14,7 +14,7 @@ ENV_FILE="${VEREA_DEPLOY_ENV:-$HOME/.config/verea/deploy.env}"
 export PATH="$HOME/.local/node/bin:$HOME/.fly/bin:$PATH"
 
 PAGES_PROJECT=verea
-API_URL=https://verea-api.fly.dev
+API_URL=https://api.verea.app
 TILES_BUCKET=verea-tiles
 TILES_FILE=telcel_4g_2026q2.pmtiles
 
@@ -24,7 +24,8 @@ tiles() {
 }
 
 api() {
-  (cd "$ROOT" && flyctl deploy --remote-only)
+  # --depot=false: the Depot builder hung rejecting the org token (2026-10-23)
+  (cd "$ROOT" && flyctl deploy --remote-only --depot=false)
 }
 
 web() {

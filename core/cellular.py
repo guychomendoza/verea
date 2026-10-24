@@ -210,16 +210,19 @@ class CoverageSource:
             return
         # One read of the big file covers every missing tile, then clip per tile
         import pyogrio
+        import pyogrio.raw
         boxes = [self._tile_box(t) for t in to_read]
         bbox = (min(b[0] for b in boxes), min(b[1] for b in boxes),
                 max(b[2] for b in boxes), max(b[3] for b in boxes))
         if self._layer is None:
             self._layer = pyogrio.list_layers(self.path)[0][0]
-        df = pyogrio.read_dataframe(self.path, layer=self._layer, bbox=bbox)
-        level_col = next((c for c in ("NIVEL", "nivel") if c in df.columns), None)
+        # pyogrio.raw.read, not read_dataframe: no geopandas needed (the API server image lacks it)
+        meta, _, wkb, fields = pyogrio.raw.read(self.path, layer=self._layer, bbox=bbox)
+        names = list(meta["fields"])
+        level_col = next((c for c in ("NIVEL", "nivel") if c in names), None)
         # Clip first, repair after: make_valid on the national multipolygons takes minutes
-        geoms = list(df.geometry.values)
-        levels = df[level_col].tolist() if level_col else [None] * len(df)
+        geoms = list(shapely.from_wkb(wkb)) if wkb is not None else []
+        levels = fields[names.index(level_col)].tolist() if level_col else [None] * len(geoms)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         for t, b in zip(to_read, boxes):
             parts = []
@@ -230,7 +233,11 @@ class CoverageSource:
                     parts.append((None if level is None else float(level), c))
             self._tiles[t] = parts
             tmp = self._tile_file(t).with_suffix(".tmp")
-            tmp.write_text(json.dumps([{"level": lv, "wkb": shapely.to_wkb(g, hex=True)} for lv, g in parts]))
+            # fsync before the rename: a machine restart left 0-byte tiles on the server (2026-10-23)
+            with open(tmp, "w") as f:
+                f.write(json.dumps([{"level": lv, "wkb": shapely.to_wkb(g, hex=True)} for lv, g in parts]))
+                f.flush()
+                os.fsync(f.fileno())
             tmp.replace(self._tile_file(t))
 
     def geometries(self, bbox) -> list[tuple[Optional[float], shapely.Geometry]]:

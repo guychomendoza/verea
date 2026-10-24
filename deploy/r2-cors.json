@@ -2,7 +2,7 @@
   "rules": [
     {
       "allowed": {
-        "origins": ["https://verea.pages.dev", "http://localhost:5173"],
+        "origins": ["https://verea.app", "https://verea.pages.dev", "http://localhost:5173"],
         "methods": ["GET", "HEAD"],
         "headers": ["Range", "If-Match", "If-None-Match"]
       },

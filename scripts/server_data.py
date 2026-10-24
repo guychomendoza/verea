@@ -47,7 +47,10 @@ def main() -> int:
     if not all(get_coverage.download(*f) for f in get_coverage.FILES if f[0] in SERVER_FILES):
         return 1
     import prebuild_coverage_cache
-    sys.argv = ["prebuild", str(get_coverage.DEST / SERVER_FILES[0]), "--workers", str(max(1, (os.cpu_count() or 2) - 1))]
+    # A worker on a dense block peaks at ~4.1 GB: three, then two, on 8 GB were OOM-killed (2026-10-23)
+    mem_gb = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 2**30
+    workers = max(1, min((os.cpu_count() or 2) - 1, int((mem_gb - 1) // 4.5)))
+    sys.argv = ["prebuild", str(get_coverage.DEST / SERVER_FILES[0]), "--workers", str(workers), "--block", "2"]
     return prebuild_coverage_cache.main()
 
 

@@ -1,11 +1,11 @@
-# Verea API on Fly.io (deploy/README.md). Querétaro, the region closest to the users.
+# Verea API on Fly.io (deploy/README.md). Dallas: the region closest to Mexico (Querétaro was retired).
 app = "verea-api"
-primary_region = "qro"
+primary_region = "dfw"
 
 [env]
   SUPABASE_URL = "https://kepelonejrqoxdfjdcgb.supabase.co"
   # the web app's address(es); SUPABASE_ANON_KEY is set with `fly secrets set`
-  VEREA_CORS_ORIGINS = "https://verea.pages.dev"
+  VEREA_CORS_ORIGINS = "https://verea.app,https://verea.pages.dev"
 
 # DEM, 4G coverage and its tile cache: filled once by scripts/server_data.py
 [[mounts]]
