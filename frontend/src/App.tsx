@@ -526,8 +526,9 @@ function Workspace({ catalog, user, viewer }: {
     return () => ctrl.abort()
   }, [linkInput])
 
-  // ── 4G sensors ──
-  const cellInput = useDebounced(JSON.stringify([cell_operator ?? null,
+  // ── 4G sensors ── (a project without an operator uses the first with data: Telcel for now)
+  const operator = cell_operator || catalog.cell_operators[0] || null
+  const cellInput = useDebounced(JSON.stringify([operator,
     project.nodes.filter((n) => cellular.has(n.name)).map((n) => ({ name: n.name, lat: n.lat, lon: n.lon }))]),
   RECALC_DELAY_MS)
   useEffect(() => {
@@ -975,7 +976,11 @@ function Workspace({ catalog, user, viewer }: {
         <div className="phone-map">{mapArea}</div>
         {!phonePanel && <PanelButton name={project.name} onClick={() => setPhonePanel(true)} />}
         {phonePanel ? (
-          <PhoneSheet label="Panel del proyecto" head={<ProjectHead />} onClose={() => setPhonePanel(false)}>{sidebar}</PhoneSheet>
+          <PhoneSheet label="Panel del proyecto" head={<ProjectHead />} onClose={() => setPhonePanel(false)}
+            left={<button className="icon-btn" onClick={user ? user.onSettings : () => setLocalSettings(true)}
+              aria-label="Configuración" title="Configuración: cuenta y apariencia"><Icon name="settings" size={17} /></button>}>
+            {sidebar}
+          </PhoneSheet>
         ) : dev && selection && (
           phoneDetail ? (
             <PhoneSheet label="Detalle del dispositivo" onClose={() => setPhoneDetail(false)}>
@@ -987,7 +992,7 @@ function Workspace({ catalog, user, viewer }: {
             <PhoneSheet label="Dispositivo seleccionado" head={head} onClose={() => setSelection(null)}>
               <div className="device-summary">
                 {selNode && <div className="phone-profile">{profile}</div>}
-                {kind === 'cellular' && <CellResult cell={cells[dev.name]} operator={project.settings.cell_operator} />}
+                {kind === 'cellular' && <CellResult cell={cells[dev.name]} operator={operator ?? undefined} />}
                 <button className="btn" onClick={() => setPhoneDetail(true)}>Ver más detalles</button>
               </div>
             </PhoneSheet>

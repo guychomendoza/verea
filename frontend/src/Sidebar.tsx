@@ -352,8 +352,9 @@ export default function Sidebar(p: Props) {
         {p.catalog.cell_operators.length ? (
           <>
             <label className="field"><span>Operador</span>
-              <select value={s.cell_operator ?? ''} disabled={ro} onChange={(e) => p.onSettings({ cell_operator: e.target.value || undefined })}>
-                <option value="">—</option>
+              {/* no choice saved = the first operator with data (what the app checks against) */}
+              <select value={s.cell_operator || p.catalog.cell_operators[0]} disabled={ro}
+                onChange={(e) => p.onSettings({ cell_operator: e.target.value })}>
                 {p.catalog.cell_operators.map((o) => <option key={o}>{o}</option>)}
               </select>
             </label>

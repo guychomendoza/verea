@@ -97,6 +97,11 @@ export async function updateMe(id: string, patch: { full_name: string; phone: st
   check(await db().from('profiles').update(patch).eq('id', id).select('id'))
 }
 
+/** Admins: delete another account; its projects and field tests pass to the admin who deletes it. */
+export async function adminDeleteAccount(id: string): Promise<void> {
+  check(await db().rpc('admin_delete_account', { target: id }))
+}
+
 export async function deleteMyAccount(): Promise<void> {
   check(await db().rpc('delete_my_account'))
 }

@@ -128,7 +128,8 @@ frontend, DB with users) is planned.
   height / environment and gateway height (`viewer.ts`: `viewerAllows`, `overridesOf`,
   `applyOverrides`), kept in `project_viewers.overrides`, never in the project; `MyFiles.tsx` lists
   their links; `SettingsDialog.tsx` = the gear button «Configuración» (tabs Cuenta: name, phone, company, sign out,
-  viewers may delete their account · Apariencia: theme · Administración: admins → `UsersDialog.tsx`);
+  anyone may delete their account (migration 20261025020000: projects and field tests pass to an admin; the last
+  admin cannot), admins delete others from `UsersDialog.tsx` (`admin_delete_account`, work passes to them) · Apariencia: theme · Administración: admins → `UsersDialog.tsx`);
   `public/privacidad.html` (privacy notice draft with placeholders for the company's data).
   Team-only API endpoints use `require_team` (`backend/auth.py`, reads the caller's role through
   Supabase REST with `SUPABASE_ANON_KEY`): `/api/suggest-gateways`; admin-only `require_admin`:

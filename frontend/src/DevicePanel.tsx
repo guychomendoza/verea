@@ -197,7 +197,7 @@ export default function DevicePanel(p: Props) {
           )}
         </section>
       )}
-      {cellular && <CellResult cell={p.cell} operator={p.project.settings.cell_operator} />}
+      {cellular && <CellResult cell={p.cell} operator={p.project.settings.cell_operator || p.catalog.cell_operators[0]} />}
       {gw && p.range && (
         <button className={`btn ${p.range.shown ? 'btn-active' : ''}`} onClick={p.range.onToggle} disabled={p.range.loading}>
           <Icon name="radar" /> {p.range.loading ? 'Calculando alcance…' : p.range.shown ? 'Ocultar alcance' : 'Ver alcance de la señal'}

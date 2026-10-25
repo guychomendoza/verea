@@ -192,10 +192,12 @@ body {
 .device-summary > .btn { align-self: center; }
 .phone-profile { height: 260px; border-radius: var(--r-lg); overflow: hidden; flex-shrink: 0; }
 .back-link { margin: 12px 16px 0; }
-/* centred on phones: the panel's head, the project card, the actions and every section */
-.phone-sheet .brand-bar { justify-content: center; }
-.phone-sheet .brand-bar .logo { display: none; }
-.phone-sheet .brand-bar .edit-toggle { margin-left: 0; }
+/* ⚙ · logo · ✕: equal side columns keep the logo on the true centre of the screen */
+.phone-sheet-bar.centred { display: grid; grid-template-columns: 40px 1fr 40px; padding: 8px 10px; }
+.phone-sheet-left { display: flex; justify-content: flex-start; }
+.phone-sheet-bar.centred .icon-close { justify-self: end; }
+/* centred on phones: the project card, the actions and every section (the ⚙ is in the sheet's bar) */
+.phone-sheet .brand-bar { display: none; }
 .phone-sheet .project-card { text-align: center; align-items: center; }
 .phone-sheet .project-head { width: 100%; }
 .phone-sheet .project-name, .phone-sheet .project-title { text-align: center; margin-left: 0; }
@@ -350,6 +352,11 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 3px var
 .btn-google, .btn-email, .btn-lg { width: 100%; padding: 10px 14px; font-size: 14px; }
 .btn-google { gap: 10px; }
 .google-btn { display: flex; justify-content: center; min-height: 44px; }
+/* Google's button is an iframe in a light page: under the dark theme the browser paints it an opaque
+   white box unless its parent is also light (the button keeps its own dark style) */
+.google-btn, .google-btn iframe { color-scheme: light; background: transparent; }
+.danger-icon { width: 30px; height: 30px; color: var(--bad); box-shadow: none; }
+.danger-icon:hover:not(:disabled) { background: color-mix(in srgb, var(--bad) 12%, transparent); border-color: var(--bad); }
 .login-card .field input { padding: 9px 12px; }
 @media (max-width: 860px) {
   .login-wrap { grid-template-columns: 1fr; }

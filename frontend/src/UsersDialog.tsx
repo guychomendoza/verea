@@ -37,6 +37,18 @@ export default function UsersDialog({ me, onClose }: Props) {
     }
   }
 
+  const remove = async (a: cloud.Account) => {
+    if (!await askConfirm(`¿Eliminar la cuenta de ${a.full_name || a.email}? Sus proyectos y pruebas de campo pasan a ti; ya no podrá entrar. No se puede deshacer.`,
+      { ok: 'Eliminar cuenta', danger: true })) return
+    setError('')
+    try {
+      await cloud.adminDeleteAccount(a.id)
+      load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   const q = filter.toLowerCase()
   const shown = (rows ?? []).filter((a) => [a.email, a.full_name, a.company].some((v) => v.toLowerCase().includes(q)))
   return (
@@ -56,7 +68,7 @@ export default function UsersDialog({ me, onClose }: Props) {
         {error && <Alert>{error}</Alert>}
         {rows === null ? <Spinner /> : (
           <table className="account-table">
-            <thead><tr><th>Cuenta</th><th>Empresa · teléfono</th><th>Rol</th><th>Activa</th><th>Alta</th></tr></thead>
+            <thead><tr><th>Cuenta</th><th>Empresa · teléfono</th><th>Rol</th><th>Activa</th><th>Alta</th><th><span className="sr-only">Eliminar</span></th></tr></thead>
             <tbody>
               {shown.map((a) => (
                 <tr key={a.id}>
@@ -71,6 +83,10 @@ export default function UsersDialog({ me, onClose }: Props) {
                   <td><input type="checkbox" checked={a.active} disabled={a.id === me.id} aria-label={`Cuenta activa ${a.email}`}
                     onChange={(e) => change(a, { active: e.target.checked })} /></td>
                   <td>{new Date(a.created_at).toLocaleDateString('es-MX')}</td>
+                  <td>{a.id !== me.id && (
+                    <button className="icon-btn danger-icon" onClick={() => remove(a)} aria-label={`Eliminar ${a.email}`} title="Eliminar la cuenta">
+                      <Icon name="trash" /></button>
+                  )}</td>
                 </tr>
               ))}
             </tbody>

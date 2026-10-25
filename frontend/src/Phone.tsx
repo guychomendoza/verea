@@ -7,8 +7,10 @@ import { DeviceIcon, Logo } from './Logo'
 import { CloseButton, Icon } from './icons'
 
 /** The half-height sheet; `head` is its title row (logo or the device), or nothing. */
-export function PhoneSheet({ label, onClose, head, children }: {
-  label: string; onClose: () => void; head?: React.ReactNode; children: React.ReactNode
+export function PhoneSheet({ label, onClose, head, left, children }: {
+  label: string; onClose: () => void; head?: React.ReactNode
+  left?: React.ReactNode               // a button left of a centred head (⚙ beside the logo): the head stays truly centred
+  children: React.ReactNode
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -18,7 +20,8 @@ export function PhoneSheet({ label, onClose, head, children }: {
   return (
     <section className="phone-sheet" role="dialog" aria-label={label}>
       {head !== undefined && (
-        <div className="phone-sheet-bar">
+        <div className={`phone-sheet-bar ${left ? 'centred' : ''}`}>
+          {left && <div className="phone-sheet-left">{left}</div>}
           <div className="phone-sheet-title">{head}</div>
           <CloseButton onClick={onClose} label={`Cerrar ${label.toLowerCase()}`} />
         </div>

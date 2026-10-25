@@ -92,7 +92,11 @@ function AccountTab({ me, onSave, onDelete, onSignOut }: NonNullable<Props['acco
     }
   }
   const remove = async () => {
-    if (!await askConfirm('¿Eliminar tu cuenta? Se borran tu perfil, tus archivos compartidos y tus cambios. No se puede deshacer.', { ok: 'Eliminar mi cuenta', danger: true })) return
+    const team = me.role !== 'viewer'
+    if (!await askConfirm(team
+      ? '¿Eliminar tu cuenta? Tus proyectos y pruebas de campo pasan a un administrador del equipo; tu perfil se borra. No se puede deshacer.'
+      : '¿Eliminar tu cuenta? Se borran tu perfil, tus archivos compartidos y tus cambios. No se puede deshacer.',
+    { ok: 'Eliminar mi cuenta', danger: true })) return
     try {
       await onDelete()
     } catch (err) {
@@ -127,10 +131,8 @@ function AccountTab({ me, onSave, onDelete, onSignOut }: NonNullable<Props['acco
         <button type="button" className="btn-danger flex items-center gap-2" onClick={onSignOut}><Icon name="logout" /> Cerrar sesión</button>
         <button className="btn btn-active" type="submit" disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button>
       </div>
-      {me.role === 'viewer' && (
-        <button type="button" className="btn-ghost text-xs underline self-start text-[var(--bad)]" onClick={remove}>
-          Eliminar mi cuenta</button>
-      )}
+      <button type="button" className="btn-ghost text-xs underline self-start text-[var(--bad)]" onClick={remove}>
+        Eliminar mi cuenta</button>
     </form>
   )
 }

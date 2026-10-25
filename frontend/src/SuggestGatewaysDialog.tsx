@@ -37,6 +37,7 @@ export default function SuggestGatewaysDialog(p: Props) {
     return () => window.removeEventListener('keydown', onKey)
   }, [p])
 
+  const operator = p.project.settings.cell_operator || p.catalog.cell_operators[0]     // as the rest of the app
   const lora = p.project.nodes.filter((n) => !p.cellular.has(n.name))
   const targets = target === 'all' ? lora : lora.filter((n) => !p.links[n.name]?.link?.viable)
 
@@ -47,7 +48,7 @@ export default function SuggestGatewaysDialog(p: Props) {
     try {
       const prof = p.catalog.gateway_profiles[model]
       const r = await api.suggestGateways({
-        nodes: targets, settings: p.project.settings, operator: p.project.settings.cell_operator,
+        nodes: targets, settings: p.project.settings, operator,
         gateway: { name: 'propuesto', lat: 0, lon: 0, model, height, tx_power: prof.tx_power, gain: prof.gain,
           cable_loss: prof.cable_loss, online: true, backhaul: '4g' },
         max_gateways: maxGw, max_link_km: 8,
@@ -98,7 +99,7 @@ export default function SuggestGatewaysDialog(p: Props) {
             </button>
           </div>
         )}
-        {!p.project.settings.cell_operator && <Alert tone="warn">Sin operador 4G elegido: no se revisa si hay 4G en los puntos propuestos.</Alert>}
+        {!operator && <Alert tone="warn">El servidor no tiene datos de cobertura 4G: no se revisa si hay 4G en los puntos propuestos.</Alert>}
         {error && <Alert>{error}</Alert>}
         {result && (
           <>

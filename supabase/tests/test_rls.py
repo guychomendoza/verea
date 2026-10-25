@@ -278,10 +278,8 @@ def test_deactivated_viewers_lose_access(db, team, shared):
     As(db, team["admin"]).q("update profiles set active = true where id = %s", shared["vera"])
 
 
-def test_only_viewers_delete_their_own_account(db, team):
+def test_viewers_delete_their_own_account(db, team):
     gone = new_user(db, "adios@cliente.mx", role="viewer")
-    with pytest.raises(DENIED):
-        As(db, team["ana"]).q("select delete_my_account()")
     As(db, gone).q("select delete_my_account()")
     with psycopg.connect(db, autocommit=True) as c:
         assert c.execute("select count(*) from profiles where id = %s", (gone,)).fetchone() == (0,)
@@ -328,3 +326,53 @@ def test_field_tests_retry_does_not_duplicate(db, team):
         record(db, team["ana"], client=client)
     with pytest.raises(psycopg.errors.CheckViolation):
         record(db, team["ana"], observed="great")
+
+
+# ── deleting accounts (20261025020000_delete_accounts.sql) ──
+def owned(db, uid):
+    with psycopg.connect(db, autocommit=True) as c:
+        return (c.execute("select count(*) from projects where owner_id = %s", (uid,)).fetchone()[0],
+                c.execute("select count(*) from field_tests where author_id = %s", (uid,)).fetchone()[0])
+
+
+def exists(db, uid):
+    with psycopg.connect(db, autocommit=True) as c:
+        return c.execute("select count(*) from auth.users where id = %s", (uid,)).fetchone()[0] == 1
+
+
+def test_a_member_deletes_their_account_and_an_admin_keeps_their_work(db, team):
+    leaver = new_user(db, "leaver@farm.mx")
+    create(db, leaver, "Rancho del que se va")
+    record(db, leaver)
+    before = owned(db, team["admin"])
+    As(db, leaver).q("select delete_my_account()")
+    assert not exists(db, leaver)
+    after = owned(db, team["admin"])
+    assert after[0] == before[0] + 1 and after[1] == before[1] + 1        # project and test handed to the admin
+
+
+def test_the_last_admin_cannot_delete_themselves(db, team):
+    # the module's admin is not alone: make a separate database state check through a lone-admin scenario
+    with psycopg.connect(db, autocommit=True) as c:
+        c.execute("update profiles set active = false where role = 'admin' and id <> %s", (team["admin"],))
+    try:
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            As(db, team["admin"]).q("select delete_my_account()")
+        assert exists(db, team["admin"])
+    finally:
+        with psycopg.connect(db, autocommit=True) as c:
+            c.execute("update profiles set active = true where role = 'admin'")
+
+
+def test_only_admins_delete_other_accounts(db, team):
+    target = new_user(db, "target@farm.mx")
+    create(db, target, "Rancho de target")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        As(db, team["ana"]).q("select admin_delete_account(%s)", str(target))
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        As(db, team["admin"]).q("select admin_delete_account(%s)", str(team["admin"]))   # not yourself
+    before = owned(db, team["admin"])
+    As(db, team["admin"]).q("select admin_delete_account(%s)", str(target))
+    assert not exists(db, target) and owned(db, team["admin"])[0] == before[0] + 1
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        As(db, team["ana"]).q("select hand_over_account(%s, %s)", str(team["ana"]), str(team["beto"]))

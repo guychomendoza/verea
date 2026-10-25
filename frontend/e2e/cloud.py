@@ -119,6 +119,14 @@ def rpc(route, request, me, fn):
         return route.fulfill(json={"name": p["name"], "updated_at": p["updated_at"], "overrides": v["overrides"],
                                    "token": None if s.get("revoked_at") else s.get("token"), "show_owner_info": full,
                                    "data": p["data"] if full else without_owner_info(p["data"])})
+    if fn == "admin_delete_account":
+        if me["role"] != "admin" or body["target"] == me["id"]:
+            return route.fulfill(status=403, json={"code": "42501", "message": "Solo un administrador elimina cuentas"})
+        for p in PROJECTS.values():
+            if p["owner_id"] == body["target"]:
+                p["owner_id"] = me["id"]
+        PROFILES.pop(body["target"], None)
+        return route.fulfill(status=204)
     route.fulfill(status=404, json={"message": f"no function {fn}"})
 
 
@@ -556,7 +564,13 @@ def main():
         expect(form.get_by_role("status")).to_contain_text(temp)
         assert created == [{"email": "tecnico@agricola.mx", "full_name": "Técnico de campo", "role": "member", "password": temp}]
         expect(users).to_contain_text("tecnico@agricola.mx")
-        print("admin: account created with a temporary password")
+        new_id = next(k for k, v in PROFILES.items() if v["email"] == "tecnico@agricola.mx")
+        users.get_by_role("button", name="Eliminar tecnico@agricola.mx").click()
+        page.get_by_role("alertdialog", name="Confirmar").get_by_role("button", name="Eliminar cuenta").click()
+        expect(users.locator("table")).not_to_contain_text("tecnico@agricola.mx")
+        assert new_id not in PROFILES
+        assert users.get_by_role("button", name=f"Eliminar {JEFA['email']}").count() == 0      # not yourself
+        print("admin: account created with a temporary password, then deleted")
         b.close()
     print("page errors:", errors)
     print("screenshots in", OUT)
