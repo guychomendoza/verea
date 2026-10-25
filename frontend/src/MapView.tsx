@@ -41,7 +41,12 @@ interface Props {
   onReady?: (map: maplibregl.Map) => void
   readOnly?: boolean                    // viewer: devices are selected, never dragged
   fieldTests?: FieldTest[]              // 4G field tests, drawn as coloured points
-  me?: { lat: number; lon: number; accuracy: number } | null   // the phone's location (field mode)
+  onFieldTest?: (clientId: string) => void   // a field test's dot was clicked
+  // «Mi ubicación» (MapLibre's control, beside the zoom): autoLocate starts it at once (field mode);
+  // onLocate gets every position, onLocateError a message (permission denied…)
+  autoLocate?: boolean
+  onLocate?: (here: { lat: number; lon: number; accuracy: number }) => void
+  onLocateError?: (message: string) => void
 }
 
 /** Map button for the ruler, under the zoom buttons. */
@@ -136,18 +141,7 @@ function fieldGeoJSON(tests: FieldTest[] = []): GeoJSON.FeatureCollection {
   return {
     type: 'FeatureCollection',
     features: tests.map((t) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [t.lon, t.lat] },
-      properties: { color: OBSERVED[t.observed].color } })),
-  }
-}
-
-/** The phone's location and its accuracy circle (radius in metres, drawn in pixels per zoom). */
-function meGeoJSON(me: Props['me']): GeoJSON.FeatureCollection {
-  if (!me) return { type: 'FeatureCollection', features: [] }
-  const mPerPx0 = 156543.03 * Math.cos((me.lat * Math.PI) / 180)        // metres per pixel at zoom 0
-  return {
-    type: 'FeatureCollection',
-    features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [me.lon, me.lat] },
-      properties: { r0: me.accuracy / mPerPx0, r22: (me.accuracy / mPerPx0) * 2 ** 22 } }],
+      properties: { color: OBSERVED[t.observed].color, id: t.client_id } })),
   }
 }
 
@@ -162,7 +156,6 @@ function applyProps(map: maplibregl.Map, props: Props, dragging: boolean) {
   ;(map.getSource('profile-pins') as GeoJSONSource).setData(pointsGeoJSON(props.profilePins, true))
   ;(map.getSource('cursor') as GeoJSONSource).setData(pointsGeoJSON(props.cursor ? [props.cursor] : []))
   ;(map.getSource('field-tests') as GeoJSONSource).setData(fieldGeoJSON(props.fieldTests))
-  ;(map.getSource('me') as GeoJSONSource).setData(meGeoJSON(props.me))
   map.setLayoutProperty('coverage', 'visibility', props.showCoverage ? 'visible' : 'none')
   for (const id of ['roads', 'places']) {
     map.setLayoutProperty(id, 'visibility', props.showLabels ? 'visible' : 'none')
@@ -202,6 +195,18 @@ export default function MapView(props: Props) {
     const ruler = new RulerControl(() => propsRef.current.onToggleRuler())
     map.addControl(ruler, 'top-right')
     rulerCtl.current = ruler
+    // «Mi ubicación»: the blue dot and its accuracy circle, following the phone; also in the editor
+    // (the map doubles as a field map for installations)
+    const locate = new maplibregl.GeolocateControl({
+      positionOptions: { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 },
+      trackUserLocation: true, showAccuracyCircle: true, fitBoundsOptions: { maxZoom: 16 },
+    })
+    map.addControl(locate, 'top-right')
+    locate.on('geolocate', (e: GeolocationPosition) =>
+      propsRef.current.onLocate?.({ lat: e.coords.latitude, lon: e.coords.longitude, accuracy: e.coords.accuracy }))
+    locate.on('error', (e: GeolocationPositionError) => propsRef.current.onLocateError?.(e.code === 1
+      ? 'Permite el acceso a tu ubicación para verla en el mapa.' : 'No se pudo obtener tu ubicación.'))
+    if (propsRef.current.autoLocate) map.once('load', () => locate.trigger())
     map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left')
     const coverage = new CoverageControl(() => propsRef.current.onToggleCoverage())
     map.addControl(coverage, 'bottom-right')
@@ -279,6 +284,8 @@ export default function MapView(props: Props) {
       if (p.mode === 'ruler') p.onRulerPoint(e.lngLat.lat, e.lngLat.lng)
       else if (p.mode !== 'select') p.onAdd(e.lngLat.lat, e.lngLat.lng)
       else if (!pressed) {
+        const t = p.onFieldTest && map.queryRenderedFeatures(e.point, { layers: ['field-tests'] })[0]
+        if (t) { p.onFieldTest!(t.properties.id as string); return }
         const f = featureAt(e)
         if (!f) p.onSelect(null)
         else if (p.readOnly) {

@@ -10,7 +10,7 @@ import { Alert, CloseButton, Icon } from './icons'
 import { LoadingScreen, Spinner } from './Loading'
 import { isCellular, isStation } from './project'
 import {
-  OBSERVED, agrees, dequeue, enqueue, newClientId, queued, withFieldTests, type FieldTest, type Observed,
+  EXPECTED, OBSERVED, agrees, comparedToMap, dequeue, enqueue, newClientId, queued, withFieldTests, type FieldTest, type Observed,
 } from './fieldTests'
 import type { Catalog, CellStatus, Project } from './types'
 
@@ -18,8 +18,12 @@ type Here = { lat: number; lon: number; accuracy: number }
 type Draft = Here & { predicted: CellStatus | null; checking: boolean; observed: Observed | null
   delivered: boolean | null; rssi: string; notes: string }
 
-export default function FieldMode({ catalog, projectId, onExit }: {
-  catalog: Catalog; projectId: string | null; onExit: (projectId: string | null) => void
+const PREDICTED_LABEL: Record<CellStatus['state'], string> = {
+  ok: 'garantizada', edge: 'incierta', differentiated: 'solo diferenciada', possible: 'posible', none: 'sin cobertura',
+}
+
+export default function FieldMode({ catalog, projectId, me: account, onExit }: {
+  catalog: Catalog; projectId: string | null; me: cloud.Me; onExit: (projectId: string | null) => void
 }) {
   const [rows, setRows] = useState<cloud.ProjectRow[] | null>(null)
   const [project, setProject] = useState<{ id: string; data: Project } | null>(null)
@@ -31,12 +35,13 @@ export default function FieldMode({ catalog, projectId, onExit }: {
   const [error, setError] = useState('')
   const [me, setMe] = useState<Here | null>(null)
   const [geoError, setGeoError] = useState('')
-  const [focus, setFocus] = useState<Focus | null>(null)
+  const [focus] = useState<Focus | null>(null)
+  const [picked, setPicked] = useState<FieldTest | null>(null)     // a test's dot clicked: its card
   const [mode, setMode] = useState<MapMode>('select')
   const [draft, setDraft] = useState<Draft | null>(null)
   const [cells, setCells] = useState<Record<string, CellStatus>>({})
   const [showCoverage, setShowCoverage] = useState(true)
-  const centred = useRef(false)
+  const syncingRef = useRef(false)
 
   const operator = project?.data.settings.cell_operator || catalog.cell_operators[0] || 'Telcel'
 
@@ -66,7 +71,8 @@ export default function FieldMode({ catalog, projectId, onExit }: {
   const sync = useCallback(async () => {
     const q = queued()
     setPending(q)
-    if (!q.length || !navigator.onLine) return
+    if (!q.length || !navigator.onLine || syncingRef.current) return      // one upload at a time
+    syncingRef.current = true
     setSyncing(true)
     try {
       // tests recorded without signal: ask the map now what it predicted there
@@ -77,10 +83,13 @@ export default function FieldMode({ catalog, projectId, onExit }: {
       await cloud.uploadFieldTests(q)
       dequeue(q.map((t) => t.client_id))
       setPending(queued())
+      setError('')
       await refresh()
-    } catch (e) {
-      setError(`No se pudieron subir las pruebas (se quedan en el teléfono): ${e instanceof Error ? e.message : e}`)
+    } catch {
+      // a dropped connection is normal in the field: the tests wait on the phone and the next try uploads them
+      setError('Sin conexión estable: las pruebas se quedan en el teléfono y se suben solas en cuanto haya señal.')
     } finally {
+      syncingRef.current = false
       setSyncing(false)
     }
   }, [refresh])
@@ -93,22 +102,6 @@ export default function FieldMode({ catalog, projectId, onExit }: {
     sync()
     return () => { window.removeEventListener('online', up); window.removeEventListener('offline', down); clearInterval(t) }
   }, [sync])
-
-  // ── where I am ──
-  useEffect(() => {
-    if (!navigator.geolocation) { setGeoError('Este navegador no da la ubicación.'); return }
-    const id = navigator.geolocation.watchPosition(
-      (p) => {
-        const here = { lat: p.coords.latitude, lon: p.coords.longitude, accuracy: p.coords.accuracy }
-        setMe(here)
-        setGeoError('')
-        if (!centred.current) { centred.current = true; setFocus({ ...here, zoom: 16, key: Date.now() }) }
-      },
-      (e) => setGeoError(e.code === e.PERMISSION_DENIED ? 'Permite el acceso a tu ubicación para registrar pruebas donde estás.'
-        : 'Buscando tu ubicación…'),
-      { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 })
-    return () => navigator.geolocation.clearWatch(id)
-  }, [])
 
   // ── recording ──
   const start = (at: Here) => {
@@ -130,6 +123,21 @@ export default function FieldMode({ catalog, projectId, onExit }: {
     })
     setDraft(null)
     sync()
+  }
+
+  // a test of mine (or any, for an admin) can be deleted; one not uploaded yet just leaves the queue
+  const canDelete = (t: FieldTest) => !t.author_id || t.author_id === account.id || account.role === 'admin'
+  const remove = async (t: FieldTest) => {
+    if (!confirm('¿Borrar esta prueba? No se puede deshacer.')) return
+    try {
+      if (pending.some((x) => x.client_id === t.client_id)) dequeue([t.client_id])
+      else await cloud.deleteFieldTest(t.client_id)
+      setPending(queued())
+      setPicked(null)
+      await refresh()
+    } catch (e) {
+      setError(`No se pudo borrar la prueba: ${e instanceof Error ? e.message : e}`)
+    }
   }
 
   const shown = useMemo(() => [...pending, ...tests.filter((t) => !pending.some((p) => p.client_id === t.client_id))], [pending, tests])
@@ -167,7 +175,9 @@ export default function FieldMode({ catalog, projectId, onExit }: {
           onSelect={() => {}} onMove={() => {}} onAdd={(lat, lon) => start({ lat, lon, accuracy: 0 })}
           onRulerPoint={() => {}} onRulerDone={() => {}} onToggleRuler={() => {}}
           coverageAvailable={catalog.cell_operators.length > 0} onToggleCoverage={() => setShowCoverage((v) => !v)}
-          readOnly fieldTests={shown} me={me} />
+          readOnly fieldTests={shown} autoLocate
+          onLocate={(here) => { setMe(here); setGeoError('') }} onLocateError={setGeoError}
+          onFieldTest={(id) => { setDraft(null); setPicked(shown.find((t) => t.client_id === id) ?? null) }} />
       </div>
 
       <header className="field-bar">
@@ -180,7 +190,7 @@ export default function FieldMode({ catalog, projectId, onExit }: {
         </span>
       </header>
 
-      {!draft && (
+      {!draft && !picked && (
         <div className="field-actions">
           {geoError && <p className="field-geo">{geoError}</p>}
           {mode === 'pick' ? (
@@ -192,8 +202,6 @@ export default function FieldMode({ catalog, projectId, onExit }: {
             <>
               <p className="field-today">{today.length ? `Hoy: ${today.length} prueba${today.length === 1 ? '' : 's'} · ${todayAgree} coinciden con el mapa` : 'Sin pruebas hoy'}</p>
               <div className="field-buttons">
-                <button className="btn" onClick={() => me && setFocus({ ...me, zoom: 16, key: Date.now() })} disabled={!me}
-                  aria-label="Centrar en mi ubicación" title="Centrar en mi ubicación"><Icon name="locate" /></button>
                 <button className="btn btn-active field-record" onClick={() => me && start(me)} disabled={!me}>
                   <Icon name="plus" /> Registrar prueba aquí</button>
                 <button className="btn" onClick={() => setMode('pick')} aria-label="Elegir el punto en el mapa" title="Elegir el punto en el mapa">
@@ -228,7 +236,9 @@ export default function FieldMode({ catalog, projectId, onExit }: {
             {draft.observed && draft.predicted && (
               agrees(draft.predicted.state, draft.observed)
                 ? <p className="agree yes"><Icon name="check-circle" size={16} /> Coincide con el mapa</p>
-                : <p className="agree no"><Icon name="alert" size={16} /> No coincide con el mapa: esta prueba lo corrige aquí</p>
+                : <p className="agree no"><Icon name="alert" size={16} /> No coincide: el mapa la da como {PREDICTED_LABEL[draft.predicted.state]}
+                    (se esperaría {OBSERVED[EXPECTED[draft.predicted.state]].label.toLowerCase()}) y aquí la señal es{' '}
+                    {comparedToMap(draft.predicted.state, draft.observed)} de lo que dice. Esta prueba lo corrige aquí.</p>
             )}
             <div className="field-extra">
               <div className="field"><span>¿Llegó el dato al servidor?</span>
@@ -249,6 +259,30 @@ export default function FieldMode({ catalog, projectId, onExit }: {
               <button className="btn" onClick={() => setDraft(null)}>Cancelar</button>
               <button className="btn btn-active" onClick={save} disabled={!draft.observed}>Guardar prueba</button>
             </div>
+          </div>
+        </section>
+      )}
+      {picked && (
+        <section className="field-sheet field-test-card" role="dialog" aria-label="Prueba de campo">
+          <div className="phone-sheet-bar">
+            <div className="phone-sheet-title">
+              <span className="test-dot" style={{ background: OBSERVED[picked.observed].color }} />
+              <div className="device-head-text"><b>{OBSERVED[picked.observed].label}</b>
+                <span>{new Date(picked.taken_at).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })}
+                  {picked.author_id === account.id || !picked.author_id ? ' · tuya' : ''}
+                  {pending.some((x) => x.client_id === picked.client_id) ? ' · por subir' : ''}</span></div>
+            </div>
+            <CloseButton onClick={() => setPicked(null)} label="Cerrar la prueba" />
+          </div>
+          <div className="field-sheet-body">
+            <p className="hint">{OBSERVED[picked.observed].hint}.
+              {picked.predicted ? ` El mapa la daba como ${PREDICTED_LABEL[picked.predicted]}: ${agrees(picked.predicted, picked.observed) ? 'coincide' : `no coincide (señal ${comparedToMap(picked.predicted, picked.observed)})`}.` : ''}
+              {picked.delivered === true ? ' El dato llegó al servidor.' : picked.delivered === false ? ' El dato no llegó al servidor.' : ''}
+              {picked.rssi_dbm != null ? ` RSSI ${picked.rssi_dbm} dBm.` : ''}</p>
+            {picked.notes && <p className="test-notes">{picked.notes}</p>}
+            {canDelete(picked) && (
+              <button className="btn-danger self-center" onClick={() => remove(picked)}><Icon name="x" /> Borrar esta prueba</button>
+            )}
           </div>
         </section>
       )}

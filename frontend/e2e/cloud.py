@@ -185,10 +185,12 @@ def rest(route, request):
                 r.update(updated_at=now(), updated_by=me["id"])
         rows = rows if allowed else []
     elif method == "DELETE":
-        if table == "projects":
-            rows = [r for r in rows if r["owner_id"] == me["id"] or me["role"] == "admin"]
+        if table in ("projects", "field_tests"):
+            owner = "owner_id" if table == "projects" else "author_id"
+            rows = [r for r in rows if r[owner] == me["id"] or me["role"] == "admin"]
         for r in rows:
-            src.pop(r["id"] if table != "project_viewers" else (r["project_id"], r["user_id"]))
+            src.pop(r["id"] if table not in ("project_viewers", "field_tests")
+                    else r["client_id"] if table == "field_tests" else (r["project_id"], r["user_id"]))
     else:
         return route.fulfill(status=405)
     rows = [row_view(r, select) for r in rows]
@@ -393,6 +395,29 @@ def main():
         expect(page.get_by_role("status").filter(has_text="Al día")).to_be_visible(timeout=20000)
         assert len(FIELD_TESTS) == 2 and all(t["predicted"] for t in FIELD_TESTS.values()), FIELD_TESTS
         page.screenshot(path=f"{OUT}/field.png")
+        # the map's answer must match exactly: «possible» (orange) with a stable sensor does not agree
+        ctx.set_geolocation({"latitude": 21.2, "longitude": -102.3, "accuracy": 12})
+        page.wait_for_timeout(1500)
+        record.click()
+        expect(sheet.locator(".verdict")).to_be_visible(timeout=20000)
+        predicted = FIELD_TESTS[t1["client_id"]]["predicted"]
+        sheet.get_by_role("radio", name=re.compile("Señal estable")).click()
+        if predicted == "ok":
+            expect(sheet.get_by_text("Coincide con el mapa")).to_be_visible()
+        else:
+            expect(sheet.get_by_text(re.compile("No coincide: el mapa la da como"))).to_be_visible()
+            expect(sheet).to_contain_text("mejor de lo que dice")
+        sheet.get_by_role("button", name="Cancelar la prueba").click()
+        # my own test: its dot opens a card with «Borrar»
+        page.wait_for_function("() => window.__vereaMap && window.__vereaMap.loaded()", timeout=30000)
+        pt = page.evaluate("""() => { const m = window.__vereaMap; const p = m.project([-102.3, 21.2]);
+            const r = m.getCanvas().getBoundingClientRect(); return [r.left + p.x, r.top + p.y] }""")
+        page.mouse.click(pt[0], pt[1])
+        card = page.get_by_role("dialog", name="Prueba de campo")
+        expect(card).to_contain_text("Sin señal")
+        card.get_by_role("button", name="Borrar esta prueba").click()
+        expect(card).to_have_count(0)
+        assert len(FIELD_TESTS) == 1 and t1["client_id"] not in FIELD_TESTS
         # back in the editor, the 4G sensor next to the test shows what was measured
         page.get_by_role("button", name="Volver al editor").click()
         expect(page.get_by_label("Nombre del proyecto")).to_have_value("Beto's edit", timeout=20000)
@@ -400,7 +425,7 @@ def main():
         expect(page.get_by_role("complementary", name="Dispositivo")).to_contain_text("Verificado en campo")
         expect(side.get_by_role("region", name="Lista de sensores")).to_contain_text("Señal estable (en campo)")
         page.get_by_role("complementary", name="Dispositivo").get_by_role("button", name="Cerrar").click()
-        print("field tests: recorded with signal, offline one uploaded later, sensor verified in the editor")
+        print("field tests: recorded, offline one uploaded later, strict agreement, own test deleted, sensor verified")
 
         # ── share a link ──
         side.get_by_role("button", name="Compartir", exact=True).click()

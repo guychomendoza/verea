@@ -243,7 +243,7 @@ function CloudGate({ catalog, error, onSession }: { catalog: Catalog | null; err
       onFiles={(msg) => { setNotice(msg ?? ''); openFile(null) }} />
   } else if (fieldFromPath()) {
     // the team's 4G field tests; leaving goes back to the editor on that project
-    content = <FieldMode catalog={catalog} projectId={fieldFromPath()!.project}
+    content = <FieldMode catalog={catalog} projectId={fieldFromPath()!.project} me={me}
       onExit={(id) => window.location.assign(id ? `/p/${id}` : '/')} />
   } else {
     content = <Workspace catalog={catalog} user={user} />

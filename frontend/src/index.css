@@ -698,3 +698,6 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-
 .field-mode .verea-coverage-legend { position: fixed; top: 74px; left: 10px; z-index: 4; }
 .field-mode .verea-coverage-btn { white-space: nowrap; }
 .field-mode .maplibregl-ctrl-attrib { font-size: 10px; }
+.field-test-card { max-height: 50%; }
+.test-dot { width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--line-strong); }
+.test-notes { margin: 0; padding: 8px 10px; border-radius: var(--r); background: var(--surface); font-size: 13px; white-space: pre-line; }

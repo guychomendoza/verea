@@ -223,6 +223,7 @@ def main():
         page.get_by_role("complementary", name="Dispositivo").get_by_label("Nombre").press("g")   # typing: no shortcut
         expect(page.locator(".mode-banner")).to_have_count(0)
         page.locator("body").click(position={"x": 5, "y": 880})
+        expect(page.get_by_role("status").first).to_contain_text("Enlaces al día", timeout=60000)   # recalculation done
         page.keyboard.press("Control+s")
         expect(page.get_by_role("status").first).to_contain_text("Guardado en este navegador")
         print("shortcuts: G gateway, N ->", new_name, "(LSE01), typing ignored, Ctrl+S saved")

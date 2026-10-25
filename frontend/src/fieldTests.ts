@@ -31,13 +31,23 @@ export const OBSERVED: Record<Observed, { label: string; hint: string; color: st
   none: { label: 'Sin señal', hint: 'No llega nada', color: COLORS.cellNone },
 }
 
-/** Whether what was observed agrees with the map: guaranteed / near the edge ↔ stable, possible ↔
- *  intermittent or stable (LTE-M / NB-IoT may reach), none ↔ none. */
+/** What the map's state means for a sensor: guaranteed (green) → stable; near the edge (yellow),
+ *  differentiated or possible (orange) → intermittent; none (red) → no signal. */
+export const EXPECTED: Record<Predicted, Observed> = {
+  ok: 'stable', edge: 'intermittent', differentiated: 'intermittent', possible: 'intermittent', none: 'none',
+}
+const RANK: Record<Observed, number> = { none: 0, intermittent: 1, stable: 2 }
+
+/** Whether what was observed is what the map predicts (null: no prediction yet). */
 export function agrees(predicted: Predicted | null, observed: Observed): boolean | null {
+  return predicted ? EXPECTED[predicted] === observed : null
+}
+
+/** «mejor» when the sensor got more than the map predicts, «peor» when less, null when equal or unknown. */
+export function comparedToMap(predicted: Predicted | null, observed: Observed): 'mejor' | 'peor' | null {
   if (!predicted) return null
-  if (predicted === 'none') return observed === 'none'
-  if (predicted === 'possible') return observed !== 'none'
-  return observed !== 'none'
+  const d = RANK[observed] - RANK[EXPECTED[predicted]]
+  return d > 0 ? 'mejor' : d < 0 ? 'peor' : null
 }
 
 // ── the queue on the phone ──

@@ -208,3 +208,9 @@ export async function uploadFieldTests(tests: FieldTest[]): Promise<void> {
   const r = await db().from('field_tests').upsert(rows, { onConflict: 'client_id', ignoreDuplicates: true })
   check(r)
 }
+
+/** Delete one test (row level security: the author's own, or any for an admin). */
+export async function deleteFieldTest(clientId: string): Promise<void> {
+  const r = await db().from('field_tests').delete().eq('client_id', clientId).select('client_id')
+  if (!check(r)?.length) throw new Error('Solo puedes borrar tus propias pruebas')
+}

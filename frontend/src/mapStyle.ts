@@ -25,6 +25,7 @@ export const MAP_LOCALE = {
   'AttributionControl.MapFeedback': 'Comentarios sobre el mapa',
   'Map.Title': 'Mapa', 'ScaleControl.Meters': 'm', 'ScaleControl.Kilometers': 'km',
   'Marker.Title': 'Marcador', 'Popup.Close': 'Cerrar',
+  'GeolocateControl.FindMyLocation': 'Mi ubicación', 'GeolocateControl.LocationNotAvailable': 'Ubicación no disponible',
 }
 
 let protocolAdded = false
@@ -209,7 +210,6 @@ export function buildStyle(): StyleSpecification {
       'profile-pins': { type: 'geojson', data: EMPTY },
       cursor: { type: 'geojson', data: EMPTY },
       'field-tests': { type: 'geojson', data: EMPTY },
-      me: { type: 'geojson', data: EMPTY },
     },
     layers: [
       { id: 'imagery', type: 'raster', source: 'imagery' },
@@ -295,17 +295,6 @@ export function buildStyle(): StyleSpecification {
           'text-optional': true,           // hide a label rather than overlap it
         } as never,
         paint: { 'text-color': '#ffffff', 'text-halo-color': '#000000', 'text-halo-width': 1.5 },
-      },
-      {
-        id: 'me-accuracy', type: 'circle', source: 'me',
-        paint: {
-          'circle-radius': ['interpolate', ['exponential', 2], ['zoom'], 0, ['get', 'r0'], 22, ['get', 'r22']],
-          'circle-color': '#4285f4', 'circle-opacity': 0.15, 'circle-stroke-color': '#4285f4', 'circle-stroke-width': 1, 'circle-stroke-opacity': 0.4,
-        } as never,
-      },
-      {
-        id: 'me', type: 'circle', source: 'me',
-        paint: { 'circle-radius': 8, 'circle-color': '#4285f4', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 3 },
       },
       {
         id: 'ruler-line', type: 'line', source: 'ruler', filter: ['==', ['get', 'kind'], 'line'],

@@ -59,10 +59,14 @@ frontend, DB with users) is planned.
   project panel full screen (centred, ✕); a picked device = a card at the bottom (state, «Ver detalle», ✕),
   its detail full screen with the profile first. `frontend/e2e/shots.py`
   takes review screenshots (light/dark, desktop/phone, team view via cloud.py's fake Supabase).
+  «Mi ubicación» = MapLibre's GeolocateControl beside the zoom in every map (editor too, for installations);
+  MapView `autoLocate` / `onLocate` / `onLocateError`.
   4G field tests (2026-10-25, `docs/modo-campo.md`): `/campo[/<id>]` = `FieldMode.tsx` (team only): live location
-  (`watchPosition`, blue dot + accuracy circle in MapView `me`), «Registrar prueba aquí» or a point picked on the map
+  (the map's control, started at once), «Registrar prueba aquí» or a point picked on the map
   (MapMode `pick`), the map's prediction (`/api/cell-status`), what really happened (stable / intermittent / none),
-  delivered?, RSSI, notes; queue in localStorage, uploaded by `cloud.uploadFieldTests` (upsert on `client_id`) when
+  delivered?, RSSI, notes (optional); agreement is strict (`EXPECTED`: green → stable, yellow / orange → intermittent,
+  red → none; `comparedToMap` says better / worse); a test's dot opens its card, «Borrar» for the author or an admin
+  (`cloud.deleteFieldTest`); queue in localStorage, uploaded by `cloud.uploadFieldTests` (upsert on `client_id`) when
   online (offline tests get their prediction then). Table `field_tests` (migration 20261025000000, RLS: team reads and
   records as themselves, author/admin fix or delete). The editor loads them and `withFieldTests` gives a 4G sensor
   within 300 m of a test the measured state (`CellStatus.field`, «… (en campo)»); tests are drawn as dots.
