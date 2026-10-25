@@ -3,7 +3,7 @@ Configure the team's Supabase project for Verea through the Management API.
 
     SUPABASE_ACCESS_TOKEN=sbp_... python scripts/supabase_setup.py <project-ref> \
         --site-url http://localhost:5173 [--redirect https://verea.pages.dev] \
-        [--admin you@company.com]
+        [--admin you@company.com] [--resend]
 
 What it does (idempotent):
   1. applies supabase/migrations/*.sql not applied yet (tracked in public._verea_migrations);
@@ -12,6 +12,8 @@ What it does (idempotent):
      confirmed, passwords of 10+ characters, site URL and allowed redirect URLs; Google
      sign-in when GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are set;
   3. with --admin: makes that existing account an admin;
+     with --resend: account emails go through Resend from no-reply@verea.app (SMTP, key from
+     RESEND_API_KEY, a "sending" key is enough) with Verea's Spanish templates (supabase/email_templates.py);
   4. prints the project URL and its public (anon) key for frontend/.env.local.
 
 The access token (Account -> Access Tokens) and the Google OAuth client are only read
@@ -58,6 +60,7 @@ def main() -> int:
     ap.add_argument("--site-url", required=True, help="where the app runs (links in emails go here)")
     ap.add_argument("--redirect", action="append", default=[], help="other allowed app URLs")
     ap.add_argument("--admin", help="email of an existing account to make admin")
+    ap.add_argument("--resend", action="store_true", help="send account emails through Resend (RESEND_API_KEY)")
     args = ap.parse_args()
     token = os.environ.get("SUPABASE_ACCESS_TOKEN")
     if not token:
@@ -91,8 +94,19 @@ def main() -> int:
     gid, gsecret = os.environ.get("GOOGLE_CLIENT_ID"), os.environ.get("GOOGLE_CLIENT_SECRET")
     if gid and gsecret:
         auth |= {"external_google_enabled": True, "external_google_client_id": gid, "external_google_secret": gsecret}
+    if args.resend:
+        resend = os.environ.get("RESEND_API_KEY")
+        if not resend:
+            print("Set RESEND_API_KEY for --resend.")
+            return 1
+        sys.path.insert(0, str(MIGRATIONS.parent))
+        from email_templates import auth_config
+        auth |= {"smtp_host": "smtp.resend.com", "smtp_port": "465", "smtp_user": "resend", "smtp_pass": resend,
+                 "smtp_admin_email": "no-reply@verea.app", "smtp_sender_name": "Verea",
+                 "rate_limit_email_sent": 30, **auth_config()}
     call("PATCH", f"/projects/{ref}/config/auth", token, auth)
     print(f"  auth: sign-ups as viewers, site URL {args.site_url}, redirects {', '.join(urls)}")
+    print(f"  emails: {'Resend, no-reply@verea.app, Spanish templates' if args.resend else 'unchanged (--resend)'}")
     print(f"  Google: {'on' if gid and gsecret else 'unchanged (set GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)'}"
           f" · callback for the Google client: https://{ref}.supabase.co/auth/v1/callback")
 
