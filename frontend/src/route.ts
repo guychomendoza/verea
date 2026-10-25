@@ -2,6 +2,14 @@
 // /v/<token> a shared link (share.ts), / everything else. No router library: the History API.
 const PROJECT = /^\/p\/([0-9a-f-]{36})\/?$/i
 
+const FIELD = /^\/campo(?:\/([0-9a-f-]{36}))?\/?$/i
+
+/** /campo or /campo/<project id>: the 4G field-test mode (FieldMode.tsx); null elsewhere. */
+export function fieldFromPath(path = window.location.pathname): { project: string | null } | null {
+  const m = FIELD.exec(path)
+  return m ? { project: m[1] ?? null } : null
+}
+
 export function projectFromPath(path = window.location.pathname): string | null {
   return PROJECT.exec(path)?.[1] ?? null
 }

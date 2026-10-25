@@ -113,6 +113,7 @@ export interface CellStatus {
   nearest_m?: number | null
   edge_m?: number | null
   margin_m?: number | null
+  field?: boolean                       // measured by a field test (fieldTests.ts), not predicted
 }
 
 export interface DeviceProfile {

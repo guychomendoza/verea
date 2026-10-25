@@ -31,7 +31,9 @@ import ReportDialog from './report/ReportDialog'
 import SearchBox from './SearchBox'
 import { shortcutFor } from './shortcuts'
 import { clearDraft, loadDraft, saveDraft, useAutosave, type Draft, type SaveState } from './autosave'
-import { cleanAuthHash, projectFromPath, showProject } from './route'
+import { cleanAuthHash, fieldFromPath, projectFromPath, showProject } from './route'
+import FieldMode from './FieldMode'
+import { queued, withFieldTests, type FieldTest } from './fieldTests'
 import Sidebar from './Sidebar'
 import { DeviceHead, PanelButton, PhoneSheet, ProjectHead } from './Phone'
 import { CellResult } from './DevicePanel'
@@ -239,6 +241,10 @@ function CloudGate({ catalog, error, onSession }: { catalog: Catalog | null; err
   } else if (!cloud.isTeam(me)) {
     content = <ViewerLoader key={file} id={file!} catalog={catalog} user={user}
       onFiles={(msg) => { setNotice(msg ?? ''); openFile(null) }} />
+  } else if (fieldFromPath()) {
+    // the team's 4G field tests; leaving goes back to the editor on that project
+    content = <FieldMode catalog={catalog} projectId={fieldFromPath()!.project}
+      onExit={(id) => window.location.assign(id ? `/p/${id}` : '/')} />
   } else {
     content = <Workspace catalog={catalog} user={user} />
   }
@@ -304,7 +310,8 @@ function Workspace({ catalog, user, viewer }: {
       bounds: [[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]] })
   }, [])
   const [links, setLinks] = useState<Record<string, LinkResult>>({})
-  const [cells, setCells] = useState<Record<string, CellStatus>>({})
+  const [rawCells, setCells] = useState<Record<string, CellStatus>>({})   // as the map predicts them
+  const [fieldTests, setFieldTests] = useState<FieldTest[]>([])           // the team's 4G field tests
   const [status, setStatus] = useState('')
   const [ruler, setRuler] = useState<[number, number][]>([])
   const [showReport, setShowReport] = useState(false)
@@ -489,6 +496,10 @@ function Workspace({ catalog, user, viewer }: {
   const stations = useMemo(
     () => new Set(project.nodes.filter((n) => isStation(catalog, n)).map((n) => n.name)),
     [project.nodes, catalog])
+  // 4G states with the field tests applied: a sensor near a test shows what was measured
+  useEffect(() => { if (teamCloud) cloud.listFieldTests().then((t) => setFieldTests([...queued(), ...t])).catch(() => {}) }, [teamCloud])
+  const cells = useMemo(() => withFieldTests(rawCells, project.nodes, cellular, fieldTests),
+    [rawCells, project.nodes, cellular, fieldTests])
 
   // ── LoRa links: recalculated shortly after any change that affects them ──
   // Radio fields only: editing the owner or the area does not recalculate the links
@@ -743,6 +754,7 @@ function Workspace({ catalog, user, viewer }: {
       user={user && !viewer ? { onProjects: () => setShowProjects(true), onShare: doc ? () => setShowShare(true) : undefined } : undefined}
       save={teamCloud ? { state: saveState, savedAt, autosave, onSave: () => { saveNow() } } : undefined}
       edit={viewer ? undefined : { on: editing, onChange: setEditing }}
+      onFieldMode={teamCloud && doc ? () => guard(() => window.location.assign(`/campo/${doc.id}`)) : undefined}
       onConfig={user ? user.onSettings : () => setLocalSettings(true)}
       viewer={viewer ? { changes: changeCount(overrides), onFiles: viewer.onFiles,
         onRestore: () => { dispatch({ type: 'open', project: viewer.base }); setStatus('Valores originales restaurados') } } : undefined}
@@ -784,7 +796,7 @@ function Workspace({ catalog, user, viewer }: {
         cursor={cursorIdx !== null ? coordAt(cursorIdx) ?? null : null}
         profilePins={pins.map((i) => coordAt(i)).filter((c): c is [number, number] => !!c)}
         ruler={ruler}
-        onReady={(m) => { mapRef.current = m }} readOnly={!!viewer || locked}
+        onReady={(m) => { mapRef.current = m }} readOnly={!!viewer || locked} fieldTests={fieldTests}
         onSelect={(s) => setSelection(s)}
         onMove={(kind, name, lat, lon) => dispatch({ type: 'move', kind, name, lat, lon })}
         onAdd={add}

@@ -6,11 +6,12 @@ import { distance, haversine } from './geo'
 import { registerDeviceIcons } from './deviceIcons'
 import { MAP_LOCALE, buildStyle, devicesGeoJSON, ensurePmtiles, linksGeoJSON, plotsGeoJSON, rangeGeoJSON } from './mapStyle'
 import type { CellStatus, LinkResult, Project, Radial, Selection } from './types'
+import { OBSERVED, type FieldTest } from './fieldTests'
 
 /** Where to move the view: a point (and zoom), or a box to fit (every device of a project). */
 export interface Focus { lat: number; lon: number; zoom?: number; bounds?: [[number, number], [number, number]]; key: number }
 
-export type MapMode = 'select' | 'addGateway' | 'addNode' | 'ruler'
+export type MapMode = 'select' | 'addGateway' | 'addNode' | 'ruler' | 'pick'   // pick: a point for a field test
 type LatLon = [number, number]
 
 interface Props {
@@ -39,6 +40,8 @@ interface Props {
   onToggleCoverage: () => void
   onReady?: (map: maplibregl.Map) => void
   readOnly?: boolean                    // viewer: devices are selected, never dragged
+  fieldTests?: FieldTest[]              // 4G field tests, drawn as coloured points
+  me?: { lat: number; lon: number; accuracy: number } | null   // the phone's location (field mode)
 }
 
 /** Map button for the ruler, under the zoom buttons. */
@@ -128,6 +131,26 @@ function rulerGeoJSON(points: LatLon[]): GeoJSON.FeatureCollection {
   return { type: 'FeatureCollection', features }
 }
 
+/** Field tests: one point each, coloured by what the sensor got. */
+function fieldGeoJSON(tests: FieldTest[] = []): GeoJSON.FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: tests.map((t) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [t.lon, t.lat] },
+      properties: { color: OBSERVED[t.observed].color } })),
+  }
+}
+
+/** The phone's location and its accuracy circle (radius in metres, drawn in pixels per zoom). */
+function meGeoJSON(me: Props['me']): GeoJSON.FeatureCollection {
+  if (!me) return { type: 'FeatureCollection', features: [] }
+  const mPerPx0 = 156543.03 * Math.cos((me.lat * Math.PI) / 180)        // metres per pixel at zoom 0
+  return {
+    type: 'FeatureCollection',
+    features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [me.lon, me.lat] },
+      properties: { r0: me.accuracy / mPerPx0, r22: (me.accuracy / mPerPx0) * 2 ** 22 } }],
+  }
+}
+
 function applyProps(map: maplibregl.Map, props: Props, dragging: boolean) {
   if (!dragging) {
     ;(map.getSource('devices') as GeoJSONSource).setData(devicesGeoJSON(props))
@@ -138,6 +161,8 @@ function applyProps(map: maplibregl.Map, props: Props, dragging: boolean) {
   ;(map.getSource('ruler') as GeoJSONSource).setData(rulerGeoJSON(props.ruler))
   ;(map.getSource('profile-pins') as GeoJSONSource).setData(pointsGeoJSON(props.profilePins, true))
   ;(map.getSource('cursor') as GeoJSONSource).setData(pointsGeoJSON(props.cursor ? [props.cursor] : []))
+  ;(map.getSource('field-tests') as GeoJSONSource).setData(fieldGeoJSON(props.fieldTests))
+  ;(map.getSource('me') as GeoJSONSource).setData(meGeoJSON(props.me))
   map.setLayoutProperty('coverage', 'visibility', props.showCoverage ? 'visible' : 'none')
   for (const id of ['roads', 'places']) {
     map.setLayoutProperty(id, 'visibility', props.showLabels ? 'visible' : 'none')

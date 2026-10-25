@@ -1,11 +1,11 @@
 # Cloudflare Pages response headers. The CSP allows only the API, the 4G tiles, Esri imagery, MapLibre glyphs,
 # Google's sign-in button and Supabase (checked with a production build under this header, 2026-10-24): add any new external host there.
-# The future field-test mode needs geolocation=(self) in Permissions-Policy.
+# geolocation=(self): the 4G field-test mode (/campo) shows where the phone is.
 /*
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
-  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Permissions-Policy: camera=(), microphone=(), geolocation=(self)
   Strict-Transport-Security: max-age=31536000
   Content-Security-Policy: default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; img-src 'self' data: blob: https://server.arcgisonline.com; font-src 'self' data:; connect-src 'self' https://accounts.google.com/gsi/ https://api.verea.app https://tiles.verea.app https://server.arcgisonline.com https://demotiles.maplibre.org https://kepelonejrqoxdfjdcgb.supabase.co wss://kepelonejrqoxdfjdcgb.supabase.co; worker-src 'self' blob:; child-src blob:; frame-src https://accounts.google.com/gsi/; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
 /assets/*

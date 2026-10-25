@@ -59,6 +59,14 @@ frontend, DB with users) is planned.
   project panel full screen (centred, ✕); a picked device = a card at the bottom (state, «Ver detalle», ✕),
   its detail full screen with the profile first. `frontend/e2e/shots.py`
   takes review screenshots (light/dark, desktop/phone, team view via cloud.py's fake Supabase).
+  4G field tests (2026-10-25, `docs/modo-campo.md`): `/campo[/<id>]` = `FieldMode.tsx` (team only): live location
+  (`watchPosition`, blue dot + accuracy circle in MapView `me`), «Registrar prueba aquí» or a point picked on the map
+  (MapMode `pick`), the map's prediction (`/api/cell-status`), what really happened (stable / intermittent / none),
+  delivered?, RSSI, notes; queue in localStorage, uploaded by `cloud.uploadFieldTests` (upsert on `client_id`) when
+  online (offline tests get their prediction then). Table `field_tests` (migration 20261025000000, RLS: team reads and
+  records as themselves, author/admin fix or delete). The editor loads them and `withFieldTests` gives a 4G sensor
+  within 300 m of a test the measured state (`CellStatus.field`, «… (en campo)»); tests are drawn as dots.
+  Permissions-Policy allows geolocation=(self).
   Addresses: team projects at `/p/<id>` (`route.ts`, History API; back/forward switch projects with the
   unsaved-changes guard; Google returns to the same address; the empty `#` is cleaned).
   `autosave.ts` (since 2026-10-24 team projects save with the Guardar button / Ctrl+S; autosave is opt-in in

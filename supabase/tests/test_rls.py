@@ -287,3 +287,44 @@ def test_only_viewers_delete_their_own_account(db, team):
         assert c.execute("select count(*) from profiles where id = %s", (gone,)).fetchone() == (0,)
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         As(db).q("select delete_my_account()")
+
+
+# ── field tests (20261025000000_field_tests.sql) ──
+def record(db, uid, observed="stable", client=None):
+    return As(db, uid).q("insert into field_tests (client_id, taken_at, lat, lon, predicted, observed) "
+                         "values (%s, now(), 19.68, -103.25, 'possible', %s) returning id, author_id",
+                         str(client or uuid.uuid4()), observed)[0]
+
+
+def test_field_tests_team_records_and_reads(db, team, shared):
+    tid, author = record(db, team["ana"])
+    assert str(author) == str(team["ana"])
+    ids = [r[0] for r in As(db, team["beto"]).q("select id from field_tests")]
+    assert tid in ids                                                         # the whole team reads them
+    assert As(db, shared["vera"]).q("select id from field_tests") == []        # viewers see nothing
+    assert As(db, team["ex"]).q("select id from field_tests") == []            # nor deactivated accounts
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        As(db).q("select id from field_tests")
+
+
+def test_field_tests_cannot_be_recorded_for_someone_else(db, team):
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        As(db, team["ana"]).q("insert into field_tests (client_id, author_id, taken_at, lat, lon, observed) "
+                              "values (%s, %s, now(), 19, -103, 'none')", str(uuid.uuid4()), str(team["beto"]))
+
+
+def test_field_tests_only_author_or_admin_fixes_or_deletes(db, team):
+    tid, _ = record(db, team["ana"])
+    assert As(db, team["beto"]).q("update field_tests set observed = 'none' where id = %s", tid) == 0
+    assert As(db, team["beto"]).q("delete from field_tests where id = %s", tid) == 0
+    assert As(db, team["ana"]).q("update field_tests set observed = 'intermittent' where id = %s", tid) == 1
+    assert As(db, team["admin"]).q("delete from field_tests where id = %s", tid) == 1
+
+
+def test_field_tests_retry_does_not_duplicate(db, team):
+    client = uuid.uuid4()
+    record(db, team["ana"], client=client)
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        record(db, team["ana"], client=client)
+    with pytest.raises(psycopg.errors.CheckViolation):
+        record(db, team["ana"], observed="great")

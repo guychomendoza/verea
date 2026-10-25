@@ -56,6 +56,7 @@ export function linkColor(r?: LinkResult): string {
 /** 4G state in two or three words, without the operator's name (map labels, reports). */
 export function cellShort(c?: CellStatus): string {
   if (!c) return '4G'
+  if (c.field) return c.short                  // verified in the field
   return { ok: '4G garantizado', edge: '4G incierto', differentiated: '4G sin garantía', possible: '4G posible', none: 'Sin 4G' }[c.state] ?? '4G'
 }
 
@@ -207,6 +208,8 @@ export function buildStyle(): StyleSpecification {
       ruler: { type: 'geojson', data: EMPTY },
       'profile-pins': { type: 'geojson', data: EMPTY },
       cursor: { type: 'geojson', data: EMPTY },
+      'field-tests': { type: 'geojson', data: EMPTY },
+      me: { type: 'geojson', data: EMPTY },
     },
     layers: [
       { id: 'imagery', type: 'raster', source: 'imagery' },
@@ -250,6 +253,11 @@ export function buildStyle(): StyleSpecification {
         } as never,
       },
       {
+        // 4G field tests (fieldTests.ts): a small diamond-like dot in the colour of what was measured
+        id: 'field-tests', type: 'circle', source: 'field-tests',
+        paint: { 'circle-radius': 6, 'circle-color': ['get', 'color'], 'circle-stroke-color': '#0b1726', 'circle-stroke-width': 2 } as never,
+      },
+      {
         id: 'device-halo', type: 'circle', source: 'devices',
         filter: ['any', ['==', ['get', 'selected'], true], isFocus] as never,
         paint: { 'circle-radius': ['case', isFocus, 21, 17], 'circle-color': '#ffffff', 'circle-opacity': 0.95 } as never,
@@ -287,6 +295,17 @@ export function buildStyle(): StyleSpecification {
           'text-optional': true,           // hide a label rather than overlap it
         } as never,
         paint: { 'text-color': '#ffffff', 'text-halo-color': '#000000', 'text-halo-width': 1.5 },
+      },
+      {
+        id: 'me-accuracy', type: 'circle', source: 'me',
+        paint: {
+          'circle-radius': ['interpolate', ['exponential', 2], ['zoom'], 0, ['get', 'r0'], 22, ['get', 'r22']],
+          'circle-color': '#4285f4', 'circle-opacity': 0.15, 'circle-stroke-color': '#4285f4', 'circle-stroke-width': 1, 'circle-stroke-opacity': 0.4,
+        } as never,
+      },
+      {
+        id: 'me', type: 'circle', source: 'me',
+        paint: { 'circle-radius': 8, 'circle-color': '#4285f4', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 3 },
       },
       {
         id: 'ruler-line', type: 'line', source: 'ruler', filter: ['==', ['get', 'kind'], 'line'],

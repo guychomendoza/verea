@@ -52,6 +52,7 @@ PROFILES = {p["id"]: p for p in (ANA, BETO, VERA, JEFA)}
 PROJECTS: dict[str, dict] = {}
 SHARES: dict[str, dict] = {}
 VIEWERS: dict[tuple[str, str], dict] = {}
+FIELD_TESTS: dict[str, dict] = {}
 FK = {"projects_owner_id_fkey": "owner_id", "projects_updated_by_fkey": "updated_by",
       "project_viewers_user_id_fkey": "user_id"}
 
@@ -134,13 +135,15 @@ def rest(route, request):
     order = q.pop("order", None)
     filters = {k: v.split(".", 1)[1] for k, v in q.items() if v.startswith("eq.")}
     single = "vnd.pgrst.object" in (request.headers.get("accept") or "")
-    src = {"profiles": PROFILES, "projects": PROJECTS, "project_shares": SHARES, "project_viewers": VIEWERS}[table]
+    src = {"profiles": PROFILES, "projects": PROJECTS, "project_shares": SHARES, "project_viewers": VIEWERS,
+           "field_tests": FIELD_TESTS}[table]
     # What the database's row level security lets this caller see
     visible = {
         "profiles": lambda r: team(me) or r["id"] == me["id"],
         "projects": lambda r: team(me),
         "project_shares": lambda r: team(me),
         "project_viewers": lambda r: team(me) or r["user_id"] == me["id"],
+        "field_tests": lambda r: team(me),
     }[table]
 
     def match(r):
@@ -161,6 +164,12 @@ def rest(route, request):
                        "show_owner_info": body.get("show_owner_info", False), "created_at": now(), "revoked_at": None}
         time.sleep(0.002)
         rows = [SHARES[sid]]
+    elif method == "POST" and table == "field_tests" and team(me):
+        rows = []
+        for t in body if isinstance(body, list) else [body]:
+            if t["client_id"] not in FIELD_TESTS:                    # upsert, duplicates ignored
+                FIELD_TESTS[t["client_id"]] = {**t, "author_id": me["id"]}
+                rows.append(FIELD_TESTS[t["client_id"]])
     elif method == "PATCH":
         allowed = {"projects": team(me), "project_shares": team(me),
                    "profiles": True, "project_viewers": True}[table]
@@ -349,6 +358,49 @@ def main():
         expect(page.get_by_label("Nombre del proyecto")).to_have_value("Beto's edit", timeout=20000)
         assert not page.url.endswith("#"), page.url
         print("addresses: /p/<id>, back button, opened from the address")
+
+        # ── 4G field tests: a team member records what a sensor got; offline ones upload later ──
+        ctx = page.context
+        ctx.grant_permissions(["geolocation"], origin=URL.rstrip("/"))
+        ctx.set_geolocation({"latitude": 21.2, "longitude": -102.3, "accuracy": 12})
+        side.get_by_role("button", name="Pruebas de campo 4G").click()
+        page.wait_for_url(re.compile(r"/campo/"), timeout=20000)
+        record = page.get_by_role("button", name="Registrar prueba aquí")
+        expect(record).to_be_enabled(timeout=20000)
+        record.click()
+        sheet = page.get_by_role("dialog", name="Registrar prueba")
+        expect(sheet).to_contain_text("Lo que dice el mapa")
+        expect(sheet.locator(".verdict")).to_be_visible(timeout=20000)          # the map's prediction there
+        sheet.get_by_role("radio", name=re.compile("Sin señal")).click()
+        sheet.get_by_role("radio", name="No", exact=True).click()
+        sheet.get_by_role("button", name="Guardar prueba").click()
+        expect(page.get_by_role("status").filter(has_text="Al día")).to_be_visible(timeout=20000)
+        assert len(FIELD_TESTS) == 1
+        t1 = next(iter(FIELD_TESTS.values()))
+        assert t1["observed"] == "none" and t1["delivered"] is False and t1["predicted"] and t1["author_id"] == ANA["id"], t1
+        # without signal: kept on the phone, uploaded when the connection is back (and the map asked then)
+        ctx.set_geolocation({"latitude": 21.3099, "longitude": -102.3945, "accuracy": 8})   # where 4G-1 is
+        page.wait_for_timeout(1500)
+        ctx.set_offline(True)
+        record.click()
+        expect(sheet).to_contain_text("Sin conexión")
+        sheet.get_by_role("radio", name=re.compile("Señal estable")).click()
+        sheet.get_by_role("button", name="Guardar prueba").click()
+        expect(page.get_by_role("status").filter(has_text="1 por subir")).to_be_visible()
+        assert len(FIELD_TESTS) == 1
+        ctx.set_offline(False)
+        page.evaluate("window.dispatchEvent(new Event('online'))")
+        expect(page.get_by_role("status").filter(has_text="Al día")).to_be_visible(timeout=20000)
+        assert len(FIELD_TESTS) == 2 and all(t["predicted"] for t in FIELD_TESTS.values()), FIELD_TESTS
+        page.screenshot(path=f"{OUT}/field.png")
+        # back in the editor, the 4G sensor next to the test shows what was measured
+        page.get_by_role("button", name="Volver al editor").click()
+        expect(page.get_by_label("Nombre del proyecto")).to_have_value("Beto's edit", timeout=20000)
+        side.get_by_role("region", name="Lista de sensores").get_by_role("button", name=re.compile("^4G-1")).click()
+        expect(page.get_by_role("complementary", name="Dispositivo")).to_contain_text("Verificado en campo")
+        expect(side.get_by_role("region", name="Lista de sensores")).to_contain_text("Señal estable (en campo)")
+        page.get_by_role("complementary", name="Dispositivo").get_by_role("button", name="Cerrar").click()
+        print("field tests: recorded with signal, offline one uploaded later, sensor verified in the editor")
 
         # ── share a link ──
         side.get_by_role("button", name="Compartir", exact=True).click()

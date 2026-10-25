@@ -3,6 +3,7 @@
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js'
 import type { Project } from './types'
 import type { Overrides } from './viewer'
+import type { FieldTest } from './fieldTests'
 
 const URL_ = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
@@ -190,4 +191,20 @@ export async function saveOverrides(projectId: string, userId: string, overrides
 /** A viewer takes a project off their files (the link brings it back while it is active). */
 export async function leaveProject(projectId: string, userId: string): Promise<void> {
   await removeAccess(projectId, userId)
+}
+
+// ── 4G field tests (fieldTests.ts) ──
+const FIELD_COLUMNS = 'client_id, project_id, taken_at, lat, lon, accuracy_m, operator, predicted, observed, delivered, rssi_dbm, notes, author_id'
+
+/** Every test of the team (a few thousand at most), newest first. */
+export async function listFieldTests(): Promise<FieldTest[]> {
+  const r = await db().from('field_tests').select(FIELD_COLUMNS).order('taken_at', { ascending: false }).limit(5000)
+  return check(r) as FieldTest[]
+}
+
+/** Upload tests recorded on the phone; one already uploaded (same client_id) is left as it is. */
+export async function uploadFieldTests(tests: FieldTest[]): Promise<void> {
+  const rows = tests.map(({ author_id, ...t }) => (void author_id, t))
+  const r = await db().from('field_tests').upsert(rows, { onConflict: 'client_id', ignoreDuplicates: true })
+  check(r)
 }

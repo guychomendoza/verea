@@ -26,6 +26,7 @@ interface Props {
   user?: { onProjects?: () => void; onShare?: () => void }
   save?: { state: SaveState; savedAt: Date | null; autosave: boolean; onSave: () => void }   // team cloud projects
   edit?: { on: boolean; onChange: (on: boolean) => void }     // Ver / Editar (not for viewers)
+  onFieldMode?: () => void             // the team: open the 4G field tests (/campo)
   onConfig: () => void                 // Configuración: account and appearance
   // Viewer mode: the project is read-only except heights / environments, which are the viewer's own
   viewer?: { changes: number; onRestore: () => void; onFiles: () => void }
@@ -366,7 +367,12 @@ export default function Sidebar(p: Props) {
               <li>{dot(COLORS.cellEdge)} Incierta: cerca del borde (125–250 m según el terreno)</li>
               <li>{dot(COLORS.cellPossible)} Posible solo para sensores LTE-M / NB-IoT (100–300 m fuera)</li>
               <li>{dot(COLORS.cellNone)} Sin cobertura</li>
+              <li><span className="field-dot" /> Prueba de campo (color = lo que se midió)</li>
             </ul>
+            {p.onFieldMode && (
+              <button className="btn self-start" onClick={p.onFieldMode} title="Registrar con un sensor qué cobertura hay realmente">
+                <Icon name="signal" /> Pruebas de campo 4G</button>
+            )}
             <p className="hint">Muéstrala en el mapa con el botón «Cobertura 4G» (abajo a la derecha).</p>
           </>
         ) : <p className="hint">El servidor no tiene datos de cobertura.</p>}

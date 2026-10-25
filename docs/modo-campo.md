@@ -1,6 +1,14 @@
 # Modo «Pruebas de campo 4G» — diseño (sin programar todavía)
 
-Estado: propuesta para revisar. Nada de esto está en producción ni en la base de datos.
+Estado (25/10/2026): programado en la rama `rediseno` (pasos 1–4 de abajo, sin el script de calibración).
+La tabla `field_tests` está en `supabase/migrations/20261025000000_field_tests.sql`, pero **no se ha aplicado
+a Supabase**: hay que correr `scripts/supabase_setup.py` cuando se apruebe.
+
+Decisiones (24/10/2026): registra todo el equipo; sin fotos por ahora; el servidor de los sensores no se puede
+consultar, así que «¿llegó el dato?» se contesta a mano. Cambios frente a este diseño: en vez de «¿coincide?» +
+estado real, se pregunta directo qué pasó (estable / intermitente / sin señal) y la app dice si coincide; la
+corrección de la predicción se aplica en el navegador (`fieldTests.ts` `withFieldTests`: mapa, listas, ficha y PDF),
+no en la API.
 
 ## Para qué
 
