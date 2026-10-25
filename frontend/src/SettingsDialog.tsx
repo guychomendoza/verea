@@ -155,14 +155,27 @@ function SavingTab() {
   const autosave = useAutosave()
   return (
     <div className="flex flex-col gap-3">
-      <label className="flex items-start gap-2">
-        <input type="checkbox" checked={autosave} onChange={(e) => setAutosave(e.target.checked)} />
-        <span><b>Autoguardado</b><br />
-          <small className="hint">Guarda el proyecto en la nube unos segundos después de cada cambio. Apagado, los cambios
-            se guardan solo con el botón Guardar o Ctrl+S.</small></span>
-      </label>
+      <div className="setting-row">
+        <div>
+          <b id="autosave-label">Autoguardado</b>
+          <small className="hint block">Guarda el proyecto en la nube unos segundos después de cada cambio. Desactivado, los
+            cambios se guardan solo con el botón Guardar o Ctrl+S.</small>
+        </div>
+        <Switch on={autosave} onChange={setAutosave} labelledBy="autosave-label" />
+      </div>
       <small className="hint">Sin guardar, tus cambios quedan como borrador en este navegador: si cierras la pestaña,
-        Verea te ofrece recuperarlos la próxima vez. Se recuerda en este navegador.</small>
+        Verea te ofrece recuperarlos la próxima vez. Esta preferencia se recuerda en este navegador.</small>
     </div>
+  )
+}
+
+/** An on / off switch (role="switch"), with its state written beside it. */
+function Switch({ on, onChange, labelledBy }: { on: boolean; onChange: (on: boolean) => void; labelledBy: string }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} aria-labelledby={labelledBy} className={`switch ${on ? 'on' : ''}`}
+      onClick={() => onChange(!on)}>
+      <span className="switch-track"><span className="switch-thumb" /></span>
+      <span className="switch-text">{on ? 'Activado' : 'Desactivado'}</span>
+    </button>
   )
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import * as cloud from './cloud'
-import { CloseButton } from './icons'
+import { CloseButton, Icon } from './icons'
 import { Spinner } from './Loading'
 
 interface Props {
@@ -46,9 +46,9 @@ export default function ProjectsDialog({ me, currentId, onOpen, onDeleted, onClo
   const shown = (rows ?? []).filter((r) => r.name.toLowerCase().includes(filter.toLowerCase()))
   return (
     <div className="dialog-backdrop" onClick={onClose}>
-      <div className="dialog" role="dialog" aria-label="Proyectos del equipo" onClick={(e) => e.stopPropagation()}>
+      <div className="dialog" role="dialog" aria-label="Proyectos" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold">Proyectos del equipo</h2>
+          <h2 className="text-base font-semibold flex items-center gap-2"><Icon name="folder" size={18} /> Proyectos</h2>
           <CloseButton onClick={onClose} />
         </div>
         <input type="search" placeholder="Filtrar por nombre" value={filter} onChange={(e) => setFilter(e.target.value)}

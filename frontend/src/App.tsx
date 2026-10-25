@@ -507,7 +507,8 @@ function Workspace({ catalog, user, viewer }: {
     api.links(gateways, nodes, settings, ctrl.signal)
       .then((r) => {
         setLinks(r.results)
-        setStatus(`Enlaces al día · terreno: ${r.elevation}`)
+        // the terrain source only when it is not the local DEM (a fallback worth noticing)
+        setStatus(/local/.test(r.elevation) ? 'Enlaces al día' : `Enlaces al día · terreno: ${r.elevation}`)
       })
       .catch((e) => { if (e.name !== 'AbortError') setStatus(`⚠ Falló el cálculo de enlaces: ${e.message}`) })
     return () => ctrl.abort()

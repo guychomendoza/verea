@@ -110,8 +110,8 @@ function FileMenu({ items }: { items: MenuItem[] }) {
   }, [open])
   return (
     <div className="menu" ref={ref}>
-      <button className="btn" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
-        Archivo <Icon name="chevron" size={14} className={`menu-chev ${open ? 'open' : ''}`} />
+      <button className="tile" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <Icon name="file" size={18} /><span>Archivo <Icon name="chevron" size={12} className={`menu-chev ${open ? 'open' : ''}`} /></span>
       </button>
       {open && (
         <div className="menu-list" role="menu">
@@ -181,12 +181,12 @@ export default function Sidebar(p: Props) {
     <aside className="panel side-panel" aria-label="Proyecto">
       <div className="brand-bar">
         <Logo width={104} />
-        {p.edit && <EditToggle {...p.edit} />}
-        <button className={`icon-btn ${p.edit ? '' : 'ml-auto'}`} onClick={p.onConfig} title="Configuración: cuenta y apariencia"
+        <button className="icon-btn ml-auto" onClick={p.onConfig} title="Configuración: cuenta y apariencia"
           aria-label="Configuración"><Icon name="settings" size={17} /></button>
       </div>
+      {p.edit && <EditToggle {...p.edit} />}
 
-      {/* ── the project: name, description, what it has ── */}
+      {/* ── the project: name and description (its contents are on the map's counter) ── */}
       <div className="project-card">
         <div className="project-head">
           {ro ? (
@@ -211,11 +211,6 @@ export default function Sidebar(p: Props) {
           <button className="link-btn self-start" onClick={() => setDescribing(true)}>
             <Icon name="plus" size={13} /> Agregar descripción</button>
         )}
-        <div className="project-stats" aria-label="Contenido del proyecto">
-          <span><DeviceIcon kind="gateway" color="#3da3bc" size={15} /> <b>{p.project.gateways.length}</b> {p.project.gateways.length === 1 ? 'gateway' : 'gateways'}</span>
-          <span><DeviceIcon kind="lora" color="#3da3bc" size={15} /> <b>{loraNodes.length}</b> LoRa</span>
-          <span><DeviceIcon kind="cellular" color="#3da3bc" size={15} /> <b>{p.project.nodes.length - loraNodes.length}</b> 4G</span>
-        </div>
         {p.viewer && (
           <div className="viewer-banner" role="note">
             <Icon name="eye" /><span><b>Modo lector.</b> Puedes probar otra altura o entorno en los nodos; se guarda solo para ti.</span>
@@ -230,14 +225,15 @@ export default function Sidebar(p: Props) {
       {/* ── actions: save, file, share, report, undo ── */}
       <div className="action-bar">
         {p.save && <div className="save-row"><SaveButton {...p.save} />{history}</div>}
-        <div className="action-row">
-          {p.viewer && <button className="btn" onClick={p.viewer.onFiles}><Icon name="arrow-left" /> Mis archivos</button>}
+        {/* file, share and report: one row of equal tiles */}
+        <div className="tile-row">
+          {p.viewer && <button className="tile" onClick={p.viewer.onFiles}><Icon name="arrow-left" size={18} /><span>Mis archivos</span></button>}
           {fileItems.length > 0 && <FileMenu items={fileItems} />}
-          {p.user?.onShare && <button className="btn" onClick={p.user.onShare} title="Link para ver el proyecto en modo lector">
-            <Icon name="link" /> Compartir</button>}
-          <button className="btn" onClick={p.onReport} title="Reporte PDF del proyecto"><Icon name="report" /> Reporte</button>
-          {!p.save && history}
+          {p.user?.onShare && <button className="tile" onClick={p.user.onShare} title="Link para ver el proyecto en modo lector">
+            <Icon name="link" size={18} /><span>Compartir</span></button>}
+          <button className="tile" onClick={p.onReport} title="Reporte PDF del proyecto"><Icon name="report" size={18} /><span>Reporte</span></button>
         </div>
+        {!p.save && <div className="save-row justify-end">{history}</div>}
         <input ref={file} type="file" accept=".json,application/json" hidden
           onChange={(e) => { const f = e.target.files?.[0]; if (f) p.onImport(f); e.target.value = '' }} />
       </div>
@@ -474,7 +470,7 @@ function StatusLine({ text }: { text: string }) {
 /** Ver / Editar: in Ver the map and the panels cannot change anything (no accidental drags). */
 function EditToggle({ on, onChange }: NonNullable<Props['edit']>) {
   return (
-    <div className="segmented edit-toggle ml-auto" role="radiogroup" aria-label="Modo">
+    <div className="segmented edit-toggle" role="radiogroup" aria-label="Modo">
       <button role="radio" aria-checked={!on} className={on ? '' : 'active'} onClick={() => onChange(false)}
         title="Solo ver: nada se mueve por accidente"><Icon name="eye" size={14} /> Ver</button>
       <button role="radio" aria-checked={on} className={on ? 'active' : ''} onClick={() => onChange(true)}

@@ -291,7 +291,7 @@ def main():
         print("draft recovered after reload")
         # opening another project asks first; Cancelar keeps the edits
         side.get_by_role("button", name="Proyectos…").click()
-        page.get_by_role("dialog", name="Proyectos del equipo").get_by_role("button", name=re.compile("^Ana's field")).click()
+        page.get_by_role("dialog", name="Proyectos").get_by_role("button", name=re.compile("^Ana's field")).click()
         leave = page.get_by_role("alertdialog", name="Cambios sin guardar")
         expect(leave).to_be_visible()
         leave.get_by_role("button", name="Cancelar").click()
@@ -304,7 +304,10 @@ def main():
         side.get_by_role("button", name="Configuración").click()
         settings = page.get_by_role("dialog", name="Configuración")
         settings.get_by_role("tab", name="Guardado").click()
-        settings.get_by_label(re.compile("Autoguardado")).check()
+        switch = settings.get_by_role("switch", name="Autoguardado")
+        expect(switch).to_have_attribute("aria-checked", "false")
+        switch.click()
+        expect(switch).to_have_attribute("aria-checked", "true")
         settings.get_by_role("button", name="Cerrar").click()
         page.get_by_label("Nombre del proyecto").fill("Beto's orchard v3")
         expect(save_state).to_contain_text("Guardado", timeout=10000)
@@ -321,7 +324,7 @@ def main():
         print("conflict detected, their version kept, mine saved as a copy")
         # projects dialog: list, no delete on someone else's, delete own
         side.get_by_role("button", name="Proyectos…").click()
-        dialog = page.get_by_role("dialog", name="Proyectos del equipo")
+        dialog = page.get_by_role("dialog", name="Proyectos")
         expect(dialog).to_contain_text("Beto's edit")
         assert dialog.get_by_role("button", name="Eliminar Beto's edit").count() == 0
         dialog.get_by_role("button", name=re.compile("Eliminar Ana's late edit")).click()
@@ -334,7 +337,7 @@ def main():
         # each project has its own address; back returns to the previous one; an address opens its project
         assert urlparse(page.url).path == f"/p/{pid}", page.url
         side.get_by_role("button", name="Proyectos…").click()
-        page.get_by_role("dialog", name="Proyectos del equipo").get_by_role("button", name=re.compile("^Ana's field")).click()
+        page.get_by_role("dialog", name="Proyectos").get_by_role("button", name=re.compile("^Ana's field")).click()
         expect(page.get_by_label("Nombre del proyecto")).to_have_value("Ana's field", timeout=10000)
         ana_pid = next(k for k, v in PROJECTS.items() if v["name"] == "Ana's field")
         assert urlparse(page.url).path == f"/p/{ana_pid}", page.url
