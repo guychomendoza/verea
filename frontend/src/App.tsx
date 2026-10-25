@@ -40,6 +40,7 @@ import { CellResult } from './DevicePanel'
 import type { Catalog, CellStatus, Gateway, LinkDetail, LinkResult, NodeDevice, Project, Radial, Selection } from './types'
 import { Alert, Icon } from './icons'
 import { LoadingScreen } from './Loading'
+import { askConfirm } from './confirm'
 
 const STORAGE_KEY = 'verea.project'     // local mode (no Supabase configured)
 const LAST_PROJECT_KEY = 'verea.lastProject'
@@ -777,12 +778,12 @@ function Workspace({ catalog, user, viewer }: {
         onHide: () => setRanges({}) }}
       history={{ canUndo: history.past.length > 0, canRedo: history.future.length > 0,
         onUndo: () => undoRedo('undo'), onRedo: () => undoRedo('redo') }}
-      onNew={() => {
+      onNew={async () => {
         if (cloudMode) {
           guard(() => createCloud(emptyProject(catalog.defaults)).catch((e) => setStatus(`⚠ ${e.message}`)))
           return
         }
-        if (!confirm('¿Empezar un proyecto vacío? Guarda antes el actual en un archivo si lo necesitas.')) return
+        if (!await askConfirm('¿Empezar un proyecto vacío? Guarda antes el actual en un archivo si lo necesitas.', { ok: 'Empezar vacío' })) return
         dispatch({ type: 'open', project: emptyProject(catalog.defaults) })
         setSelection(null)
       }} />

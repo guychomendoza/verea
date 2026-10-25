@@ -4,6 +4,7 @@ import { CloseButton, Icon, type IconName } from './icons'
 import { applyTheme, savedTheme, type Theme } from './theme'
 import { isTeam } from './cloud'
 import { setAutosave, useAutosave } from './autosave'
+import { askConfirm } from './confirm'
 
 type Tab = 'account' | 'appearance' | 'saving' | 'admin'
 
@@ -91,7 +92,7 @@ function AccountTab({ me, onSave, onDelete, onSignOut }: NonNullable<Props['acco
     }
   }
   const remove = async () => {
-    if (!confirm('¿Eliminar tu cuenta? Se borran tu perfil, tus archivos compartidos y tus cambios. No se puede deshacer.')) return
+    if (!await askConfirm('¿Eliminar tu cuenta? Se borran tu perfil, tus archivos compartidos y tus cambios. No se puede deshacer.', { ok: 'Eliminar mi cuenta', danger: true })) return
     try {
       await onDelete()
     } catch (err) {

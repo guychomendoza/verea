@@ -8,7 +8,8 @@ Decisiones (24/10/2026): registra todo el equipo; sin fotos por ahora; el servid
 consultar, así que «¿llegó el dato?» se contesta a mano. Cambios frente a este diseño: en vez de «¿coincide?» +
 estado real, se pregunta directo qué pasó (estable / intermitente / sin señal) y la app dice si coincide; la
 corrección de la predicción se aplica en el navegador (`fieldTests.ts` `withFieldTests`: mapa, listas, ficha y PDF),
-no en la API.
+no en la API. Una sola prueba repinta la cobertura 200 m a su alrededor (capa sobre los mosaicos) y corrige los
+sensores dentro de ese radio; recalibrar los márgenes de todo el mapa sigue esperando a tener muchas pruebas.
 
 ## Para qué
 

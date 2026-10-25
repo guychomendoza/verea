@@ -68,9 +68,12 @@ frontend, DB with users) is planned.
   red → none; `comparedToMap` says better / worse); a test's dot opens its card, «Borrar» for the author or an admin
   (`cloud.deleteFieldTest`); queue in localStorage, uploaded by `cloud.uploadFieldTests` (upsert on `client_id`) when
   online (offline tests get their prediction then). Table `field_tests` (migration 20261025000000, RLS: team reads and
-  records as themselves, author/admin fix or delete). The editor loads them and `withFieldTests` gives a 4G sensor
-  within 300 m of a test the measured state (`CellStatus.field`, «… (en campo)»); tests are drawn as dots.
+  records as themselves, author/admin fix or delete). Each test repaints the coverage map NEAR_M = 200 m around it
+  (layer `field-areas`, over the PMTiles, shown with the coverage) and `withFieldTests` gives a 4G sensor
+  within 200 m of a test the measured state (`CellStatus.field`, «… (en campo)»); tests are drawn as dots.
   Permissions-Policy allows geolocation=(self).
+  Confirmations use Verea's own dialog (`askConfirm` in `confirm.ts`, `ConfirmHost.tsx`), never the browser's confirm();
+  only the browser's own «leave with unsaved changes?» stays native.
   Addresses: team projects at `/p/<id>` (`route.ts`, History API; back/forward switch projects with the
   unsaved-changes guard; Google returns to the same address; the empty `#` is cleaned).
   `autosave.ts` (since 2026-10-24 team projects save with the Guardar button / Ctrl+S; autosave is opt-in in

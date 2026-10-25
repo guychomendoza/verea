@@ -79,7 +79,9 @@ export function dequeue(ids: string[]) {
 export const newClientId = () => crypto.randomUUID()
 
 // ── the prediction, corrected near a test ──
-export const NEAR_M = 300               // a test speaks for this far around it
+// A test speaks for this far around it: it repaints the coverage map there and corrects the sensors
+// inside. Between the steep (125 m) and flat (250 m) edge margins of core/cellular.py; uncalibrated.
+export const NEAR_M = 200
 
 /** The most recent test within NEAR_M of a point (null if none). */
 export function testNear(lat: number, lon: number, tests: FieldTest[]): FieldTest | null {

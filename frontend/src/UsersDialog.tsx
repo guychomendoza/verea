@@ -3,6 +3,7 @@ import * as cloud from './cloud'
 import { api } from './api'
 import { Alert, CloseButton, Icon } from './icons'
 import { Spinner } from './Loading'
+import { askConfirm } from './confirm'
 
 interface Props {
   me: cloud.Me
@@ -26,7 +27,7 @@ export default function UsersDialog({ me, onClose }: Props) {
 
   const change = async (a: cloud.Account, patch: { role?: cloud.Role; active?: boolean }) => {
     if (patch.role && patch.role !== 'viewer' && a.role === 'viewer'
-      && !confirm(`¿Dar acceso de ${patch.role === 'admin' ? 'administrador' : 'editor'} a ${a.email}? Podrá ver y editar todos los proyectos del equipo.`)) return
+      && !await askConfirm(`¿Dar acceso de ${patch.role === 'admin' ? 'administrador' : 'editor'} a ${a.email}? Podrá ver y editar todos los proyectos del equipo.`, { ok: 'Dar acceso' })) return
     setError('')
     try {
       await cloud.setAccount(a.id, patch)

@@ -214,6 +214,15 @@ export function buildStyle(): StyleSpecification {
     layers: [
       { id: 'imagery', type: 'raster', source: 'imagery' },
       { id: 'coverage', type: 'raster', source: 'coverage', layout: { visibility: 'none' }, paint: { 'raster-resampling': 'nearest' } },
+      {
+        // field tests repaint the coverage map around them (NEAR_M) in the colour of what was measured
+        id: 'field-areas', type: 'circle', source: 'field-tests', layout: { visibility: 'none' },
+        paint: {
+          'circle-radius': ['interpolate', ['exponential', 2], ['zoom'], 0, ['get', 'r0'], 22, ['get', 'r22']],
+          'circle-color': ['get', 'color'], 'circle-opacity': 0.55, 'circle-blur': 0.15,
+          'circle-stroke-color': ['get', 'color'], 'circle-stroke-width': 1.5, 'circle-stroke-opacity': 0.9,
+        } as never,
+      },
       { id: 'roads', type: 'raster', source: 'roads' },
       { id: 'places', type: 'raster', source: 'places' },
       {

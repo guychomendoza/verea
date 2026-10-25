@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import * as cloud from './cloud'
 import { CloseButton, Icon } from './icons'
 import { Spinner } from './Loading'
+import { askConfirm } from './confirm'
 
 interface Props {
   me: cloud.Me
@@ -30,7 +31,7 @@ export default function ProjectsDialog({ me, currentId, onOpen, onDeleted, onClo
   }, [onClose])
 
   const remove = async (r: cloud.ProjectRow) => {
-    if (!confirm(`¿Eliminar "${r.name || 'Sin nombre'}" para todo el equipo? No se puede deshacer.`)) return
+    if (!await askConfirm(`¿Eliminar «${r.name || 'Sin nombre'}» para todo el equipo? No se puede deshacer.`, { ok: 'Eliminar proyecto', danger: true })) return
     try {
       if (await cloud.deleteProject(r.id)) {
         onDeleted(r.id)

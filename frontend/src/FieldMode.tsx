@@ -13,6 +13,7 @@ import {
   EXPECTED, OBSERVED, agrees, comparedToMap, dequeue, enqueue, newClientId, queued, withFieldTests, type FieldTest, type Observed,
 } from './fieldTests'
 import type { Catalog, CellStatus, Project } from './types'
+import { askConfirm } from './confirm'
 
 type Here = { lat: number; lon: number; accuracy: number }
 type Draft = Here & { predicted: CellStatus | null; checking: boolean; observed: Observed | null
@@ -128,7 +129,7 @@ export default function FieldMode({ catalog, projectId, me: account, onExit }: {
   // a test of mine (or any, for an admin) can be deleted; one not uploaded yet just leaves the queue
   const canDelete = (t: FieldTest) => !t.author_id || t.author_id === account.id || account.role === 'admin'
   const remove = async (t: FieldTest) => {
-    if (!confirm('¿Borrar esta prueba? No se puede deshacer.')) return
+    if (!await askConfirm('¿Borrar esta prueba de campo? No se puede deshacer.', { ok: 'Borrar prueba', danger: true })) return
     try {
       if (pending.some((x) => x.client_id === t.client_id)) dequeue([t.client_id])
       else await cloud.deleteFieldTest(t.client_id)

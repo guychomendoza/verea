@@ -5,6 +5,7 @@ import { DeviceIcon } from './Logo'
 import { CloseButton, Icon } from './icons'
 import { plainText } from './mapStyle'
 import type { Catalog, CellStatus, Gateway, LinkResult, NodeDevice, Project } from './types'
+import { askConfirm } from './confirm'
 
 interface Props {
   catalog: Catalog
@@ -252,7 +253,7 @@ export default function DevicePanel(p: Props) {
         <p className="hint">Modo lector: puedes probar otra altura{node && !cellular ? ' u otro entorno' : ''}; tus cambios
           se guardan solo para ti y el proyecto original no cambia.</p>
       ) : (
-        <button className="btn-danger mt-2" onClick={() => confirm(`¿Eliminar ${p.device.name}?`) && p.onRemove()}>
+        <button className="btn-danger mt-2" onClick={async () => (await askConfirm(`¿Eliminar ${p.device.name} del proyecto?`, { ok: 'Eliminar', danger: true })) && p.onRemove()}>
           Eliminar {p.device.name}
         </button>
       )}

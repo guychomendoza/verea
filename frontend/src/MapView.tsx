@@ -6,7 +6,7 @@ import { distance, haversine } from './geo'
 import { registerDeviceIcons } from './deviceIcons'
 import { MAP_LOCALE, buildStyle, devicesGeoJSON, ensurePmtiles, linksGeoJSON, plotsGeoJSON, rangeGeoJSON } from './mapStyle'
 import type { CellStatus, LinkResult, Project, Radial, Selection } from './types'
-import { OBSERVED, type FieldTest } from './fieldTests'
+import { NEAR_M, OBSERVED, type FieldTest } from './fieldTests'
 
 /** Where to move the view: a point (and zoom), or a box to fit (every device of a project). */
 export interface Focus { lat: number; lon: number; zoom?: number; bounds?: [[number, number], [number, number]]; key: number }
@@ -136,12 +136,18 @@ function rulerGeoJSON(points: LatLon[]): GeoJSON.FeatureCollection {
   return { type: 'FeatureCollection', features }
 }
 
+function metresToPixels(m: number, lat: number) {
+  const r0 = m / (156543.03 * Math.cos((lat * Math.PI) / 180))        // metres per pixel at zoom 0
+  return { r0, r22: r0 * 2 ** 22 }
+}
+
 /** Field tests: one point each, coloured by what the sensor got. */
 function fieldGeoJSON(tests: FieldTest[] = []): GeoJSON.FeatureCollection {
   return {
     type: 'FeatureCollection',
     features: tests.map((t) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [t.lon, t.lat] },
-      properties: { color: OBSERVED[t.observed].color, id: t.client_id } })),
+      // r0 / r22: NEAR_M in pixels at zoom 0 and 22 (the area it repaints on the coverage map)
+      properties: { color: OBSERVED[t.observed].color, id: t.client_id, ...metresToPixels(NEAR_M, t.lat) } })),
   }
 }
 
@@ -157,6 +163,7 @@ function applyProps(map: maplibregl.Map, props: Props, dragging: boolean) {
   ;(map.getSource('cursor') as GeoJSONSource).setData(pointsGeoJSON(props.cursor ? [props.cursor] : []))
   ;(map.getSource('field-tests') as GeoJSONSource).setData(fieldGeoJSON(props.fieldTests))
   map.setLayoutProperty('coverage', 'visibility', props.showCoverage ? 'visible' : 'none')
+  map.setLayoutProperty('field-areas', 'visibility', props.showCoverage ? 'visible' : 'none')   // tests repaint the coverage
   for (const id of ['roads', 'places']) {
     map.setLayoutProperty(id, 'visibility', props.showLabels ? 'visible' : 'none')
   }

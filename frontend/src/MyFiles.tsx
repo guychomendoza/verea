@@ -3,6 +3,7 @@ import * as cloud from './cloud'
 import { Alert, Icon } from './icons'
 import { Logo } from './Logo'
 import { Spinner } from './Loading'
+import { askConfirm } from './confirm'
 
 interface Props {
   me: cloud.Me
@@ -19,7 +20,7 @@ export default function MyFiles({ me, notice, onOpen, onSettings }: Props) {
   useEffect(() => { load() }, [])
 
   const leave = async (f: cloud.ViewerFile) => {
-    if (!confirm(`¿Quitar "${f.name || 'Sin nombre'}" de tus archivos? Para volver a verlo necesitarás el link otra vez.`)) return
+    if (!await askConfirm(`¿Quitar «${f.name || 'Sin nombre'}» de tus archivos? Para volver a verlo necesitarás el link otra vez.`, { ok: 'Quitar', danger: true })) return
     try {
       await cloud.leaveProject(f.project_id, me.id)
       load()

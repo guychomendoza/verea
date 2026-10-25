@@ -252,7 +252,9 @@ def main():
         b = pw.chromium.launch()
         page = b.new_page(viewport={"width": 1400, "height": 860}, accept_downloads=True)
         page.on("pageerror", lambda e: errors.append(str(e)))
-        page.on("dialog", lambda d: d.accept())
+        # only the browser's «leave with unsaved changes?» is native; every other confirmation is Verea's own
+        page.on("dialog", lambda d: d.accept() if d.type == "beforeunload"
+                else (errors.append(f"native dialog: {d.message}"), d.dismiss()))
         downloads = []
         page.on("download", lambda d: downloads.append(d))
         page.route(f"{SUPA}/rest/v1/**", rest)
@@ -339,6 +341,7 @@ def main():
         expect(dialog).to_contain_text("Beto's edit")
         assert dialog.get_by_role("button", name="Eliminar Beto's edit").count() == 0
         dialog.get_by_role("button", name=re.compile("Eliminar Ana's late edit")).click()
+        page.get_by_role("alertdialog", name="Confirmar").get_by_role("button", name="Eliminar proyecto").click()
         expect(dialog).not_to_contain_text("Ana's late edit (mi copia)", timeout=10000)
         dialog.get_by_role("button", name=re.compile("Beto's edit")).click()
         expect(page.get_by_label("Nombre del proyecto")).to_have_value("Beto's edit", timeout=10000)
@@ -416,6 +419,9 @@ def main():
         card = page.get_by_role("dialog", name="Prueba de campo")
         expect(card).to_contain_text("Sin señal")
         card.get_by_role("button", name="Borrar esta prueba").click()
+        ask = page.get_by_role("alertdialog", name="Confirmar")
+        expect(ask).to_contain_text("¿Borrar esta prueba de campo?")             # Verea's dialog, not the browser's
+        ask.get_by_role("button", name="Borrar prueba").click()
         expect(card).to_have_count(0)
         assert len(FIELD_TESTS) == 1 and t1["client_id"] not in FIELD_TESTS
         # back in the editor, the 4G sensor next to the test shows what was measured
@@ -522,6 +528,7 @@ def main():
         users = page.get_by_role("dialog", name="Usuarios")
         expect(users).to_contain_text("Agrícola Vera")
         users.get_by_label(f"Rol de {VERA['email']}").select_option("member")
+        page.get_by_role("alertdialog", name="Confirmar").get_by_role("button", name="Dar acceso").click()
         for _ in range(50):
             if VERA["role"] == "member":
                 break
