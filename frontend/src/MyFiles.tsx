@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import * as cloud from './cloud'
 import { Alert, Icon } from './icons'
 import { Logo } from './Logo'
+import { Spinner } from './Loading'
 
 interface Props {
   me: cloud.Me
@@ -42,7 +43,7 @@ export default function MyFiles({ me, notice, onOpen, onSettings }: Props) {
         <p className="hint">Los proyectos que te compartieron. Ábrelos para explorar cada nodo, su enlace y su perfil de elevación.</p>
         {notice && <Alert tone="warn">{notice}</Alert>}
         {error && <Alert>{error}</Alert>}
-        {rows === null ? <p className="hint">Cargando…</p> : rows.length === 0 ? (
+        {rows === null ? <Spinner /> : rows.length === 0 ? (
           <p className="hint">Todavía no tienes proyectos. Cuando alguien te comparta un link de Verea, ábrelo y aparecerá aquí.</p>
         ) : (
           <div className="file-grid">

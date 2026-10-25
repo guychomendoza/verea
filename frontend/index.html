@@ -8,7 +8,27 @@
     <title>Verea</title>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- shown until the app starts (Loading.tsx draws the same); plain CSS: the CSP allows no inline script -->
+    <style>
+      .boot { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+        background: #eef2f6; color: #5b6c80; font: 14px system-ui, sans-serif; }
+      @media (prefers-color-scheme: dark) { .boot { background: #091522; color: #95a7bb; } }
+      .boot p { margin: 0; }
+      .boot circle { fill: #3da3bc; }
+      .boot path { fill: none; stroke: #3da3bc; stroke-width: 4; stroke-linecap: round; }
+      .boot svg > * { animation: boot-wave 1.4s ease-in-out infinite; }
+      .boot .w1 { animation-delay: .15s; } .boot .w2 { animation-delay: .3s; } .boot .w3 { animation-delay: .45s; }
+      @keyframes boot-wave { 0%, 100% { opacity: .18; } 40% { opacity: 1; } }
+    </style>
+    <div id="root">
+      <div class="boot" role="status">
+        <svg width="64" height="64" viewBox="0 0 48 48" aria-hidden="true">
+          <circle class="w0" cx="24" cy="38" r="4" /><path class="w1" d="M16.5 30.5a10.6 10.6 0 0 1 15 0" />
+          <path class="w2" d="M11 25a18.4 18.4 0 0 1 26 0" /><path class="w3" d="M5.5 19.5a26.2 26.2 0 0 1 37 0" />
+        </svg>
+        <p>Cargando…</p>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

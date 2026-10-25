@@ -613,3 +613,15 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-
     animation: sheet-up .28s var(--ease); }
 }
 @keyframes sheet-up { from { transform: translateY(40px); opacity: 0; } }
+
+/* ── loading (Loading.tsx; index.html repeats it before the script loads) ── */
+.loading-screen { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; background: var(--bg); color: var(--muted); font-size: 14px; animation: fade-in .3s ease-out; }
+.loading-screen p { margin: 0; }
+.loading-inline { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 13px; color: var(--muted); }
+.loading-waves circle { fill: var(--brand-teal); }
+.loading-waves path { fill: none; stroke: var(--brand-teal); stroke-width: 4; stroke-linecap: round; }
+.loading-waves .w0, .loading-waves .w1, .loading-waves .w2, .loading-waves .w3 { animation: wave 1.4s ease-in-out infinite; }
+.loading-waves .w1 { animation-delay: .15s; } .loading-waves .w2 { animation-delay: .3s; } .loading-waves .w3 { animation-delay: .45s; }
+@keyframes wave { 0%, 100% { opacity: .18; } 40% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .loading-waves * { animation: none !important; opacity: 1; } }

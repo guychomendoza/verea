@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import * as cloud from './cloud'
 import { CloseButton } from './icons'
+import { Spinner } from './Loading'
 
 interface Props {
   me: cloud.Me
@@ -53,7 +54,7 @@ export default function ProjectsDialog({ me, currentId, onOpen, onDeleted, onClo
         <input type="search" placeholder="Filtrar por nombre" value={filter} onChange={(e) => setFilter(e.target.value)}
           aria-label="Filtrar proyectos" />
         {error && <p className="error">{error}</p>}
-        {rows === null ? <p className="hint">Cargando…</p> : (
+        {rows === null ? <Spinner /> : (
           <ul className="project-list">
             {shown.length === 0 && <li className="hint">No hay proyectos</li>}
             {shown.map((r) => (

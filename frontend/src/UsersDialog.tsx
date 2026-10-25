@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import * as cloud from './cloud'
 import { api } from './api'
 import { Alert, CloseButton, Icon } from './icons'
+import { Spinner } from './Loading'
 
 interface Props {
   me: cloud.Me
@@ -52,7 +53,7 @@ export default function UsersDialog({ me, onClose }: Props) {
         <input type="search" placeholder="Buscar por correo, nombre o empresa" value={filter} onChange={(e) => setFilter(e.target.value)}
           aria-label="Buscar usuarios" />
         {error && <Alert>{error}</Alert>}
-        {rows === null ? <p className="hint">Cargando…</p> : (
+        {rows === null ? <Spinner /> : (
           <table className="account-table">
             <thead><tr><th>Cuenta</th><th>Empresa · teléfono</th><th>Rol</th><th>Activa</th><th>Alta</th></tr></thead>
             <tbody>

@@ -37,6 +37,7 @@ import { DeviceHead, PanelButton, PhoneSheet, ProjectHead } from './Phone'
 import { CellResult } from './DevicePanel'
 import type { Catalog, CellStatus, Gateway, LinkDetail, LinkResult, NodeDevice, Project, Radial, Selection } from './types'
 import { Alert, Icon } from './icons'
+import { LoadingScreen } from './Loading'
 
 const STORAGE_KEY = 'verea.project'     // local mode (no Supabase configured)
 const LAST_PROJECT_KEY = 'verea.lastProject'
@@ -127,7 +128,7 @@ export default function App() {
   }, [])
   if (!cloud.cloudEnabled) {
     if (error) return <div className="p-6"><Alert>{error}</Alert></div>
-    if (!catalog) return <div className="p-6">Cargando…</div>
+    if (!catalog) return <LoadingScreen />
     return <Workspace catalog={catalog} />
   }
   return <CloudGate catalog={catalog} error={error} onSession={() => {
@@ -198,13 +199,13 @@ function CloudGate({ catalog, error, onSession }: { catalog: Catalog | null; err
     setSettingsOpen(false)
   }
 
-  if (session === undefined) return <div className="p-6">Cargando…</div>
+  if (session === undefined) return <LoadingScreen />
   if (!session) return <Login />
   // an invitation / reset link, or an account an admin created with a temporary password
   if (mustSetPassword || session.user.user_metadata?.must_change_password) {
     return <SetPassword email={session.user.email ?? ''} onDone={() => setMustSetPassword(false)} />
   }
-  if (me === undefined) return <div className="p-6">Cargando…</div>
+  if (me === undefined) return <LoadingScreen />
   if (me === null || !me.active) {
     return (
       <Notice title="Esta cuenta no está activa">
@@ -213,7 +214,7 @@ function CloudGate({ catalog, error, onSession }: { catalog: Catalog | null; err
       </Notice>
     )
   }
-  if (claiming) return <div className="p-6">Abriendo el proyecto compartido…</div>
+  if (claiming) return <LoadingScreen text="Abriendo el proyecto compartido…" />
   const dialogs = (
     <>
       {settingsOpen && (
@@ -234,7 +235,7 @@ function CloudGate({ catalog, error, onSession }: { catalog: Catalog | null; err
   } else if (error) {
     content = <div className="p-6"><Alert>{error}</Alert></div>
   } else if (!catalog) {
-    content = <div className="p-6">Cargando…</div>
+    content = <LoadingScreen />
   } else if (!cloud.isTeam(me)) {
     content = <ViewerLoader key={file} id={file!} catalog={catalog} user={user}
       onFiles={(msg) => { setNotice(msg ?? ''); openFile(null) }} />
@@ -255,7 +256,7 @@ function ViewerLoader({ id, catalog, user, onFiles }: { id: string; catalog: Cat
         base: { ...r.data, name: r.name, settings: { ...catalog.defaults, ...r.data.settings } } }))
       .catch(() => onFiles('Ya no tienes acceso a ese proyecto.'))
   }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
-  if (!doc) return <div className="p-6">Abriendo el proyecto…</div>
+  if (!doc) return <LoadingScreen text="Abriendo el proyecto…" />
   return <Workspace catalog={catalog} user={user} viewer={{ ...doc, onFiles: () => onFiles() }} />
 }
 
@@ -727,7 +728,7 @@ function Workspace({ catalog, user, viewer }: {
     return saveState === 'error'
       ? <Notice title="No se pudieron abrir tus proyectos"><p className="hint">{saveError}</p>
           <button className="btn" onClick={() => window.location.reload()}>Reintentar</button></Notice>
-      : <div className="p-6">Abriendo el proyecto…</div>
+      : <LoadingScreen text="Abriendo el proyecto…" />
   }
 
   const rulerTotal = ruler.slice(1).reduce((sum, pt, i) => sum + haversine(ruler[i], pt), 0)

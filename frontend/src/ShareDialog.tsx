@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import * as cloud from './cloud'
 import { shareUrl } from './share'
 import { Alert, CloseButton, Icon } from './icons'
+import { Spinner } from './Loading'
 
 interface Props {
   projectId: string
@@ -65,7 +66,7 @@ export default function ShareDialog({ projectId, projectName, onClose }: Props) 
           el PDF.
         </p>
         {error && <Alert>{error}</Alert>}
-        {shares === null ? <p className="hint">Cargando…</p> : (
+        {shares === null ? <Spinner /> : (
           <>
             {live.map((s) => (
               <div key={s.id} className="flex flex-col gap-1">
