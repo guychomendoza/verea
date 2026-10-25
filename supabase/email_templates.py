@@ -3,7 +3,7 @@ Verea's account emails (Spanish), sent through Resend from no-reply@verea.app: S
 {{ .ConfirmationURL }} and {{ .Email }}. scripts/supabase_setup.py uploads them with --resend.
 """
 
-LOGO = "https://verea.app/email-logo.png"      # frontend/public/email-logo.png
+LOGO = "https://tiles.verea.app/email-logo.png"   # frontend/public/email-logo.png, uploaded to the R2 bucket
 NAVY, TEAL, INK, MUTED, LINE = "#193352", "#3da3bc", "#102136", "#5b6c80", "#e1e7ee"
 
 # key: (subject, heading, text, button)
