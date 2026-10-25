@@ -317,3 +317,20 @@ def test_admin_creates_user(supabase, monkeypatch):
         raise urllib.error.HTTPError(path, 422, "x", {}, __import__("io").BytesIO(b'{"msg":"User already registered"}'))
     monkeypatch.setattr(users, "_call", taken)
     assert c.post("/api/admin/users", json=body, headers=hdr(admin)).status_code == 409
+
+
+def test_secret_key_formats(monkeypatch):
+    """A new sb_secret_ key goes only in apikey; a legacy service_role JWT also as the bearer."""
+    from backend import users
+    sent = []
+
+    class Resp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return b""
+    monkeypatch.setattr(users.urllib.request, "urlopen", lambda req, timeout: sent.append(dict(req.header_items())) or Resp())
+    monkeypatch.setenv("SUPABASE_URL", "https://x.supabase.co")
+    users._call("PATCH", "/rest/v1/profiles", {}, "sb_secret_abc")
+    users._call("PATCH", "/rest/v1/profiles", {}, "eyJhbGciOi.legacy")
+    assert sent[0].get("Apikey") == "sb_secret_abc" and "Authorization" not in sent[0]
+    assert sent[1].get("Authorization") == "Bearer eyJhbGciOi.legacy"

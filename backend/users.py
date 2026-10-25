@@ -1,6 +1,7 @@
 """
 Administrators create team accounts (email + temporary password) through Supabase's admin API,
-which needs the secret service role key (SUPABASE_SERVICE_ROLE_KEY, set only on the server).
+which needs the project's secret key (SUPABASE_SERVICE_ROLE_KEY: a new sb_secret_… key or the legacy
+service_role JWT; set only on the server).
 The account is confirmed at once, gets its role in profiles, and carries must_change_password in
 its metadata so the app asks for a new password at the first sign-in.
 """
@@ -15,9 +16,10 @@ from fastapi import HTTPException
 
 def _call(method: str, path: str, body: dict, key: str) -> dict | list | None:
     url = os.environ.get("SUPABASE_URL", "").rstrip("/")
-    req = urllib.request.Request(f"{url}{path}", method=method, data=json.dumps(body).encode(),
-                                 headers={"apikey": key, "Authorization": f"Bearer {key}",
-                                          "Content-Type": "application/json", "Prefer": "return=minimal"})
+    headers = {"apikey": key, "Content-Type": "application/json", "Prefer": "return=minimal"}
+    if not key.startswith("sb_secret_"):        # a legacy service_role JWT also goes as the bearer;
+        headers["Authorization"] = f"Bearer {key}"   # a new secret key only in apikey (Supabase mints the JWT)
+    req = urllib.request.Request(f"{url}{path}", method=method, data=json.dumps(body).encode(), headers=headers)
     with urllib.request.urlopen(req, timeout=15) as r:
         raw = r.read()
     return json.loads(raw) if raw else None
