@@ -6,7 +6,7 @@ import { distance, haversine } from './geo'
 import { registerDeviceIcons } from './deviceIcons'
 import { MAP_LOCALE, buildStyle, devicesGeoJSON, ensurePmtiles, linksGeoJSON, plotsGeoJSON, rangeGeoJSON } from './mapStyle'
 import type { CellStatus, LinkResult, Project, Radial, Selection } from './types'
-import { NEAR_M, OBSERVED, type FieldTest } from './fieldTests'
+import { OBSERVED, deliveryOf, fieldAreasGeoJSON, type FieldTest } from './fieldTests'
 
 /** Where to move the view: a point (and zoom), or a box to fit (every device of a project). */
 export interface Focus { lat: number; lon: number; zoom?: number; bounds?: [[number, number], [number, number]]; key: number }
@@ -40,7 +40,12 @@ interface Props {
   onToggleCoverage: () => void
   onReady?: (map: maplibregl.Map) => void
   readOnly?: boolean                    // viewer: devices are selected, never dragged
-  fieldTests?: FieldTest[]              // 4G field tests, drawn as coloured points
+  // 4G field tests: fieldTests repaint the coverage (squares, while the coverage is shown and fieldAreasOn
+  // is not false); testPoints are drawn as dots (field mode only); onToggleFieldAreas adds the map switch
+  fieldTests?: FieldTest[]
+  testPoints?: FieldTest[]
+  fieldAreasOn?: boolean
+  onToggleFieldAreas?: () => void
   onFieldTest?: (clientId: string) => void   // a field test's dot was clicked
   // «Mi ubicación» (MapLibre's control, beside the zoom): autoLocate starts it at once (field mode);
   // onLocate gets every position, onLocateError a message (permission denied…)
@@ -73,12 +78,18 @@ class RulerControl implements maplibregl.IControl {
   onRemove() { this.el.remove() }
 }
 
-/** 4G coverage on/off, bottom right beside the attribution, with its legend while shown. */
+/** 4G coverage on/off, bottom right beside the attribution, with its legend while shown; above it,
+ *  the field tests' switch (editor) to compare the coverage with and without them. */
 class CoverageControl implements maplibregl.IControl {
   private el = document.createElement('div')
   private btn = document.createElement('button')
+  private fieldBtn = document.createElement('button')
   private legend = document.createElement('div')
-  constructor(onClick: () => void) {
+  constructor(onClick: () => void, onField: () => void) {
+    this.fieldBtn.type = 'button'
+    this.fieldBtn.className = 'verea-coverage-btn verea-field-btn'
+    this.fieldBtn.title = 'Mostrar u ocultar las correcciones de las pruebas de campo'
+    this.fieldBtn.onclick = onField
     this.el.className = 'maplibregl-ctrl verea-coverage-ctrl'
     this.btn.type = 'button'
     this.btn.className = 'verea-coverage-btn'
@@ -91,13 +102,19 @@ class CoverageControl implements maplibregl.IControl {
     this.legend.innerHTML = ([[COLORS.cellOk, 'Garantizada'], [COLORS.cellEdge, 'Incierta'],
       [COLORS.cellPossible, 'Posible (LTE-M)'], [COLORS.cellNone, 'Sin cobertura']] as const)
       .map(([c, t]) => `<span><i style="background:${c}"></i>${t}</span>`).join('')
-    this.el.append(this.legend, this.btn)
+    this.el.append(this.legend, this.fieldBtn, this.btn)
   }
-  set(on: boolean, available: boolean) {
+  set(on: boolean, available: boolean, field: { count: number; on: boolean; switchable: boolean }) {
     this.el.hidden = !available
     this.btn.classList.toggle('active', on)
     this.btn.setAttribute('aria-pressed', String(on))
     this.legend.hidden = !on
+    this.fieldBtn.hidden = !on || !field.switchable || !field.count
+    this.fieldBtn.classList.toggle('active', field.on)
+    this.fieldBtn.setAttribute('aria-pressed', String(field.on))
+    this.fieldBtn.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" '
+      + 'stroke-width="2.2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 12l2 2 4-4"/></svg>'
+      + `<span>Pruebas de campo (${field.count})</span>`
   }
   onAdd() { return this.el }
   onRemove() { this.el.remove() }
@@ -136,18 +153,12 @@ function rulerGeoJSON(points: LatLon[]): GeoJSON.FeatureCollection {
   return { type: 'FeatureCollection', features }
 }
 
-function metresToPixels(m: number, lat: number) {
-  const r0 = m / (156543.03 * Math.cos((lat * Math.PI) / 180))        // metres per pixel at zoom 0
-  return { r0, r22: r0 * 2 ** 22 }
-}
-
-/** Field tests: one point each, coloured by what the sensor got. */
+/** Field tests as dots: fill = the signal reported, delivery = did the reading reach the server. */
 function fieldGeoJSON(tests: FieldTest[] = []): GeoJSON.FeatureCollection {
   return {
     type: 'FeatureCollection',
     features: tests.map((t) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [t.lon, t.lat] },
-      // r0 / r22: NEAR_M in pixels at zoom 0 and 22 (the area it repaints on the coverage map)
-      properties: { color: OBSERVED[t.observed].color, id: t.client_id, ...metresToPixels(NEAR_M, t.lat) } })),
+      properties: { color: OBSERVED[t.observed].color, id: t.client_id, delivery: deliveryOf(t) } })),
   }
 }
 
@@ -161,9 +172,13 @@ function applyProps(map: maplibregl.Map, props: Props, dragging: boolean) {
   ;(map.getSource('ruler') as GeoJSONSource).setData(rulerGeoJSON(props.ruler))
   ;(map.getSource('profile-pins') as GeoJSONSource).setData(pointsGeoJSON(props.profilePins, true))
   ;(map.getSource('cursor') as GeoJSONSource).setData(pointsGeoJSON(props.cursor ? [props.cursor] : []))
-  ;(map.getSource('field-tests') as GeoJSONSource).setData(fieldGeoJSON(props.fieldTests))
+  ;(map.getSource('field-tests') as GeoJSONSource).setData(fieldGeoJSON(props.testPoints))
+  ;(map.getSource('field-areas') as GeoJSONSource).setData(fieldAreasGeoJSON(props.fieldTests))
   map.setLayoutProperty('coverage', 'visibility', props.showCoverage ? 'visible' : 'none')
-  map.setLayoutProperty('field-areas', 'visibility', props.showCoverage ? 'visible' : 'none')   // tests repaint the coverage
+  // the tests repaint the coverage (unless switched off to compare)
+  const areas = props.showCoverage && props.fieldAreasOn !== false ? 'visible' : 'none'
+  map.setLayoutProperty('field-areas', 'visibility', areas)
+  map.setLayoutProperty('field-areas-line', 'visibility', areas)
   for (const id of ['roads', 'places']) {
     map.setLayoutProperty(id, 'visibility', props.showLabels ? 'visible' : 'none')
   }
@@ -215,7 +230,8 @@ export default function MapView(props: Props) {
       ? 'Permite el acceso a tu ubicación para verla en el mapa.' : 'No se pudo obtener tu ubicación.'))
     if (propsRef.current.autoLocate) map.once('load', () => locate.trigger())
     map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left')
-    const coverage = new CoverageControl(() => propsRef.current.onToggleCoverage())
+    const coverage = new CoverageControl(() => propsRef.current.onToggleCoverage(),
+      () => propsRef.current.onToggleFieldAreas?.())
     map.addControl(coverage, 'bottom-right')
     coverageCtl.current = coverage
     mapRef.current = map
@@ -323,7 +339,8 @@ export default function MapView(props: Props) {
     const map = mapRef.current
     if (map && loaded.current) applyProps(map, props, !!drag.current)
     rulerCtl.current?.setActive(props.mode === 'ruler')
-    coverageCtl.current?.set(props.showCoverage, props.coverageAvailable)
+    coverageCtl.current?.set(props.showCoverage, props.coverageAvailable, { count: props.fieldTests?.length ?? 0,
+      on: props.fieldAreasOn !== false, switchable: !!props.onToggleFieldAreas })
   }, [props])
 
   useEffect(() => {

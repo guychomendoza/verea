@@ -471,7 +471,7 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-
 /* 4G coverage switch beside the attribution (bottom right) */
 .maplibregl-ctrl-bottom-right { display: flex; align-items: flex-end; gap: 6px; }
 .verea-coverage-ctrl { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-.verea-coverage-ctrl[hidden], .verea-coverage-legend[hidden] { display: none; }
+.verea-coverage-ctrl[hidden], .verea-coverage-legend[hidden], .verea-coverage-btn[hidden] { display: none; }
 .verea-coverage-btn {
   display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 999px; cursor: pointer;
   background: #fff; color: #162a40; border: 0; font: 600 12px/1.2 var(--font);
@@ -657,7 +657,7 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-
 .switch.on { color: var(--ink); }
 
 /* ── 4G field tests (FieldMode.tsx) ── */
-.field-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--ink); }
+.field-dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--muted) 45%, transparent); border: 1.5px solid var(--muted); }
 .field-mode { position: fixed; inset: 0; overflow: hidden; background: var(--bg); }
 .field-map { position: absolute; inset: 0; }
 .field-map .map-area, .field-map > div { height: 100%; }
@@ -715,3 +715,25 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-
 .confirm-message { margin: 0; font-size: 14.5px; line-height: 1.5; }
 .btn-danger-solid { background: var(--bad); color: #fff; border-color: var(--bad); }
 .btn-danger-solid:hover:not(:disabled) { background: color-mix(in srgb, var(--bad) 85%, #000); color: #fff; }
+
+/* field tests: «¿llegó el dato?» on the dots (border), filters and summary (FieldMode.tsx) */
+.test-dot { display: inline-grid; place-items: center; color: #fff; vertical-align: middle; }
+.test-dot.yes { box-shadow: 0 0 0 2px #fff, 0 0 0 3px var(--line-strong); }
+.test-dot.no { box-shadow: 0 0 0 2.5px #ef233c; }
+.test-dot.unknown { box-shadow: 0 0 0 1.5px #8a96a3; }
+.test-dot svg { filter: drop-shadow(0 0 1.5px #0b1726); }
+.field-filter { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.field-filter .chip { box-shadow: var(--shadow); display: inline-flex; align-items: center; gap: 4px; }
+.field-filter .chip b { font-weight: 700; opacity: .8; }
+button.field-today { display: inline-flex; align-items: center; gap: 6px; border: 0; cursor: pointer; font: inherit; font-size: 12.5px; }
+button.field-today:disabled { cursor: default; }
+.field-summary { width: 100%; border-collapse: collapse; font-size: 13px; }
+.field-summary th, .field-summary td { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: center; }
+.field-summary th:first-child { text-align: left; white-space: nowrap; }
+.field-summary thead th { font-size: 11.5px; color: var(--muted); font-weight: 600; }
+.field-summary td button { min-width: 40px; min-height: 32px; border-radius: var(--r); border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; font: inherit; }
+.field-summary td button:disabled { opacity: .4; cursor: default; }
+.field-summary td button:not(:disabled):hover { border-color: var(--line-strong); }
+.field-legend { display: grid; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.field-legend span { display: flex; align-items: center; gap: 8px; }
+.field-mode .ruler-box { bottom: calc(80px + env(safe-area-inset-bottom)); z-index: 6; white-space: normal; max-width: calc(100% - 24px); }

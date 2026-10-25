@@ -1,15 +1,25 @@
-# Modo «Pruebas de campo 4G» — diseño (sin programar todavía)
+# Modo «Pruebas de campo 4G»
 
-Estado (25/10/2026): programado en la rama `rediseno` (pasos 1–4 de abajo, sin el script de calibración).
-La tabla `field_tests` está en `supabase/migrations/20261025000000_field_tests.sql`, pero **no se ha aplicado
-a Supabase**: hay que correr `scripts/supabase_setup.py` cuando se apruebe.
+Estado (25/10/2026): en producción (verea.app/campo), con la tabla `field_tests` aplicada en Supabase. Falta el
+script de calibración.
 
 Decisiones (24/10/2026): registra todo el equipo; sin fotos por ahora; el servidor de los sensores no se puede
 consultar, así que «¿llegó el dato?» se contesta a mano. Cambios frente a este diseño: en vez de «¿coincide?» +
 estado real, se pregunta directo qué pasó (estable / intermitente / sin señal) y la app dice si coincide; la
 corrección de la predicción se aplica en el navegador (`fieldTests.ts` `withFieldTests`: mapa, listas, ficha y PDF),
-no en la API. Una sola prueba repinta la cobertura 200 m a su alrededor (capa sobre los mosaicos) y corrige los
-sensores dentro de ese radio; recalibrar los márgenes de todo el mapa sigue esperando a tener muchas pruebas.
+no en la API.
+
+Versión 2 (25/10/2026, tras usarlo en campo):
+- Cada prueba repinta un **cuadro** de ±200 m (`NEAR_M`) ajustado hacia fuera a la rejilla de 0.0004° de los
+  mosaicos de cobertura (`testBounds`), y corrige los sensores 4G dentro del mismo cuadro; donde se enciman,
+  manda la más reciente. (Antes era un círculo que por un error de escala medía ~100 m.)
+- Las pruebas son del equipo, no de un proyecto: corrigen cualquier proyecto con sensores en la zona y se
+  acumulan. «Descargar pruebas (CSV)» en el resumen del modo campo las junta todas para calibrar.
+- Editor: solo los cuadros, sin puntos; botón «Pruebas de campo (n)» sobre «Cobertura 4G» para compararlas
+  (apagado quita también la corrección de los sensores; se recuerda en el navegador). El PDF muestra lo mismo.
+- Modo campo: puntos con relleno = señal reportada y borde = ¿llegó el dato? (blanco = sí, rojo con ✕ = no,
+  gris delgado = no se sabe); chips Todas / Llegó / No llegó / Sin dato; resumen 3 × 3 (señal × llegó, hoy o
+  todas) donde una casilla filtra el mapa; la regla funciona igual que en el editor.
 
 ## Para qué
 

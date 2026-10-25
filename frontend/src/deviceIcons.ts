@@ -51,8 +51,30 @@ const IMAGE_PX = 48
 export const iconImageId = (kind: DeviceKind) => `icon-${kind}`
 
 /** Add the glyph images: all once the map loads, or earlier when a layer first asks for one. */
+/** The ✕ over a field test whose reading did not reach the server (white with a dark outline). */
+function fieldNoImage(px = 32): ImageData {
+  const c = document.createElement('canvas')
+  c.width = c.height = px
+  const g = c.getContext('2d')!
+  const d = px * 0.28
+  g.lineCap = 'round'
+  for (const [width, color] of [[px * 0.26, '#0b1726'], [px * 0.13, '#ffffff']] as const) {
+    g.lineWidth = width
+    g.strokeStyle = color
+    g.beginPath()
+    g.moveTo(px / 2 - d, px / 2 - d); g.lineTo(px / 2 + d, px / 2 + d)
+    g.moveTo(px / 2 + d, px / 2 - d); g.lineTo(px / 2 - d, px / 2 + d)
+    g.stroke()
+  }
+  return g.getImageData(0, 0, px, px)
+}
+
 export function registerDeviceIcons(map: maplibregl.Map) {
   const add = (id: string) => {
+    if (id === 'field-no') {
+      if (!map.hasImage(id)) map.addImage(id, fieldNoImage(), { pixelRatio: 2 })
+      return
+    }
     const kind = id.replace(/^icon-/, '') as DeviceKind
     if (!(kind in GLYPHS) || map.hasImage(id)) return
     const g = glyphCanvas(kind, IMAGE_PX).getContext('2d')!

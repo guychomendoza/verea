@@ -17,12 +17,14 @@ Needs a development API (accepts any token) and a dev server in cloud mode point
     .venv/bin/python frontend/e2e/cloud.py
 """
 import json
+import math
 import os
 import re
 import sys
 import tempfile
 import time
 import uuid
+import zlib
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -251,6 +253,17 @@ def pdf_from(page, downloads):
     return Path(downloads[-1].path()).read_bytes()
 
 
+def pdf_text(pdf: bytes) -> bytes:
+    """The PDF's content streams, inflated (jsPDF compresses them)."""
+    out = []
+    for m in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", pdf, re.S):
+        try:
+            out.append(zlib.decompress(m.group(1)))
+        except zlib.error:
+            out.append(m.group(1))
+    return b"\n".join(out)
+
+
 def main():
     errors = []
     sample = json.load(open("frontend/e2e/sample.verea.json"))
@@ -419,8 +432,47 @@ def main():
             expect(sheet.get_by_text(re.compile("No coincide: el mapa la da como"))).to_be_visible()
             expect(sheet).to_contain_text("mejor de lo que dice")
         sheet.get_by_role("button", name="Cancelar la prueba").click()
-        # my own test: its dot opens a card with «Borrar»
         page.wait_for_function("() => window.__vereaMap && window.__vereaMap.loaded()", timeout=30000)
+        # the dots, filtered by «¿llegó el dato?»
+        def dots(n):
+            page.wait_for_function(f"""() => window.__vereaMap.getSource('field-tests').getData()
+                .then((d) => {{ window.__dots = d.features.length; return true }}) && window.__dots === {n}""", timeout=10000)
+        dots(2)
+        filt = page.get_by_role("group", name="Mostrar pruebas")
+        filt.get_by_role("button", name=re.compile("^No llegó")).click()
+        dots(1)
+        filt.get_by_role("button", name=re.compile("^Todas")).click()
+        dots(2)
+        # the summary: signal × arrived, a cell filters the map; the CSV has every test
+        page.locator("button.field-today").click()
+        summ = page.get_by_role("dialog", name="Resumen de pruebas")
+        summ.get_by_role("radio", name="Todas").click()
+        page.screenshot(path=f"{OUT}/field-summary.png")
+        with page.expect_download() as dl:
+            summ.get_by_role("button", name="Descargar pruebas (CSV)").click()
+        csv = Path(dl.value.path()).read_bytes().decode("utf-8-sig")
+        assert csv.count("\r\n") == 2 and "llego_el_dato" in csv and "No llegó" in csv and "Beto's edit" in csv, csv
+        summ.locator("tbody tr").nth(2).get_by_role("button").nth(1).click()          # «Sin señal» × «No llegó»
+        expect(summ).to_have_count(0)
+        dots(1)
+        filt.get_by_role("button", name=re.compile("^Sin señal · No llegó")).click()
+        dots(2)
+        # each test repaints a square of the coverage at least 200 m each way, on the coverage grid
+        ring = page.evaluate("() => window.__vereaMap.getSource('field-areas').getData().then((d) => d.features[0].geometry.coordinates[0])")
+        (w, s_), (e, n) = ring[0], ring[2]
+        lat = (s_ + n) / 2
+        assert (e - w) * 111320 * math.cos(math.radians(lat)) >= 399 and (n - s_) * 111320 >= 399, ring
+        assert page.evaluate("() => window.__vereaMap.getLayoutProperty('field-areas', 'visibility')") == "visible"
+        # the ruler measures here too
+        page.get_by_role("button", name="Regla: medir distancias").click()
+        box = page.locator(".field-map canvas").bounding_box()
+        page.mouse.click(box["x"] + box["width"] * 0.3, box["y"] + box["height"] * 0.4)
+        page.mouse.click(box["x"] + box["width"] * 0.6, box["y"] + box["height"] * 0.4)
+        ruler = page.get_by_role("region", name="Regla")
+        expect(ruler.get_by_test_id("ruler-total")).to_have_text(re.compile(r"\d.*(m|km)$"))
+        ruler.get_by_role("button", name="Borrar").click()
+        expect(ruler).to_have_count(0)
+        # my own test: its dot opens a card with «Borrar»
         pt = page.evaluate("""() => { const m = window.__vereaMap; const p = m.project([-102.3, 21.2]);
             const r = m.getCanvas().getBoundingClientRect(); return [r.left + p.x, r.top + p.y] }""")
         page.mouse.click(pt[0], pt[1])
@@ -439,7 +491,24 @@ def main():
         expect(page.get_by_role("complementary", name="Dispositivo")).to_contain_text("Verificado en campo")
         expect(side.get_by_role("region", name="Lista de sensores")).to_contain_text("Señal estable (en campo)")
         page.get_by_role("complementary", name="Dispositivo").get_by_role("button", name="Cerrar").click()
-        print("field tests: recorded, offline one uploaded later, strict agreement, own test deleted, sensor verified")
+        # the editor shows only the repainted coverage (no dots), with a switch to compare without the tests
+        page.wait_for_function("() => window.__vereaMap && window.__vereaMap.loaded()", timeout=30000)
+        assert page.evaluate("() => window.__vereaMap.getSource('field-tests').getData().then((d) => d.features.length)") == 0
+        page.get_by_test_id("map").get_by_role("button", name="Cobertura 4G").click()
+        field_btn = page.get_by_test_id("map").get_by_role("button", name=re.compile(r"^Pruebas de campo \(1\)"))
+        expect(field_btn).to_have_attribute("aria-pressed", "true")
+        page.evaluate("() => window.__vereaMap.jumpTo({ center: [-102.3945, 21.3099], zoom: 15 })")
+        page.wait_for_timeout(2500)
+        page.screenshot(path=f"{OUT}/editor-field-areas.png")
+        assert page.evaluate("() => window.__vereaMap.getLayoutProperty('field-areas', 'visibility')") == "visible"
+        field_btn.click()
+        expect(field_btn).to_have_attribute("aria-pressed", "false")
+        assert page.evaluate("() => window.__vereaMap.getLayoutProperty('field-areas', 'visibility')") == "none"
+        expect(side.get_by_role("region", name="Lista de sensores")).not_to_contain_text("(en campo)")
+        field_btn.click()
+        expect(side.get_by_role("region", name="Lista de sensores")).to_contain_text("Señal estable (en campo)")
+        print("field tests: recorded, offline one uploaded later, strict agreement, own test deleted, sensor verified; "
+              "filters, summary, CSV, 200 m squares, ruler; editor: areas only, switch")
 
         # ── share a link ──
         side.get_by_role("button", name="Compartir", exact=True).click()
@@ -456,6 +525,7 @@ def main():
         side.get_by_role("button", name="Reporte", exact=True).click()
         pdf = pdf_from(page, downloads)
         assert f"/URI ({url})".encode() in pdf and len(SHARES) == 1, "the PDF links to the shared project"
+        assert b"Cobertura corregida con pruebas de campo" in pdf_text(pdf), "the PDF's coverage shows the field tests"
         print("team PDF: link and QR")
         sign_out(page)
         expect(page.get_by_role("button", name="Continuar con Google")).to_be_visible(timeout=10000)

@@ -10,8 +10,11 @@ import { Alert, CloseButton, Icon } from './icons'
 import { LoadingScreen, Spinner } from './Loading'
 import { isCellular, isStation } from './project'
 import {
-  EXPECTED, OBSERVED, agrees, comparedToMap, dequeue, enqueue, newClientId, queued, withFieldTests, type FieldTest, type Observed,
+  DELIVERY, EXPECTED, OBSERVED, agrees, comparedToMap, deliveryOf, dequeue, enqueue, newClientId, queued, testsCsv, withFieldTests,
+  type Delivery, type FieldTest, type Observed,
 } from './fieldTests'
+import { RulerBox } from './ruler'
+import { downloadBlob } from './exportImage'
 import type { Catalog, CellStatus, Project } from './types'
 import { askConfirm } from './confirm'
 
@@ -21,6 +24,18 @@ type Draft = Here & { predicted: CellStatus | null; checking: boolean; observed:
 
 const PREDICTED_LABEL: Record<CellStatus['state'], string> = {
   ok: 'garantizada', edge: 'incierta', differentiated: 'solo diferenciada', possible: 'posible', none: 'sin cobertura',
+}
+const DELIVERIES: Delivery[] = ['yes', 'no', 'unknown']
+const isToday = (t: FieldTest) => new Date(t.taken_at).toDateString() === new Date().toDateString()
+
+/** The border of a test's dot on the map (mapStyle.ts 'field-tests'): did the reading reach the server. */
+function TestDot({ t, size = 18 }: { t: Pick<FieldTest, 'observed' | 'delivered'>; size?: number }) {
+  const d = deliveryOf(t as FieldTest)
+  return (
+    <span className={`test-dot ${d}`} style={{ background: OBSERVED[t.observed].color, width: size, height: size }} aria-hidden="true">
+      {d === 'no' && <Icon name="x" size={Math.round(size * 0.6)} />}
+    </span>
+  )
 }
 
 export default function FieldMode({ catalog, projectId, me: account, onExit }: {
@@ -42,6 +57,10 @@ export default function FieldMode({ catalog, projectId, me: account, onExit }: {
   const [draft, setDraft] = useState<Draft | null>(null)
   const [cells, setCells] = useState<Record<string, CellStatus>>({})
   const [showCoverage, setShowCoverage] = useState(true)
+  const [ruler, setRuler] = useState<[number, number][]>([])
+  // dots shown: by «¿llegó el dato?» (the chips) and, from a cell of the summary, by the signal too
+  const [filter, setFilter] = useState<{ delivery: Delivery | null; observed: Observed | null }>({ delivery: null, observed: null })
+  const [summary, setSummary] = useState<'today' | 'all' | null>(null)
   const syncingRef = useRef(false)
 
   const operator = project?.data.settings.cell_operator || catalog.cell_operators[0] || 'Telcel'
@@ -142,7 +161,13 @@ export default function FieldMode({ catalog, projectId, me: account, onExit }: {
   }
 
   const shown = useMemo(() => [...pending, ...tests.filter((t) => !pending.some((p) => p.client_id === t.client_id))], [pending, tests])
-  const today = shown.filter((t) => new Date(t.taken_at).toDateString() === new Date().toDateString())
+  const today = shown.filter(isToday)
+  const visible = shown.filter((t) => (!filter.delivery || deliveryOf(t) === filter.delivery) && (!filter.observed || t.observed === filter.observed))
+  const downloadCsv = () => {
+    const names = new Map((rows ?? []).map((r) => [r.id, r.name]))
+    downloadBlob(new Blob([testsCsv(shown, (id) => (id && names.get(id)) || '')], { type: 'text/csv;charset=utf-8' }),
+      `pruebas_campo_4g_${new Date().toISOString().slice(0, 10)}.csv`)
+  }
   const todayAgree = today.filter((t) => agrees(t.predicted, t.observed)).length
   const shownCells = useMemo(() => withFieldTests(cells, project?.data.nodes ?? [], cellular, shown), [cells, project, cellular, shown])
 
@@ -172,11 +197,15 @@ export default function FieldMode({ catalog, projectId, me: account, onExit }: {
     <div className="field-mode">
       <div className="field-map">
         <MapView project={project.data} selection={null} links={{}} cells={shownCells} cellular={cellular} stations={stations}
-          mode={mode} showCoverage={showCoverage} showLabels pin={null} focus={focus} cursor={null} profilePins={[]} ruler={[]}
+          mode={mode} showCoverage={showCoverage} showLabels pin={null} focus={focus} cursor={null} profilePins={[]} ruler={ruler}
           onSelect={() => {}} onMove={() => {}} onAdd={(lat, lon) => start({ lat, lon, accuracy: 0 })}
-          onRulerPoint={() => {}} onRulerDone={() => {}} onToggleRuler={() => {}}
+          onRulerPoint={(lat, lon) => setRuler((r) => [...r, [lat, lon]])} onRulerDone={() => setMode('select')}
+          onToggleRuler={() => {
+            if (mode === 'ruler') setMode('select')
+            else { setRuler([]); setDraft(null); setPicked(null); setMode('ruler') }
+          }}
           coverageAvailable={catalog.cell_operators.length > 0} onToggleCoverage={() => setShowCoverage((v) => !v)}
-          readOnly fieldTests={shown} autoLocate
+          readOnly fieldTests={shown} testPoints={visible} autoLocate
           onLocate={(here) => { setMe(here); setGeoError('') }} onLocateError={setGeoError}
           onFieldTest={(id) => { setDraft(null); setPicked(shown.find((t) => t.client_id === id) ?? null) }} />
       </div>
@@ -191,7 +220,9 @@ export default function FieldMode({ catalog, projectId, me: account, onExit }: {
         </span>
       </header>
 
-      {!draft && !picked && (
+      <RulerBox points={ruler} active={mode === 'ruler'} onDone={() => setMode('select')}
+        onClear={() => { setRuler([]); setMode('select') }} />
+      {!draft && !picked && !summary && mode !== 'ruler' && (
         <div className="field-actions">
           {geoError && <p className="field-geo">{geoError}</p>}
           {mode === 'pick' ? (
@@ -201,7 +232,23 @@ export default function FieldMode({ catalog, projectId, me: account, onExit }: {
             </div>
           ) : (
             <>
-              <p className="field-today">{today.length ? `Hoy: ${today.length} prueba${today.length === 1 ? '' : 's'} · ${todayAgree} coinciden con el mapa` : 'Sin pruebas hoy'}</p>
+              {shown.length > 0 && (
+                <div className="field-filter" role="group" aria-label="Mostrar pruebas">
+                  {([null, ...DELIVERIES] as (Delivery | null)[]).map((d) => (
+                    <button key={d ?? 'all'} className={`chip ${filter.delivery === d && !filter.observed ? 'active' : ''}`} aria-pressed={filter.delivery === d && !filter.observed}
+                      onClick={() => setFilter({ delivery: d, observed: null })}>
+                      {d ? DELIVERY[d] : 'Todas'} <b>{d ? shown.filter((t) => deliveryOf(t) === d).length : shown.length}</b></button>
+                  ))}
+                  {filter.observed && (
+                    <button className="chip active" onClick={() => setFilter({ delivery: null, observed: null })} title="Quitar el filtro">
+                      {OBSERVED[filter.observed].label}{filter.delivery ? ` · ${DELIVERY[filter.delivery]}` : ''} <b>{visible.length}</b> <Icon name="x" size={12} /></button>
+                  )}
+                </div>
+              )}
+              <button className="field-today" onClick={() => setSummary(today.length ? 'today' : 'all')} disabled={!shown.length}
+                title="Resumen de las pruebas">
+                {today.length ? `Hoy: ${today.length} prueba${today.length === 1 ? '' : 's'} · ${todayAgree} coinciden con el mapa` : 'Sin pruebas hoy'}
+                {shown.length > 0 && <Icon name="chevron-up" size={14} />}</button>
               <div className="field-buttons">
                 <button className="btn btn-active field-record" onClick={() => me && start(me)} disabled={!me}>
                   <Icon name="plus" /> Registrar prueba aquí</button>
@@ -263,11 +310,59 @@ export default function FieldMode({ catalog, projectId, me: account, onExit }: {
           </div>
         </section>
       )}
+      {summary && (
+        <section className="field-sheet" role="dialog" aria-label="Resumen de pruebas">
+          <div className="phone-sheet-bar">
+            <div className="phone-sheet-title"><b>Resumen de pruebas</b></div>
+            <CloseButton onClick={() => setSummary(null)} label="Cerrar el resumen" />
+          </div>
+          <div className="field-sheet-body">
+            <div className="segmented edit-toggle" role="radiogroup" aria-label="Pruebas">
+              {([['today', 'Hoy'], ['all', 'Todas']] as const).map(([k, l]) => (
+                <button key={k} role="radio" aria-checked={summary === k} className={summary === k ? 'active' : ''} onClick={() => setSummary(k)}>{l}</button>
+              ))}
+            </div>
+            <p className="hint">Toca una casilla para ver solo esas pruebas en el mapa.</p>
+            {(() => {
+              const set = summary === 'today' ? today : shown
+              const count = (o: Observed | null, d: Delivery | null) =>
+                set.filter((t) => (!o || t.observed === o) && (!d || deliveryOf(t) === d)).length
+              const pick = (o: Observed | null, d: Delivery | null) => { setFilter({ observed: o, delivery: d }); setSummary(null) }
+              return (
+                <table className="field-summary">
+                  <thead><tr><th>Señal reportada</th>{DELIVERIES.map((d) => <th key={d}>{DELIVERY[d]}</th>)}<th>Total</th></tr></thead>
+                  <tbody>
+                    {(Object.keys(OBSERVED) as Observed[]).map((o) => (
+                      <tr key={o}>
+                        <th><TestDot t={{ observed: o, delivered: true }} size={12} /> {OBSERVED[o].label}</th>
+                        {DELIVERIES.map((d) => <td key={d}><button onClick={() => pick(o, d)} disabled={!count(o, d)}>{count(o, d)}</button></td>)}
+                        <td><button onClick={() => pick(o, null)} disabled={!count(o, null)}><b>{count(o, null)}</b></button></td>
+                      </tr>
+                    ))}
+                    <tr><th>Total</th>
+                      {DELIVERIES.map((d) => <td key={d}><button onClick={() => pick(null, d)} disabled={!count(null, d)}><b>{count(null, d)}</b></button></td>)}
+                      <td><b>{set.length}</b></td></tr>
+                  </tbody>
+                </table>
+              )
+            })()}
+            <div className="field-legend">
+              <span><TestDot t={{ observed: 'stable', delivered: true }} size={14} /> Relleno: la señal que reportaste</span>
+              <span><TestDot t={{ observed: 'intermittent', delivered: true }} size={14} /> Borde blanco: el dato llegó</span>
+              <span><TestDot t={{ observed: 'intermittent', delivered: false }} size={14} /> Borde rojo con ✕: no llegó</span>
+              <span><TestDot t={{ observed: 'intermittent', delivered: null }} size={14} /> Borde gris delgado: no se sabe</span>
+            </div>
+            <p className="hint">Las pruebas son de todo el equipo y corrigen la cobertura en todos los proyectos. El CSV las junta
+              todas para calibrar el mapa más adelante.</p>
+            <button className="btn self-center" onClick={downloadCsv}><Icon name="download" /> Descargar pruebas (CSV)</button>
+          </div>
+        </section>
+      )}
       {picked && (
         <section className="field-sheet field-test-card" role="dialog" aria-label="Prueba de campo">
           <div className="phone-sheet-bar">
             <div className="phone-sheet-title">
-              <span className="test-dot" style={{ background: OBSERVED[picked.observed].color }} />
+              <TestDot t={picked} />
               <div className="device-head-text"><b>{OBSERVED[picked.observed].label}</b>
                 <span>{new Date(picked.taken_at).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })}
                   {picked.author_id === account.id || !picked.author_id ? ' · tuya' : ''}

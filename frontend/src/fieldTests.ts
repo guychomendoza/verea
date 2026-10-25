@@ -4,7 +4,6 @@
 // client_id made here keeps a retry from duplicating a test.
 import type { CellStatus, NodeDevice } from './types'
 import { COLORS } from './colors'
-import { haversine } from './geo'
 
 export type Observed = 'stable' | 'intermittent' | 'none'
 export type Predicted = CellStatus['state']
@@ -79,18 +78,63 @@ export function dequeue(ids: string[]) {
 export const newClientId = () => crypto.randomUUID()
 
 // ── the prediction, corrected near a test ──
-// A test speaks for this far around it: it repaints the coverage map there and corrects the sensors
-// inside. Between the steep (125 m) and flat (250 m) edge margins of core/cellular.py; uncalibrated.
+// A test speaks for a square NEAR_M each way around it: it repaints the coverage map there and
+// corrects the sensors inside. Between the steep (125 m) and flat (250 m) edge margins of
+// core/cellular.py; uncalibrated.
 export const NEAR_M = 200
+const GRID = 0.0004                     // the coverage tiles' raster cell (scripts/build_coverage_tiles.py)
+const M_PER_DEG = 111320
 
-/** The most recent test within NEAR_M of a point (null if none). */
+/** The test's square, snapped outwards to the coverage cells: [west, south, east, north]. */
+export function testBounds(t: { lat: number; lon: number }): [number, number, number, number] {
+  const dLat = NEAR_M / M_PER_DEG
+  const dLon = NEAR_M / (M_PER_DEG * Math.cos((t.lat * Math.PI) / 180))
+  const down = (v: number) => Math.floor(v / GRID + 1e-9) * GRID
+  const up = (v: number) => Math.ceil(v / GRID - 1e-9) * GRID
+  return [down(t.lon - dLon), down(t.lat - dLat), up(t.lon + dLon), up(t.lat + dLat)]
+}
+
+/** The tests as coloured squares for the coverage map, the most recent on top (drawn last). */
+export function fieldAreasGeoJSON(tests: FieldTest[] = []): GeoJSON.FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: [...tests].sort((a, b) => a.taken_at.localeCompare(b.taken_at)).map((t) => {
+      const [w, s, e, n] = testBounds(t)
+      return { type: 'Feature', properties: { color: OBSERVED[t.observed].color },
+        geometry: { type: 'Polygon', coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]] } }
+    }),
+  }
+}
+
+/** The most recent test whose square holds the point (null if none). */
 export function testNear(lat: number, lon: number, tests: FieldTest[]): FieldTest | null {
   let best: FieldTest | null = null
   for (const t of tests) {
-    if (haversine([lat, lon], [t.lat, t.lon]) > NEAR_M) continue
+    const [w, s, e, n] = testBounds(t)
+    if (lon < w || lon > e || lat < s || lat > n) continue
     if (!best || t.taken_at > best.taken_at) best = t
   }
   return best
+}
+
+// ── «¿llegó el dato?» ──
+export type Delivery = 'yes' | 'no' | 'unknown'
+export const deliveryOf = (t: FieldTest): Delivery => (t.delivered === true ? 'yes' : t.delivered === false ? 'no' : 'unknown')
+export const DELIVERY: Record<Delivery, string> = { yes: 'Llegó', no: 'No llegó', unknown: 'Sin dato' }
+
+/** Every test as CSV (Excel opens it: UTF-8 with BOM, «;» between fields), for calibrating the map. */
+export function testsCsv(tests: FieldTest[], projectName: (id: string | null) => string): string {
+  const cell = (v: unknown) => {
+    const s = v == null ? '' : String(v)
+    return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const head = ['fecha', 'latitud', 'longitud', 'precision_m', 'operador', 'mapa_decia', 'senal_reportada', 'llego_el_dato',
+    'coincide', 'rssi_dbm', 'notas', 'proyecto']
+  const rows = [...tests].sort((a, b) => a.taken_at.localeCompare(b.taken_at)).map((t) => [
+    t.taken_at, t.lat.toFixed(6), t.lon.toFixed(6), t.accuracy_m ?? '', t.operator, t.predicted ?? '', t.observed,
+    DELIVERY[deliveryOf(t)], agrees(t.predicted, t.observed) == null ? '' : agrees(t.predicted, t.observed) ? 'sí' : 'no',
+    t.rssi_dbm ?? '', t.notes, projectName(t.project_id)])
+  return '﻿' + [head, ...rows].map((r) => r.map(cell).join(';')).join('\r\n')
 }
 
 const STATE_OF: Record<Observed, Predicted> = { stable: 'ok', intermittent: 'edge', none: 'none' }

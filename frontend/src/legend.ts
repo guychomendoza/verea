@@ -8,6 +8,7 @@ export interface LegendItem {
   color: string
   label: string
   line?: boolean          // a line sample instead of a dot
+  square?: boolean        // an outlined square (field-test areas)
   icon?: DeviceKind       // device symbol (circle + glyph) instead of a dot
   heading?: boolean       // group title, no sample
 }

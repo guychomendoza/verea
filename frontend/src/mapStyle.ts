@@ -210,18 +210,20 @@ export function buildStyle(): StyleSpecification {
       'profile-pins': { type: 'geojson', data: EMPTY },
       cursor: { type: 'geojson', data: EMPTY },
       'field-tests': { type: 'geojson', data: EMPTY },
+      'field-areas': { type: 'geojson', data: EMPTY },
     },
     layers: [
       { id: 'imagery', type: 'raster', source: 'imagery' },
       { id: 'coverage', type: 'raster', source: 'coverage', layout: { visibility: 'none' }, paint: { 'raster-resampling': 'nearest' } },
       {
-        // field tests repaint the coverage map around them (NEAR_M) in the colour of what was measured
-        id: 'field-areas', type: 'circle', source: 'field-tests', layout: { visibility: 'none' },
-        paint: {
-          'circle-radius': ['interpolate', ['exponential', 2], ['zoom'], 0, ['get', 'r0'], 22, ['get', 'r22']],
-          'circle-color': ['get', 'color'], 'circle-opacity': 0.55, 'circle-blur': 0.15,
-          'circle-stroke-color': ['get', 'color'], 'circle-stroke-width': 1.5, 'circle-stroke-opacity': 0.9,
-        } as never,
+        // field tests repaint the coverage map: a square NEAR_M each way, on the coverage cells, in the
+        // colour of what was measured (fieldTests.ts fieldAreasGeoJSON, the most recent on top)
+        id: 'field-areas', type: 'fill', source: 'field-areas', layout: { visibility: 'none' },
+        paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.6 } as never,
+      },
+      {
+        id: 'field-areas-line', type: 'line', source: 'field-areas', layout: { visibility: 'none' },
+        paint: { 'line-color': ['get', 'color'], 'line-width': 1.5, 'line-opacity': 0.95 } as never,
       },
       { id: 'roads', type: 'raster', source: 'roads' },
       { id: 'places', type: 'raster', source: 'places' },
@@ -262,9 +264,18 @@ export function buildStyle(): StyleSpecification {
         } as never,
       },
       {
-        // 4G field tests (fieldTests.ts): a small diamond-like dot in the colour of what was measured
+        // 4G field tests (field mode only): fill = the signal reported, border = did the reading reach
+        // the server (white = yes, red + ✕ = no, thin grey = not known)
         id: 'field-tests', type: 'circle', source: 'field-tests',
-        paint: { 'circle-radius': 6, 'circle-color': ['get', 'color'], 'circle-stroke-color': '#0b1726', 'circle-stroke-width': 2 } as never,
+        paint: {
+          'circle-radius': 7, 'circle-color': ['get', 'color'],
+          'circle-stroke-color': ['match', ['get', 'delivery'], 'yes', '#ffffff', 'no', '#ef233c', '#8a96a3'],
+          'circle-stroke-width': ['match', ['get', 'delivery'], 'yes', 2.5, 'no', 3, 1.5],
+        } as never,
+      },
+      {
+        id: 'field-tests-no', type: 'symbol', source: 'field-tests', filter: ['==', ['get', 'delivery'], 'no'] as never,
+        layout: { 'icon-image': 'field-no', 'icon-size': 0.75, 'icon-allow-overlap': true, 'icon-ignore-placement': true },
       },
       {
         id: 'device-halo', type: 'circle', source: 'devices',

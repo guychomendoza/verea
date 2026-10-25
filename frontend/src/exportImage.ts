@@ -105,6 +105,9 @@ function framed(content: CanvasImageSource, w: number, h: number, f: Frame, scal
       g.strokeStyle = item.color
       if (item.icon) {
         g.drawImage(deviceIconCanvas(item.icon, item.color, 64), x - 2, y + 6, 18, 18)
+      } else if (item.square) {
+        g.lineWidth = 2
+        g.strokeRect(x + 1, y + 9, 12, 12)
       } else if (item.line) {
         g.lineWidth = 3
         g.beginPath()

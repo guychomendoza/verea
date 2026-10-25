@@ -368,7 +368,7 @@ export default function Sidebar(p: Props) {
               <li>{dot(COLORS.cellEdge)} Incierta: cerca del borde (125–250 m según el terreno)</li>
               <li>{dot(COLORS.cellPossible)} Posible solo para sensores LTE-M / NB-IoT (100–300 m fuera)</li>
               <li>{dot(COLORS.cellNone)} Sin cobertura</li>
-              <li><span className="field-dot" /> Prueba de campo (color = lo que se midió)</li>
+              <li><span className="field-dot" /> Cuadro de prueba de campo (color = lo que se midió; el botón «Pruebas de campo» del mapa lo oculta)</li>
             </ul>
             {p.onFieldMode && (
               <button className="btn self-start" onClick={p.onFieldMode} title="Registrar con un sensor qué cobertura hay realmente">

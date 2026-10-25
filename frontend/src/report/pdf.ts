@@ -130,6 +130,7 @@ export async function buildPdf(d: ReportData): Promise<Blob> {
         continue
       }
       if (it.icon) doc.addImage(iconPng(it), 'PNG', x, rowY() - s / 2, s, s)
+      else if (it.square) doc.setDrawColor(...rgb(it.color)).setLineWidth(0.4).rect(x + s * 0.1, rowY() - s * 0.4, s * 0.8, s * 0.8, 'S')
       else if (it.line) doc.setFillColor(...rgb(it.color)).roundedRect(x, rowY() - 0.6, s, 1.2, 0.5, 0.5, 'F')
       else doc.setFillColor(...rgb(it.color)).circle(x + s / 2, rowY(), s * 0.32, 'F')
       doc.setTextColor(...MUTED).text(label, x + s + 1.4, rowY() + size * 0.13)

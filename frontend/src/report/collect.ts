@@ -2,6 +2,7 @@
 // user's view stays put) and the data behind the tables. The detail of each node is in the app
 // itself, through the shared link printed in the PDF.
 import { mapToPng, type LegendItem } from '../exportImage'
+import type { FieldTest } from '../fieldTests'
 import type { Catalog, CellStatus, LinkResult, Project } from '../types'
 import { SNAPSHOT_SIZE, SnapshotMap } from './snapshots'
 
@@ -34,6 +35,7 @@ export async function collectReport(args: {
   signal?: AbortSignal          // Cancel in the dialog
   links: Record<string, LinkResult>; cells: Record<string, CellStatus>; cellular: Set<string>; stations: Set<string>
   legend: LegendItem[]; showCoverage: boolean; shareUrl: string | null
+  fieldTests?: FieldTest[]      // repaint the coverage around them, as on the user's map
   onProgress: (text: string, fraction: number) => void
 }): Promise<ReportData> {
   const { project, signal } = args
@@ -46,9 +48,13 @@ export async function collectReport(args: {
   onProgress('Preparando el mapa…', 0.05)
   const snap = await SnapshotMap.create()
   let mapImg: string | null = null
+  let legend = args.legend
   try {
     onProgress('Mapa general…', 0.2)
-    const canvas = await snap.overview(base, { coverage: args.showCoverage })
+    const canvas = await snap.overview(base, { coverage: args.showCoverage, fieldTests: args.fieldTests })
+    if (canvas && args.showCoverage && snap.showsAny(args.fieldTests)) {
+      legend = [...legend, { color: '#5a6b80', square: true, label: 'Cobertura corregida con pruebas de campo' }]
+    }
     if (canvas) {
       mapImg = await blobToDataUrl(await mapToPng(canvas, {
         title: project.name.trim() || 'Proyecto Verea',
@@ -61,6 +67,6 @@ export async function collectReport(args: {
     snap.destroy()
   }
   onProgress('Armando el documento…', 0.8)
-  return { ...base, catalog: args.catalog, generatedAt, mapImg, mapSize: SNAPSHOT_SIZE, legend: args.legend,
+  return { ...base, catalog: args.catalog, generatedAt, mapImg, mapSize: SNAPSHOT_SIZE, legend,
     showCoverage: args.showCoverage, shareUrl: args.shareUrl }
 }

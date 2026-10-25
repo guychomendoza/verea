@@ -6,7 +6,7 @@ import { api, ApiError, setToken } from './api'
 import * as cloud from './cloud'
 import DevicePanel from './DevicePanel'
 import { downloadBlob, mapToPng, safeName, type LegendItem } from './exportImage'
-import { db, distance, haversine } from './geo'
+import { db, distance } from './geo'
 import { COLORS } from './colors'
 import { cellColor, cellShort, linkColor } from './mapStyle'
 import { mapLegend as buildLegend } from './legend'
@@ -39,6 +39,7 @@ import { DeviceHead, PanelButton, PhoneSheet, ProjectHead } from './Phone'
 import { CellResult } from './DevicePanel'
 import type { Catalog, CellStatus, Gateway, LinkDetail, LinkResult, NodeDevice, Project, Radial, Selection } from './types'
 import { Alert, Icon } from './icons'
+import { RulerBox } from './ruler'
 import { LoadingScreen } from './Loading'
 import { askConfirm } from './confirm'
 
@@ -52,6 +53,7 @@ const SAVE_DELAY_MS = 1500                 // autosave (opt-in) after the last c
 const DRAFT_DELAY_MS = 800                 // browser draft of unsaved edits
 const SHORTCUT_NODE_MODEL = 'dragino_lse01'
 const NARROW_PX = 900
+const FIELD_KEY = 'verea.fieldAreas'
 const TOUCH = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches
 
 function loadLocal(): Project | null {
@@ -313,6 +315,7 @@ function Workspace({ catalog, user, viewer }: {
   const [links, setLinks] = useState<Record<string, LinkResult>>({})
   const [rawCells, setCells] = useState<Record<string, CellStatus>>({})   // as the map predicts them
   const [fieldTests, setFieldTests] = useState<FieldTest[]>([])           // the team's 4G field tests
+  const [fieldOn, setFieldOn] = useState(() => recall(FIELD_KEY) !== 'off')  // off: the map's prediction alone
   const [status, setStatus] = useState('')
   const [ruler, setRuler] = useState<[number, number][]>([])
   const [showReport, setShowReport] = useState(false)
@@ -499,8 +502,9 @@ function Workspace({ catalog, user, viewer }: {
     [project.nodes, catalog])
   // 4G states with the field tests applied: a sensor near a test shows what was measured
   useEffect(() => { if (teamCloud) cloud.listFieldTests().then((t) => setFieldTests([...queued(), ...t])).catch(() => {}) }, [teamCloud])
-  const cells = useMemo(() => withFieldTests(rawCells, project.nodes, cellular, fieldTests),
-    [rawCells, project.nodes, cellular, fieldTests])
+  const activeTests = useMemo(() => (fieldOn ? fieldTests : []), [fieldOn, fieldTests])
+  const cells = useMemo(() => withFieldTests(rawCells, project.nodes, cellular, activeTests),
+    [rawCells, project.nodes, cellular, activeTests])
 
   // ── LoRa links: recalculated shortly after any change that affects them ──
   // Radio fields only: editing the owner or the area does not recalculate the links
@@ -745,7 +749,6 @@ function Workspace({ catalog, user, viewer }: {
       : <LoadingScreen text="Abriendo el proyecto…" />
   }
 
-  const rulerTotal = ruler.slice(1).reduce((sum, pt, i) => sum + haversine(ruler[i], pt), 0)
   const served = selection?.kind === 'gateway'
     ? Object.values(links).filter((r) => r.link?.gateway === selection.name).length : 0
 
@@ -798,7 +801,8 @@ function Workspace({ catalog, user, viewer }: {
         cursor={cursorIdx !== null ? coordAt(cursorIdx) ?? null : null}
         profilePins={pins.map((i) => coordAt(i)).filter((c): c is [number, number] => !!c)}
         ruler={ruler}
-        onReady={(m) => { mapRef.current = m }} readOnly={!!viewer || locked} fieldTests={fieldTests}
+        onReady={(m) => { mapRef.current = m }} readOnly={!!viewer || locked} fieldTests={fieldTests} fieldAreasOn={fieldOn}
+        onToggleFieldAreas={() => setFieldOn((v) => { store(FIELD_KEY, v ? 'off' : null); return !v })}
         onSelect={(s) => setSelection(s)}
         onMove={(kind, name, lat, lon) => dispatch({ type: 'move', kind, name, lat, lon })}
         onAdd={add}
@@ -817,16 +821,8 @@ function Workspace({ catalog, user, viewer }: {
         <button className="btn map-btn" onClick={exportMap} title="Descargar el mapa como imagen PNG"><Icon name="camera" /><span className="btn-label">Imagen del mapa</span></button>
       </div>
       <NetworkCounter counts={networkCounts(project, catalog, links, cells, cellular)} folded={narrow} />
-      {(mode === 'ruler' || ruler.length > 0) && (
-        <div className="ruler-box" role="region" aria-label="Regla">
-          <strong className="inline-flex items-center gap-1"><Icon name="ruler" size={14} /> Regla</strong>{' '}
-          {ruler.length < 2 ? <span>Haz clic en el mapa para medir</span> : (
-            <span>Total <b data-testid="ruler-total">{distance(rulerTotal)}</b> · {ruler.length - 1} tramo{ruler.length > 2 ? 's' : ''}</span>
-          )}
-          <span className="hint"> {mode === 'ruler' ? '· doble clic o Esc para terminar' : ''}</span>
-          <button className="btn-ghost underline ml-2" onClick={() => { setRuler([]); setMode('select') }}>Borrar</button>
-        </div>
-      )}
+      <RulerBox points={ruler} active={mode === 'ruler'} onDone={() => setMode('select')}
+        onClear={() => { setRuler([]); setMode('select') }} />
       {saveState === 'conflict' && doc && (
         <div className="conflict-banner" role="alert">
           Alguien más guardó este proyecto después de que lo abriste. Tus últimos cambios no están guardados.
@@ -951,7 +947,7 @@ function Workspace({ catalog, user, viewer }: {
       )}
       {showReport && (
         <ReportDialog catalog={catalog} project={project} links={links} cells={cells} cellular={cellular} stations={stations}
-          legend={mapLegend()} showCoverage={showCoverage} onClose={() => setShowReport(false)}
+          legend={mapLegend()} showCoverage={showCoverage} fieldTests={activeTests} onClose={() => setShowReport(false)}
           share={viewer ? (viewer.token ? { team: false, get: async () => shareUrl(viewer.token!) } : undefined)
             : teamCloud && doc ? { team: true, get: async (showOwners) => shareUrl((await cloud.activeShare(doc.id, showOwners)).token) }
               : undefined}

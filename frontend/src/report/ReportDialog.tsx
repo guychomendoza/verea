@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { downloadBlob, safeName, type LegendItem } from '../exportImage'
+import type { FieldTest } from '../fieldTests'
 import type { Catalog, CellStatus, LinkResult, Project } from '../types'
 import { collectReport } from './collect'
 import { Alert, CloseButton, Icon } from '../icons'
@@ -13,6 +14,7 @@ interface Props {
   stations: Set<string>
   legend: LegendItem[]
   showCoverage: boolean
+  fieldTests?: FieldTest[]               // switched on: the coverage map shows their corrections
   // Cloud projects: the link printed in the PDF (the team chooses whether it shows owners)
   share?: { get: (showOwners: boolean) => Promise<string>; team: boolean }
   onClose: () => void
@@ -60,7 +62,7 @@ export default function ReportDialog(p: Props) {
       const shareUrl = p.share && withLink ? await p.share.get(showOwners) : null
       const data = await collectReport({
         project: p.project, catalog: p.catalog, signal: c.signal, links: p.links, shareUrl,
-        cells: p.cells, cellular: p.cellular, stations: p.stations, legend: p.legend, showCoverage: p.showCoverage,
+        cells: p.cells, cellular: p.cellular, stations: p.stations, legend: p.legend, showCoverage: p.showCoverage, fieldTests: p.fieldTests,
         onProgress: (text, fraction) => setProgress({ text, fraction }),
       })
       const { buildPdf } = await import('./pdf')

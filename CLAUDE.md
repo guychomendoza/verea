@@ -68,9 +68,14 @@ frontend, DB with users) is planned.
   red → none; `comparedToMap` says better / worse); a test's dot opens its card, «Borrar» for the author or an admin
   (`cloud.deleteFieldTest`); queue in localStorage, uploaded by `cloud.uploadFieldTests` (upsert on `client_id`) when
   online (offline tests get their prediction then). Table `field_tests` (migration 20261025000000, RLS: team reads and
-  records as themselves, author/admin fix or delete). Each test repaints the coverage map NEAR_M = 200 m around it
-  (layer `field-areas`, over the PMTiles, shown with the coverage) and `withFieldTests` gives a 4G sensor
-  within 200 m of a test the measured state (`CellStatus.field`, «… (en campo)»); tests are drawn as dots.
+  records as themselves, author/admin fix or delete). Tests belong to the team, not a project. Each one repaints a
+  square of the coverage map ±NEAR_M = 200 m snapped outwards to the 0.0004° coverage grid (`testBounds`; polygons in
+  source/layers `field-areas` + `-line`, over the PMTiles, shown with the coverage; newest on top) and `withFieldTests`
+  gives a 4G sensor inside a square the measured state (`CellStatus.field`, «… (en campo)»). Editor: squares only,
+  MapView `onToggleFieldAreas` adds «Pruebas de campo (n)» above «Cobertura 4G» (`verea.fieldAreas` in localStorage;
+  off = no squares and no sensor correction; the PDF snapshot gets the same tests and a legend row). Field mode:
+  `testPoints` dots (fill = signal, border = delivered: white / red + ✕ image `field-no` / thin grey), chips
+  Todas · Llegó · No llegó · Sin dato, summary sheet (3 × 3 signal × delivered, a cell filters; `testsCsv` download).
   Permissions-Policy allows geolocation=(self).
   Confirmations use Verea's own dialog (`askConfirm` in `confirm.ts`, `ConfirmHost.tsx`), never the browser's confirm();
   only the browser's own «leave with unsaved changes?» stays native.
@@ -100,7 +105,7 @@ frontend, DB with users) is planned.
   the map with one click (`/api/coverage`, layers `range-*`), "Sugerir gateways 4G"
   (`SuggestGatewaysDialog.tsx` → `/api/suggest-gateways` → `core/gateway_siting.py`: high points of
   the local DEM with 4G, link budget per pair, greedy; only for gateways with `backhaul: '4g'`),
-  ruler is a map control (and R), 4G coverage on/off is a map control beside the attribution
+  ruler is a map control (and R; `ruler.tsx` `RulerBox`, also in the field mode), 4G coverage on/off is a map control beside the attribution
   (`CoverageControl`, also in the HTML report, which reads the PMTiles from the app's server — the
   dev server sends CORS headers for that), `shortcuts.ts` (G/Ctrl+G, N = LSE01, R, Ctrl+S;
   Ctrl+N cannot be captured in Chrome), `project.ts` (pure reducer), `api.ts`.
