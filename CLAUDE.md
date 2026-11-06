@@ -116,6 +116,8 @@ Everything below is live on verea.app (web and API up to date with `master`).
   `report/` (built in the browser; PDF only, with jsPDF = summary: whole-project map — from a
   hidden map in `snapshots.ts` — + gateway table, then LoRa and 4G nodes grouped by state (coloured
   title + count, natural order by name, owner/area columns, same widths per section). Numbered sections since
+  2026-11-06: «Incluir titulares, hectáreas y parcelas» (team, off by default) covers the PDF as well as the link:
+  off = `withoutOwnerInfo` in report/redact.ts, which also takes the owner out of node names and the plots off the map.
   2026-11-06: 1. Resumen (total in each title; every row is a real group, a model with its connection for gateways, with its state
   counts in columns: lists side by side read as if each row were related, so never do that), 2. Gateways,
   3. Nodos LoRa, 4. Sensores 4G, 5. Nodos por gateway (`gatewayNodeTables`, last). In cloud mode a box "Ver este proyecto a detalle en verea.app" (the link's host) with the shared link and

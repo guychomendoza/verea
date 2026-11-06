@@ -3,6 +3,7 @@ import { downloadBlob, safeName, type LegendItem } from '../exportImage'
 import type { FieldTest } from '../fieldTests'
 import type { Catalog, CellStatus, LinkResult, Project } from '../types'
 import { collectReport } from './collect'
+import { withoutOwnerInfo } from './redact'
 import { Alert, CloseButton, Icon } from '../icons'
 
 interface Props {
@@ -60,9 +61,11 @@ export default function ReportDialog(p: Props) {
     try {
       setProgress({ text: 'Preparando el link…', fraction: 0.02 })
       const shareUrl = p.share && withLink ? await p.share.get(showOwners) : null
+      // The team's choice covers the PDF as well as the link; a viewer's data already comes filtered
+      const base = { project: p.project, links: p.links, cells: p.cells, cellular: p.cellular, stations: p.stations, legend: p.legend }
       const data = await collectReport({
-        project: p.project, catalog: p.catalog, signal: c.signal, links: p.links, shareUrl,
-        cells: p.cells, cellular: p.cellular, stations: p.stations, legend: p.legend, showCoverage: p.showCoverage, fieldTests: p.fieldTests,
+        ...(p.share?.team && !showOwners ? withoutOwnerInfo(base) : base),
+        catalog: p.catalog, signal: c.signal, shareUrl, showCoverage: p.showCoverage, fieldTests: p.fieldTests,
         onProgress: (text, fraction) => setProgress({ text, fraction }),
       })
       const { buildPdf } = await import('./pdf')
@@ -93,18 +96,18 @@ export default function ReportDialog(p: Props) {
           {p.project.nodes.length - lora.length} sensores 4G. El PDF es un resumen: el mapa del proyecto y las tablas
           de gateways, nodos LoRa y sensores 4G.
         </p>
+        {p.share?.team && (
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={showOwners} onChange={(e) => setShowOwners(e.target.checked)} disabled={busy} />
+            Incluir titulares, hectáreas y parcelas (en el PDF y en el link)
+          </label>
+        )}
         {p.share && (
           <>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={withLink} onChange={(e) => setWithLink(e.target.checked)} disabled={busy} />
               Incluir «Ver este proyecto a detalle en verea.app» (link y código QR)
             </label>
-            {p.share.team && withLink && (
-              <label className="flex items-center gap-2 text-sm pl-6">
-                <input type="checkbox" checked={showOwners} onChange={(e) => setShowOwners(e.target.checked)} disabled={busy} />
-                El link muestra titulares, hectáreas y parcelas
-              </label>
-            )}
             {withLink && (
               <p className="hint">Quien abra el link entra con su cuenta de Google en modo lector: explora cada nodo, su enlace y su
                 perfil de elevación, sin poder editar el proyecto.</p>

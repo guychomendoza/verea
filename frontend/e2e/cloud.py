@@ -536,7 +536,14 @@ def main():
         pdf = pdf_from(page, downloads)
         assert f"/URI ({url})".encode() in pdf and len(SHARES) == 1, "the PDF links to the shared project"
         assert b"Cobertura corregida con pruebas de campo" in pdf_text(pdf), "the PDF's coverage shows the field tests"
-        print("team PDF: link and QR")
+        assert b"Ana Torres" not in pdf_text(pdf) and b"Titular" not in pdf_text(pdf), "no owners unless asked for"
+        side.get_by_role("button", name="Reporte", exact=True).click()
+        report = page.get_by_role("dialog", name="Reporte")
+        report.get_by_label(re.compile("Incluir titulares")).check()
+        report.get_by_label(re.compile("Incluir .Ver este proyecto")).uncheck()     # no second link
+        full = pdf_from(page, downloads)
+        assert b"Ana Torres" in pdf_text(full) and b"Titular" in pdf_text(full), "owners when asked for"
+        print("team PDF: link and QR; owners only when asked for")
         sign_out(page)
         expect(page.get_by_role("button", name="Continuar con Google")).to_be_visible(timeout=10000)
 
@@ -579,7 +586,7 @@ def main():
         expect(panel.get_by_label("Altura sobre el suelo (m)")).to_have_value("3")
         print("viewer: change kept on reload")
         side.get_by_role("button", name="Reporte", exact=True).click()
-        assert page.get_by_text("El link muestra titulares").count() == 0      # the team's choice
+        assert page.get_by_text("Incluir titulares").count() == 0      # the team's choice
         pdf = pdf_from(page, downloads)
         assert f"/URI ({url})".encode() in pdf
         print("viewer PDF: same link")
