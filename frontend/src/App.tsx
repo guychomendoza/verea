@@ -325,9 +325,11 @@ function Workspace({ catalog, user, viewer }: {
   const [fieldOn, setFieldOn] = useState(() => recall(FIELD_KEY) !== 'off')  // off: the map's prediction alone
   const [status, setStatus] = useState('')
   const [ruler, setRuler] = useState<[number, number][]>([])
-  const [rulerProfile, setRulerProfile] = useState(false)      // the ruler's elevation profile is open
+  // The ruler's elevation profile opens by itself from two points; ✕ closes it until the next measurement
+  const [rulerClosed, setRulerClosed] = useState(false)
   const [rulerCursor, setRulerCursor] = useState<[number, number] | null>(null)
-  useEffect(() => { if (ruler.length < 2) { setRulerProfile(false); setRulerCursor(null) } }, [ruler.length])
+  const rulerProfile = ruler.length > 1 && !rulerClosed
+  useEffect(() => { if (ruler.length < 2) { setRulerClosed(false); setRulerCursor(null) } }, [ruler.length])
   const [showReport, setShowReport] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [suggest, setSuggest] = useState(false)
@@ -597,6 +599,8 @@ function Workspace({ catalog, user, viewer }: {
     else ref.collapse()
   }
 
+  useEffect(() => { if (rulerProfile) profileRef.current?.expand() }, [rulerProfile])   // the panel may be folded
+
   const select = (s: Selection, fly = false) => {
     setSelection(s)
     if (narrow) setPhonePanel(false)        // phones: back to the map, where the device's card shows
@@ -836,12 +840,8 @@ function Workspace({ catalog, user, viewer }: {
       </div>
       <NetworkCounter counts={networkCounts(project, catalog, links, cells, cellular)} folded={narrow} />
       <RulerBox points={ruler} active={mode === 'ruler'} onDone={() => setMode('select')}
-        onClear={() => { setRuler([]); setMode('select') }}
-        profileOpen={rulerProfile} onProfile={() => {
-          if (!rulerProfile && !narrow && collapsed.profile) toggle('profile')
-          setRulerProfile(!rulerProfile)
-        }} />
-      {rulerProfile && narrow && <RulerProfile points={ruler} onHover={setRulerCursor} onClose={() => setRulerProfile(false)} />}
+        onClear={() => { setRuler([]); setMode('select') }} />
+      {rulerProfile && narrow && <RulerProfile points={ruler} onHover={setRulerCursor} onClose={() => setRulerClosed(true)} />}
       {saveState === 'conflict' && doc && (
         <div className="conflict-banner" role="alert">
           Alguien más guardó este proyecto después de que lo abriste. Tus últimos cambios no están guardados.
@@ -879,7 +879,7 @@ function Workspace({ catalog, user, viewer }: {
   )
 
   const profile = rulerProfile && !narrow
-    ? <RulerProfile docked points={ruler} onHover={setRulerCursor} onClose={() => setRulerProfile(false)} />
+    ? <RulerProfile docked points={ruler} onHover={setRulerCursor} onClose={() => setRulerClosed(true)} />
     : (
       <ProfilePanel profile={detail?.profile ?? null} title={title} status={profileStatus}
         pins={pins} onPins={setPins} onHover={setCursorIdx} />

@@ -4,13 +4,11 @@ import { Icon } from './icons'
 
 const rulerTotal = (pts: [number, number][]) => pts.slice(1).reduce((sum, pt, i) => sum + haversine(pts[i], pt), 0)
 
-export function RulerBox({ points, active, onDone, onClear, profileOpen, onProfile }: {
+export function RulerBox({ points, active, onDone, onClear }: {
   points: [number, number][]
   active: boolean
   onDone: () => void
   onClear: () => void
-  profileOpen: boolean
-  onProfile: () => void
 }) {
   if (!active && !points.length) return null
   return (
@@ -21,11 +19,6 @@ export function RulerBox({ points, active, onDone, onClear, profileOpen, onProfi
       )}
       <span className="hint"> {active ? '· doble clic o Esc para terminar' : ''}</span>
       {active && points.length > 1 && <button className="btn-ghost underline ml-2" onClick={onDone}>Terminar</button>}
-      {points.length > 1 && (
-        <button className="btn-ghost underline ml-2" aria-pressed={profileOpen} onClick={onProfile}>
-          {profileOpen ? 'Ocultar perfil' : 'Perfil de elevación'}
-        </button>
-      )}
       <button className="btn-ghost underline ml-2" onClick={onClear}>Borrar</button>
     </div>
   )

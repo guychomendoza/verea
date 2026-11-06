@@ -209,9 +209,7 @@ def main():
         print(f"ruler: {shown} (haversine {expected:.0f} m)")
         n1_now = page.evaluate("async () => (await window.__vereaMap.getSource('devices').getData()).features.find(f => f.properties.name === 'N-1').geometry.coordinates")
         assert abs(n1_now[0] + 102.2952) < 1e-6 and abs(n1_now[1] - 21.2519) < 1e-6, f"N-1 moved: {n1_now}"   # stale drag bug
-        # ruler's elevation profile: figures, chart, and its hover marks the point on the map
-        box_ruler = page.get_by_role("region", name="Regla", exact=True)
-        box_ruler.get_by_role("button", name="Perfil de elevación").click()
+        # ruler's elevation profile opens by itself: figures, chart, and its hover marks the point on the map
         prof = page.get_by_role("region", name="Perfil de elevación de la regla")
         expect(prof).to_contain_text("Subida", timeout=20000)
         expect(prof).to_contain_text("Pendiente máx.")
@@ -228,6 +226,15 @@ def main():
         prof.get_by_role("button", name="Cerrar perfil de elevación").click()
         expect(prof).to_have_count(0)
         page.get_by_role("region", name="Regla").get_by_role("button", name="Borrar").click()
+        # a new measurement opens it again
+        page.get_by_role("button", name="Regla: medir distancias").click()
+        page.mouse.click(*p1)
+        expect(prof).to_have_count(0)                           # one point: nothing to show yet
+        page.mouse.click(*p2)
+        expect(prof).to_be_visible(timeout=20000)
+        page.keyboard.press("Escape")
+        page.get_by_role("region", name="Regla").get_by_role("button", name="Borrar").click()
+        expect(prof).to_have_count(0)
 
         # ── shortcuts ──
         page.keyboard.press("g")

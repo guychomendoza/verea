@@ -87,7 +87,7 @@ repo, pending retirement.
   Gateways are purple (`COLORS.gateway`), to stand apart from sensors and the coverage colours.
   A gateway's connection has one rule, `gatewayBackhaul(catalog, g)` in project.ts (set on it, else its model's):
   panel, list and report all use it; reading `g.backhaul` directly once made them disagree on older gateways.
-  Ruler profile: «Perfil de elevación» in `RulerBox` → `RulerProfile.tsx` (figures and chart in `rulerProfile.ts`,
+  Ruler profile: opens by itself from two points (✕ closes it until the next measurement), `RulerProfile.tsx` (figures and chart in `rulerProfile.ts`,
   `/api/elevation-profile`, `path_profile` in core/terrain.py: ~90 m samples keeping the clicked points); docked in the
   bottom panel on a desktop, floating on phones and in `/campo`. Hovering the chart marks the point (`cursor` source).
   Plotly leaves numbers in `customdata` unformatted in hover templates: write them out first.

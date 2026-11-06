@@ -47,7 +47,7 @@ export default function FieldMode({ catalog, projectId, me: account, onExit }: {
   const [project, setProject] = useState<{ id: string; data: Project } | null>(null)
   const [choosing, setChoosing] = useState(!projectId)
   const [showDevices, setShowDevices] = useShowDevices()
-  const [rulerProfile, setRulerProfile] = useState(false)
+  const [rulerClosed, setRulerClosed] = useState(false)        // ✕ on the ruler's profile, until the next measurement
   const [rulerCursor, setRulerCursor] = useState<[number, number] | null>(null)
   const [tests, setTests] = useState<FieldTest[]>([])
   const [pending, setPending] = useState<FieldTest[]>(queued)
@@ -63,6 +63,7 @@ export default function FieldMode({ catalog, projectId, me: account, onExit }: {
   const [cells, setCells] = useState<Record<string, CellStatus>>({})
   const [showCoverage, setShowCoverage] = useState(true)
   const [ruler, setRuler] = useState<[number, number][]>([])
+  useEffect(() => { if (ruler.length < 2) { setRulerClosed(false); setRulerCursor(null) } }, [ruler.length])
   // dots shown: by «¿llegó el dato?» (the chips) and, from a cell of the summary, by the signal too
   const [filter, setFilter] = useState<{ delivery: Delivery | null; observed: Observed | null }>({ delivery: null, observed: null })
   const [summary, setSummary] = useState<'today' | 'all' | null>(null)
@@ -227,10 +228,9 @@ export default function FieldMode({ catalog, projectId, me: account, onExit }: {
       </header>
 
       <RulerBox points={ruler} active={mode === 'ruler'} onDone={() => setMode('select')}
-        onClear={() => { setRuler([]); setRulerProfile(false); setMode('select') }}
-        profileOpen={rulerProfile && ruler.length > 1} onProfile={() => setRulerProfile((v) => !v)} />
-      {rulerProfile && ruler.length > 1 && (
-        <RulerProfile points={ruler} onHover={setRulerCursor} onClose={() => setRulerProfile(false)} />
+        onClear={() => { setRuler([]); setMode('select') }} />
+      {ruler.length > 1 && !rulerClosed && (
+        <RulerProfile points={ruler} onHover={setRulerCursor} onClose={() => setRulerClosed(true)} />
       )}
       {!draft && !picked && !summary && mode !== 'ruler' && (
         <div className="field-actions">
