@@ -1,7 +1,7 @@
 // Report text and tables for the PDF (ui/report.py, in Spanish).
 import { COLORS } from '../colors'
 import { networkCounts, type KindCount } from '../counts'
-import { nodeShortName } from '../project'
+import { gatewayBackhaul, nodeShortName } from '../project'
 import { connectedNodes } from '../nodeStatus'
 import { distance, num } from '../geo'
 import { cellColor, cellShort, linkColor } from '../mapStyle'
@@ -93,7 +93,7 @@ export function gatewayTable(d: ReportData): Table | null {
     head: ['Gateway', 'Modelo', 'Conexión', 'Nodos conectados', 'Estado'],
     rows: gws.map((g) => [
       g.name, d.catalog.gateway_profiles[g.model]?.label ?? g.model,
-      (g.backhaul ?? d.catalog.gateway_profiles[g.model]?.backhaul) === '4g' ? '4G propio' : 'WiFi / Ethernet',
+      gatewayBackhaul(d.catalog, g) === '4g' ? '4G propio' : 'WiFi / Ethernet',
       String(served(g.name)), g.online ? 'En línea' : 'Fuera de línea',
     ]),
     colors: gws.map((g) => (g.online ? COLORS.gateway : COLORS.none)),

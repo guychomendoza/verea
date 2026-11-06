@@ -37,8 +37,8 @@ from backend.auth import require_admin, require_team, require_user  # noqa: E402
 from backend.users import create_user  # noqa: E402
 from backend.ratelimit import RateLimit  # noqa: E402
 from backend.schemas import (  # noqa: E402
-    CellRequest, CoverageRequest, LinkRequest, LinksRequest, NewUserRequest, ProjectBody, RadialRequest,
-    SuggestGatewaysRequest,
+    CellRequest, CoverageRequest, LinkRequest, LinksRequest, NewUserRequest, PathRequest, ProjectBody,
+    RadialRequest, SuggestGatewaysRequest,
 )
 from config import ENVIRONMENT_PROFILES, US915_UPLINK_SF  # noqa: E402
 from core.cellular import find_sources  # noqa: E402
@@ -47,7 +47,7 @@ from core.coverage import compute_coverage, compute_radial, viable_segments  # n
 from core.dem import LocalDEM  # noqa: E402
 from core.profiles import GATEWAY_PROFILES, NODE_PROFILES, is_cellular  # noqa: E402
 from core.project import project_from_dict  # noqa: E402
-from core.terrain import ElevationAPI  # noqa: E402
+from core.terrain import ElevationAPI, path_profile  # noqa: E402
 
 COVERAGE_DIR = ROOT / "data" / "coverage"
 MAX_RADIAL_POINTS = 100
@@ -200,6 +200,20 @@ def _radial_dict(r) -> dict:
         "viable": [bool(v) for v in r.viable],
         "continuous_range_m": float(r.continuous_range_m),
         "segments": [{"viable": ok, "points": [list(p) for p in pts]} for ok, pts in viable_segments(r)],
+    }
+
+
+@app.post("/api/elevation-profile")
+def elevation_profile(req: PathRequest, user=Depends(require_user)):
+    """Ground elevation along the points of the map's ruler."""
+    try:
+        p = path_profile([(q.lat, q.lon) for q in req.points], ELEVATIONS)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {
+        "distances_m": _clean(p["distances_m"]), "elevations_m": _clean(p["elevations_m"]),
+        "coordinates": [list(c) for c in p["coordinates"]], "vertices_m": _clean(p["vertices_m"]),
+        "elevation_source": ELEVATIONS.source_name,
     }
 
 

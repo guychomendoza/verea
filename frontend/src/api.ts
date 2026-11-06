@@ -1,3 +1,4 @@
+import type { PathProfile } from './rulerProfile'
 import type {
   Catalog, CellStatus, Gateway, LinkDetail, LinkResult, NodeDevice, Place, Project, Radial, Settings,
 } from './types'
@@ -66,6 +67,8 @@ export const api = {
     signal?: AbortSignal) => call<{ radials: Radial[] }>('/api/coverage', { gateway, settings, ...opts }, signal),
   suggestGateways: (body: { nodes: NodeDevice[]; gateway: Gateway; settings: Settings; operator?: string;
     max_gateways: number; max_link_km: number }, signal?: AbortSignal) => call<GatewaySuggestion>('/api/suggest-gateways', body, signal),
+  elevationProfile: (points: [number, number][], signal?: AbortSignal) =>
+    call<PathProfile>('/api/elevation-profile', { points: points.map(([lat, lon]) => ({ lat, lon })) }, signal),
   normalize: (project: unknown) => call<Omit<Project, 'version'>>('/api/project/normalize', { project }),
   createUser: (body: { email: string; full_name: string; role: string; password: string }) =>
     call<{ id: string; email: string; role: string }>('/api/admin/users', body),

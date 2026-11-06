@@ -177,6 +177,12 @@ export function reduceHistory(h: History, a: HistoryAction): History {
   }
 }
 
+/** A gateway's internet connection: the one set on it, else its model's. The only rule for it:
+ *  panel, list and report must always agree. */
+export function gatewayBackhaul(catalog: Catalog, g: Gateway): '4g' | 'red' {
+  return g.backhaul ?? catalog.gateway_profiles[g.model]?.backhaul ?? 'red'
+}
+
 /**
  * The node's name without its owner when it already carries it ("AGU-D0311 Alfonso Maciel
  * Guzman", from importing with "Folio + titular", possibly cut at 40 characters): the owner

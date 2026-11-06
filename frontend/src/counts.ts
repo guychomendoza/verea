@@ -1,6 +1,7 @@
 // How many devices of each kind and model, and how many links / 4G states of each colour:
 // the counter on the map and the summary tables of the report.
 import { COLORS } from './colors'
+import { gatewayBackhaul } from './project'
 import type { Catalog, CellStatus, LinkResult, Project } from './types'
 
 export interface StateCount { label: string; color: string; n: number }
@@ -30,8 +31,8 @@ export function networkCounts(p: Project, catalog: Catalog, links: Record<string
     gateways: {
       total: p.gateways.length,
       models: byModel(p.gateways.map((g) => g.model), gwLabel),
-      cellular: count(p.gateways, (g) => (g.backhaul ?? catalog.gateway_profiles[g.model]?.backhaul) === '4g'),
-      wired: count(p.gateways, (g) => (g.backhaul ?? catalog.gateway_profiles[g.model]?.backhaul) !== '4g'),
+      cellular: count(p.gateways, (g) => gatewayBackhaul(catalog, g) === '4g'),
+      wired: count(p.gateways, (g) => gatewayBackhaul(catalog, g) !== '4g'),
       states: [
         { label: 'En línea', color: COLORS.gateway, n: count(p.gateways, (g) => g.online) },
         { label: 'Fuera de línea', color: COLORS.none, n: count(p.gateways, (g) => !g.online) },

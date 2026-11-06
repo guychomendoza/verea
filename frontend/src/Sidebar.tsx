@@ -7,7 +7,7 @@ import { DeviceIcon, Logo } from './Logo'
 import { Icon, type IconName } from './icons'
 import { db } from './geo'
 import { STATE_GROUPS, nodeState } from './nodeStatus'
-import { isCellular, isStation } from './project'
+import { gatewayBackhaul, isCellular, isStation } from './project'
 import { SHORTCUT_HELP } from './shortcuts'
 import type { SaveState } from './autosave'
 import type { Catalog, CellStatus, LinkResult, NodeDevice, Project, Selection, Settings } from './types'
@@ -281,7 +281,7 @@ export default function Sidebar(p: Props) {
               <button className={p.selection?.name === g.name ? 'selected' : ''}
                 onClick={() => p.onSelect({ kind: 'gateway', name: g.name }, true)}>
                 <DeviceIcon kind="gateway" color={g.online ? COLORS.gateway : COLORS.none} /> {g.name}
-                <span className="hint ml-auto">{g.online ? (g.backhaul === '4g' ? '4G' : 'WiFi/Ethernet') : 'fuera de línea'}</span>
+                <span className="hint ml-auto">{g.online ? (gatewayBackhaul(p.catalog, g) === '4g' ? '4G' : 'WiFi/Ethernet') : 'fuera de línea'}</span>
               </button>
             </li>
           ))}

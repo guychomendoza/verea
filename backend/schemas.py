@@ -95,6 +95,10 @@ class CellRequest(BaseModel):
     points: list[PointIn] = Field(min_length=1, max_length=MAX_POINTS)
 
 
+class PathRequest(BaseModel):
+    points: list[PointIn] = Field(min_length=2, max_length=200)
+
+
 class ProjectBody(BaseModel):
     project: dict
 

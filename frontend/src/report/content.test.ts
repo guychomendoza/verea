@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { cellSection, gatewayNodeTables, gatewayTable, loraSection, summaryTables } from './content'
+import { gatewayBackhaul } from '../project'
 import type { ReportData } from './collect'
 
 vi.mock('maplibre-gl', () => ({ default: {} }))     // needs a browser; the tables only use its colours
@@ -51,6 +52,27 @@ describe('summaryTables', () => {
   it('colours the rows that have a state', () => {
     expect(gws.colors.every(Boolean)).toBe(true)
     expect(lora.colors.filter(Boolean)).toHaveLength(lora.rows.filter((r) => r[2]).length)
+  })
+})
+
+describe('a gateway with no connection saved', () => {
+  // saved before the field existed: it takes its model's, and every place must say the same
+  const catalog = { ...data.catalog, gateway_profiles: { sg50: { label: 'SG50', backhaul: '4g' } } }
+  const gateways = [{ name: 'GW-9', lat: 20, lon: -103, model: 'sg50', online: true }]
+  const d = { ...data, catalog, links: {}, project: { ...data.project, gateways, nodes: [] } } as unknown as ReportData
+
+  it('reads the same in both tables and in the app', () => {
+    expect(gatewayBackhaul(d.catalog, d.project.gateways[0])).toBe('4g')
+    expect(gatewayTable(d)!.rows[0][2]).toBe('4G propio')
+    expect(summaryTables(d)[0].rows[0].slice(2, 4)).toEqual(['4G propio', '1'])
+  })
+
+  it('what is set on the gateway wins over its model', () => {
+    const wired = { ...gateways[0], backhaul: 'red' } as (typeof d.project.gateways)[0]
+    expect(gatewayBackhaul(d.catalog, wired)).toBe('red')
+    const p = { ...d, project: { ...d.project, gateways: [wired] } } as ReportData
+    expect(gatewayTable(p)!.rows[0][2]).toBe('WiFi / Ethernet')
+    expect(summaryTables(p)[0].rows[0].slice(2, 4)).toEqual(['WiFi / Ethernet', '1'])
   })
 })
 

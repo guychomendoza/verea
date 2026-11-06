@@ -41,6 +41,7 @@ import { CellResult } from './DevicePanel'
 import type { Catalog, CellStatus, Gateway, LinkDetail, LinkResult, NodeDevice, Project, Radial, Selection } from './types'
 import { Alert, Icon } from './icons'
 import { RulerBox } from './ruler'
+import { RulerProfile } from './RulerProfile'
 import { LoadingScreen } from './Loading'
 import { askConfirm } from './confirm'
 
@@ -324,6 +325,9 @@ function Workspace({ catalog, user, viewer }: {
   const [fieldOn, setFieldOn] = useState(() => recall(FIELD_KEY) !== 'off')  // off: the map's prediction alone
   const [status, setStatus] = useState('')
   const [ruler, setRuler] = useState<[number, number][]>([])
+  const [rulerProfile, setRulerProfile] = useState(false)      // the ruler's elevation profile is open
+  const [rulerCursor, setRulerCursor] = useState<[number, number] | null>(null)
+  useEffect(() => { if (ruler.length < 2) { setRulerProfile(false); setRulerCursor(null) } }, [ruler.length])
   const [showReport, setShowReport] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [suggest, setSuggest] = useState(false)
@@ -807,7 +811,7 @@ function Workspace({ catalog, user, viewer }: {
       <MapView project={project} selection={selection} links={links} cells={cells} cellular={cellular} stations={stations}
         ranges={Object.fromEntries(Object.entries(ranges).map(([k, v]) => [k, v.radials]))}
         mode={mode} showCoverage={showCoverage} showLabels={showLabels} pin={pin} focus={focus}
-        cursor={cursorIdx !== null ? coordAt(cursorIdx) ?? null : locatedAt}
+        cursor={rulerCursor ?? (cursorIdx !== null ? coordAt(cursorIdx) ?? null : locatedAt)}
         profilePins={pins.map((i) => coordAt(i)).filter((c): c is [number, number] => !!c)}
         ruler={ruler}
         onReady={(m) => { mapRef.current = m }} readOnly={!!viewer || locked} fieldTests={fieldTests} fieldAreasOn={fieldOn}
@@ -832,7 +836,12 @@ function Workspace({ catalog, user, viewer }: {
       </div>
       <NetworkCounter counts={networkCounts(project, catalog, links, cells, cellular)} folded={narrow} />
       <RulerBox points={ruler} active={mode === 'ruler'} onDone={() => setMode('select')}
-        onClear={() => { setRuler([]); setMode('select') }} />
+        onClear={() => { setRuler([]); setMode('select') }}
+        profileOpen={rulerProfile} onProfile={() => {
+          if (!rulerProfile && !narrow && collapsed.profile) toggle('profile')
+          setRulerProfile(!rulerProfile)
+        }} />
+      {rulerProfile && narrow && <RulerProfile points={ruler} onHover={setRulerCursor} onClose={() => setRulerProfile(false)} />}
       {saveState === 'conflict' && doc && (
         <div className="conflict-banner" role="alert">
           Alguien más guardó este proyecto después de que lo abriste. Tus últimos cambios no están guardados.
@@ -869,10 +878,12 @@ function Workspace({ catalog, user, viewer }: {
     </main>
   )
 
-  const profile = (
-    <ProfilePanel profile={detail?.profile ?? null} title={title} status={profileStatus}
-      pins={pins} onPins={setPins} onHover={setCursorIdx} />
-  )
+  const profile = rulerProfile && !narrow
+    ? <RulerProfile docked points={ruler} onHover={setRulerCursor} onClose={() => setRulerProfile(false)} />
+    : (
+      <ProfilePanel profile={detail?.profile ?? null} title={title} status={profileStatus}
+        pins={pins} onPins={setPins} onHover={setCursorIdx} />
+    )
 
   const devicePanel = dev && selection ? (
     <DevicePanel key={`${selection.kind}:${selection.name}`} catalog={catalog} project={project}

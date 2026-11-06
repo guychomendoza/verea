@@ -49,6 +49,31 @@ def link_samples(distance_m: float) -> int:
     return int(min(max(np.ceil(distance_m / 90.0) + 1, 30), MAX_PROFILE_POINTS))
 
 
+def path_profile(points: list[tuple[float, float]], api) -> dict:
+    """
+    Ground elevation along a path of several segments (the map's ruler): about one
+    sample per 90 m DEM cell, spread by length, always keeping the clicked points.
+    `vertices_m` gives each clicked point's distance from the start.
+    """
+    lengths = [haversine(*a, *b) for a, b in zip(points, points[1:])]
+    total = sum(lengths)
+    if total <= 0:
+        raise ValueError("The path has no length")
+    samples = max(link_samples(total), len(points))
+    coords, distances, vertices, done = [points[0]], [0.0], [0.0], 0.0
+    for (a, b), length in zip(zip(points, points[1:]), lengths):
+        steps = max(1, round((samples - 1) * length / total))
+        coords += interpolate_coordinates(*a, *b, steps + 1)[1:]
+        distances += [done + length * k / steps for k in range(1, steps + 1)]
+        done += length
+        vertices.append(done)
+    elevations = np.concatenate([
+        np.asarray(api.fetch_elevations(coords[i:i + MAX_ELEVATION_POINTS]), dtype=float)
+        for i in range(0, len(coords), MAX_ELEVATION_POINTS)
+    ])
+    return {"distances_m": distances, "elevations_m": elevations, "coordinates": coords, "vertices_m": vertices}
+
+
 class ElevationAPI:
     """
     Multi-source elevation data client with automatic failover.

@@ -14,6 +14,7 @@ import {
   type Delivery, type FieldTest, type Observed,
 } from './fieldTests'
 import { RulerBox } from './ruler'
+import { RulerProfile } from './RulerProfile'
 import { useShowDevices } from './mapPrefs'
 import { downloadBlob } from './exportImage'
 import type { Catalog, CellStatus, Project } from './types'
@@ -46,6 +47,8 @@ export default function FieldMode({ catalog, projectId, me: account, onExit }: {
   const [project, setProject] = useState<{ id: string; data: Project } | null>(null)
   const [choosing, setChoosing] = useState(!projectId)
   const [showDevices, setShowDevices] = useShowDevices()
+  const [rulerProfile, setRulerProfile] = useState(false)
+  const [rulerCursor, setRulerCursor] = useState<[number, number] | null>(null)
   const [tests, setTests] = useState<FieldTest[]>([])
   const [pending, setPending] = useState<FieldTest[]>(queued)
   const [online, setOnline] = useState(navigator.onLine)
@@ -199,7 +202,7 @@ export default function FieldMode({ catalog, projectId, me: account, onExit }: {
     <div className="field-mode">
       <div className="field-map">
         <MapView project={project.data} selection={null} links={{}} cells={shownCells} cellular={cellular} stations={stations}
-          mode={mode} showCoverage={showCoverage} showLabels pin={null} focus={focus} cursor={null} profilePins={[]} ruler={ruler}
+          mode={mode} showCoverage={showCoverage} showLabels pin={null} focus={focus} cursor={rulerCursor} profilePins={[]} ruler={ruler}
           onSelect={() => {}} onMove={() => {}} onAdd={(lat, lon) => start({ lat, lon, accuracy: 0 })}
           onRulerPoint={(lat, lon) => setRuler((r) => [...r, [lat, lon]])} onRulerDone={() => setMode('select')}
           onToggleRuler={() => {
@@ -224,7 +227,11 @@ export default function FieldMode({ catalog, projectId, me: account, onExit }: {
       </header>
 
       <RulerBox points={ruler} active={mode === 'ruler'} onDone={() => setMode('select')}
-        onClear={() => { setRuler([]); setMode('select') }} />
+        onClear={() => { setRuler([]); setRulerProfile(false); setMode('select') }}
+        profileOpen={rulerProfile && ruler.length > 1} onProfile={() => setRulerProfile((v) => !v)} />
+      {rulerProfile && ruler.length > 1 && (
+        <RulerProfile points={ruler} onHover={setRulerCursor} onClose={() => setRulerProfile(false)} />
+      )}
       {!draft && !picked && !summary && mode !== 'ruler' && (
         <div className="field-actions">
           {geoError && <p className="field-geo">{geoError}</p>}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { db, distance, num } from './geo'
-import { isCellular, isStation, nameError } from './project'
+import { gatewayBackhaul, isCellular, isStation, nameError } from './project'
 import { DeviceIcon } from './Logo'
 import { CloseButton, Icon } from './icons'
 import { COLORS } from './colors'
@@ -273,21 +273,15 @@ export default function DevicePanel(p: Props) {
       )}
       {gw && (
         <label className="field"><span>Conexión a internet</span>
-          <select value={gw.backhaul ?? 'red'} disabled={ro} onChange={(e) => p.onPatch({ backhaul: e.target.value as '4g' | 'red' })}>
+          <select value={gatewayBackhaul(p.catalog, gw)} disabled={ro} onChange={(e) => p.onPatch({ backhaul: e.target.value as '4g' | 'red' })}>
             <option value="4g">4G propio (solo necesita energía, p. ej. solar)</option>
             <option value="red">WiFi / Ethernet (necesita corriente y red)</option>
           </select>
         </label>
       )}
       {gw && (
-        <div className="setting-row">
-          <div>
-            <b id="gw-online-label">Gateway encendido</b>
-            <small className="hint">Apagado no se usa para los enlaces.</small>
-          </div>
-          <Switch on={gw.online} disabled={ro} onChange={(online) => p.onPatch({ online })} labelledBy="gw-online-label"
-            onText="En línea" offText="Apagado" />
-        </div>
+        <Switch on={gw.online} disabled={ro} onChange={(online) => p.onPatch({ online })} label="Gateway encendido"
+          onText="En línea" offText="Apagado" />
       )}
 
       {p.locked ? (

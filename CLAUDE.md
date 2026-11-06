@@ -85,6 +85,12 @@ repo, pending retirement.
   nodes whose best link is this gateway, viable or not; 4G sensors never appear); a row locates the node without
   changing the selection (`located` in App, drawn with the `cursor` source). «Abrir en Google Maps» on every device.
   Gateways are purple (`COLORS.gateway`), to stand apart from sensors and the coverage colours.
+  A gateway's connection has one rule, `gatewayBackhaul(catalog, g)` in project.ts (set on it, else its model's):
+  panel, list and report all use it; reading `g.backhaul` directly once made them disagree on older gateways.
+  Ruler profile: «Perfil de elevación» in `RulerBox` → `RulerProfile.tsx` (figures and chart in `rulerProfile.ts`,
+  `/api/elevation-profile`, `path_profile` in core/terrain.py: ~90 m samples keeping the clicked points); docked in the
+  bottom panel on a desktop, floating on phones and in `/campo`. Hovering the chart marks the point (`cursor` source).
+  Plotly leaves numbers in `customdata` unformatted in hover templates: write them out first.
   Confirmations use Verea's own dialog (`askConfirm` in `confirm.ts`, `ConfirmHost.tsx`), never the browser's confirm();
   only the browser's own «leave with unsaved changes?» stays native.
   Addresses: team projects at `/p/<id>` (`route.ts`, History API; back/forward switch projects with the

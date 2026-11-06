@@ -334,3 +334,26 @@ def test_secret_key_formats(monkeypatch):
     users._call("PATCH", "/rest/v1/profiles", {}, "eyJhbGciOi.legacy")
     assert sent[0].get("Apikey") == "sb_secret_abc" and "Authorization" not in sent[0]
     assert sent[1].get("Authorization") == "Bearer eyJhbGciOi.legacy"
+
+
+def test_elevation_profile_of_a_ruler_path(client):
+    pts = [{"lat": 19.70, "lon": -103.46}, {"lat": 19.71, "lon": -103.46}, {"lat": 19.71, "lon": -103.44}]
+    r = client.post("/api/elevation-profile", json={"points": pts})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    n = len(d["distances_m"])
+    assert n == len(d["elevations_m"]) == len(d["coordinates"]) and n >= 30
+    assert d["distances_m"] == sorted(d["distances_m"])
+    # the clicked points are samples, and the total is the ruler's length
+    assert len(d["vertices_m"]) == 3 and d["vertices_m"][0] == 0
+    assert d["vertices_m"][-1] == pytest.approx(d["distances_m"][-1])
+    assert d["vertices_m"][1] == pytest.approx(1113, rel=0.01)
+    assert d["coordinates"][-1] == pytest.approx([19.71, -103.44])
+    assert any(abs(x - d["vertices_m"][1]) < 1e-6 for x in d["distances_m"])
+
+
+def test_elevation_profile_rejects_bad_paths(client):
+    one = {"points": [{"lat": 19.7, "lon": -103.46}]}
+    assert client.post("/api/elevation-profile", json=one).status_code == 422
+    same = {"points": [{"lat": 19.7, "lon": -103.46}, {"lat": 19.7, "lon": -103.46}]}
+    assert client.post("/api/elevation-profile", json=same).status_code == 422

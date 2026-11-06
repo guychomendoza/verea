@@ -17,7 +17,7 @@ from starlette.responses import JSONResponse
 
 WINDOW_S = 60
 DEFAULT_LIMIT = int(os.environ.get("VEREA_RATE_LIMIT", "240"))    # every other endpoint, together
-HEAVY_LIMITS = {"/api/coverage": 20, "/api/suggest-gateways": 10, "/api/radial": 60}
+HEAVY_LIMITS = {"/api/coverage": 20, "/api/suggest-gateways": 10, "/api/radial": 60, "/api/elevation-profile": 60}
 EXEMPT = {"/api/health"}
 
 

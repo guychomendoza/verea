@@ -67,16 +67,18 @@ export function profileFigure(p: Profile, title: string, pins: number[] = []) {
   const pad = Math.max((yMax - yMin) * 0.15, 5)
   const base = x.map(() => yMin - pad)
   const last = x.length - 1
-  const custom = x.map((_, i) => [p.coordinates[i][0], p.coordinates[i][1], p.clearance_m[i], slope[i]])
+  // written out: Plotly leaves numbers in customdata unformatted
+  const custom = x.map((_, i) => [p.coordinates[i][0].toFixed(5), p.coordinates[i][1].toFixed(5),
+    p.clearance_m[i].toFixed(0), `${slope[i] > 0 ? '+' : ''}${slope[i].toFixed(1)}`])
 
   const data = [
     { x, y: base, mode: 'lines', line: { width: 0 }, hoverinfo: 'skip', showlegend: false },
     {
       x, y: elev, name: 'Terreno', mode: 'lines', fill: 'tonexty',
       fillcolor: 'rgba(45,106,79,0.5)', line: { color: '#40916c', width: 1.5 }, customdata: custom,
-      hovertemplate: '<b>%{x:.2f} km</b> · %{y:.0f} m<br>pendiente %{customdata[3]:+.1f}% · '
-        + 'despeje Fresnel %{customdata[2]:.0f} m<br><span style="font-size:10px">'
-        + '%{customdata[0]:.5f}, %{customdata[1]:.5f}</span><extra></extra>',
+      hovertemplate: '<b>%{x:.2f} km</b> · %{y:.0f} m<br>pendiente %{customdata[3]}% · '
+        + 'despeje Fresnel %{customdata[2]} m<br><span style="font-size:10px">'
+        + '%{customdata[0]}, %{customdata[1]}</span><extra></extra>',
     },
     { x, y: eff, name: 'Terreno efectivo (k=4/3)', mode: 'lines', line: { color: '#95d5b2', width: 1, dash: 'dash' }, hoverinfo: 'skip' },
     { x, y: lo, mode: 'lines', line: { color: 'rgba(255,209,102,0.5)', width: 0.5 }, hoverinfo: 'skip', showlegend: false },

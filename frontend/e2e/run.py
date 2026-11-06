@@ -209,6 +209,24 @@ def main():
         print(f"ruler: {shown} (haversine {expected:.0f} m)")
         n1_now = page.evaluate("async () => (await window.__vereaMap.getSource('devices').getData()).features.find(f => f.properties.name === 'N-1').geometry.coordinates")
         assert abs(n1_now[0] + 102.2952) < 1e-6 and abs(n1_now[1] - 21.2519) < 1e-6, f"N-1 moved: {n1_now}"   # stale drag bug
+        # ruler's elevation profile: figures, chart, and its hover marks the point on the map
+        box_ruler = page.get_by_role("region", name="Regla", exact=True)
+        box_ruler.get_by_role("button", name="Perfil de elevación").click()
+        prof = page.get_by_role("region", name="Perfil de elevación de la regla")
+        expect(prof).to_contain_text("Subida", timeout=20000)
+        expect(prof).to_contain_text("Pendiente máx.")
+        expect(prof).to_contain_text(shown)                     # the same distance as the ruler
+        chart = prof.get_by_test_id("ruler-profile-chart")
+        expect(chart.locator(".main-svg").first).to_be_visible(timeout=20000)
+        cb = chart.bounding_box()
+        page.mouse.move(cb["x"] + cb["width"] * 0.5, cb["y"] + cb["height"] * 0.4)
+        page.wait_for_timeout(600)
+        marked = page.evaluate("async () => (await window.__vereaMap.getSource('cursor').getData()).features.length")
+        assert marked == 1, "hovering the chart marks the point on the map"
+        page.screenshot(path=f"{OUT}/2_ruler_profile.png")
+        print("ruler profile:", prof.locator("dl").inner_text().replace("\n", " "))
+        prof.get_by_role("button", name="Cerrar perfil de elevación").click()
+        expect(prof).to_have_count(0)
         page.get_by_role("region", name="Regla").get_by_role("button", name="Borrar").click()
 
         # ── shortcuts ──
