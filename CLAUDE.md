@@ -152,7 +152,7 @@ repo, pending retirement.
   their links; `SettingsDialog.tsx` = the gear button «Configuración» (tabs Cuenta: name, phone, company, sign out,
   anyone may delete their account (migration 20261025020000: projects and field tests pass to an admin; the last
   admin cannot), admins delete others from `UsersDialog.tsx` (`admin_delete_account`, work passes to them) · Apariencia: theme · Administración: admins → `UsersDialog.tsx`);
-  `public/privacidad.html` (privacy notice draft with placeholders for the company's data).
+  `public/privacidad.html` (full privacy notice; the responsible is Luis Mendoza, a person: keep it in step with what the app collects and which providers it uses).
   Team-only API endpoints use `require_team` (`backend/auth.py`, reads the caller's role through
   Supabase REST with `SUPABASE_ANON_KEY`): `/api/suggest-gateways`; admin-only `require_admin`:
   `/api/admin/users` (`backend/users.py`: «Crear usuario» in `UsersDialog.tsx` — email, name, role, temporary
@@ -259,7 +259,7 @@ Field calibration with sensor RSSI comes later (no 4G sensors installed yet; the
 report to the company's own server).
 
 Pending: overlapping labels when nodes are close, calibration with field RSSI (4G field tests,
-ChirpStack for LoRa), retire the Streamlit app, fill in the privacy notice, Telcel "Diferenciada".
+ChirpStack for LoRa), retire the Streamlit app, Telcel "Diferenciada".
 
 ## Web migration (plan approved 2026-10-21; team only, invite-only accounts)
 React + TypeScript + Vite + MapLibre (PMTiles from Cloudflare R2) on Cloudflare Pages; FastAPI on
