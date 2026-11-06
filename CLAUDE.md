@@ -7,14 +7,26 @@ Live at https://verea.app: React frontend (`frontend/`), FastAPI (`backend/`) on
 Python engine (`core/`), Supabase. The old Streamlit prototype (`app.py`, `ui/`) is still in the
 repo, pending retirement.
 
+## Status (2026-11-06)
+Everything below is live on verea.app (web and API up to date with `master`).
+- Latest work: eye button to hide devices (editor and `/campo`), purple gateways, gateway on/off switch, connected
+  nodes list that locates each node, «Abrir en Google Maps», ruler elevation profile that opens by itself from two
+  points, PDF with numbered sections and a summary of real groups, one rule for a gateway's connection, sign-in
+  without a theme button, full privacy notice.
+- Next: calibrate with real signal (4G field tests, ChirpStack for LoRa; the terrain margins are still unvalidated),
+  overlapping labels when nodes are close, retire the Streamlit app, Telcel «Diferenciada» when datos.gob.mx serves it.
+- Open points that are not code: the notice names Luis Mendoza, a person, as responsible, while the plot holders'
+  data comes from Artifields' Tamazula delivery (he was told to raise it with the company); the notice's ARCO terms
+  (20 + 15 working days) and its text have had no legal review since the 2025 reform of the law.
+
 ## Run and test
 - App: `.venv/bin/streamlit run app.py` (port 8501). Windows: `python -m streamlit run app.py`.
-- Tests: `.venv/bin/python -m pytest -q` (139 tests; `supabase/tests` needs requirements-dev.txt).
+- Tests: `.venv/bin/python -m pytest -q` (151 tests; `supabase/tests` needs requirements-dev.txt).
 - Web API: `VEREA_DEV=1 .venv/bin/uvicorn backend.main:app --port 8000` (docs at /docs).
   `pip install -r backend/requirements.txt` first.
 - Web frontend: `cd frontend && npm run dev` (port 5173; proxies /api to 8000, serves the PMTiles).
   Node 22 is in `~/.local/node/bin` (the `npm` on PATH is the Windows one: don't use it).
-  Checks: `npm run lint`, `npx tsc -b`, `npm test`; browser test `frontend/e2e/run.py`. Headless app tests use
+  Checks: `npm run lint`, `npx tsc -b`, `npm test` (49 tests); browser test `frontend/e2e/run.py`. Headless app tests use
   `streamlit.testing.v1.AppTest`; set `VEREA_AUTOSAVE=<tmp file>` so they do not
   overwrite the user's autosave (`~/.verea/autosave.verea.json`).
 - Browser tests: Playwright with Chromium; in WSL run with
@@ -235,12 +247,18 @@ repo, pending retirement.
   prebuild peaks at ~4–8 GB per 5×5 block in dense areas: use `--block 2`, one worker per ~4.5 GB. Tiles are
   fsynced before the rename (a restart left 0-byte tiles). Over `flyctl ssh` there is no pgrep/free, and a
   check whose own command line contains the pattern always matches itself; /tmp is wiped when the machine stops.
+- Deploys: after changing `backend/` or `core/` run `deploy/deploy.sh api` too, API first; only `frontend/` needs just
+  `web`. Claude Code's auto mode refuses production deploys: the user runs them with `! cd ~/verea && deploy/deploy.sh …`.
+- Checking the live site: Cloudflare answers /privacidad.html with a 308 to /privacidad (use `curl -L`) and rewrites
+  e-mail links as «[email protected]» plus a decoding script (it works under the CSP: a browser shows the address).
+- Report summary tables: every row must be a real group of devices. Lists side by side read as if each row were
+  related (a row «SenseCAP M2 4 · 4G propio 2» made it look like the M2 had 4G, with correct data).
 - Copernicus GLO-90 is a surface model (buildings, canopy): cities and forests read a bit
   rougher than bare ground, so their margin comes out somewhat smaller.
 - Worker processes must not share an open `np.load` npz from the parent (corrupt reads):
   `Relief` reopens the file per PID.
 
-## Current work: realistic 4G uncertainty margin (decided 2026-10-21)
+## 4G uncertainty margin (decided 2026-10-21; step 1 live, step 2 shelved)
 1. **Terrain-adaptive margin** (done 2026-10-21) — use a national DEM (download once) to measure relief at
    each coverage edge: sharp terrain-shadow edges get a small margin (~30–50 m),
    flat/open distance-limited edges a wide one (~200–500 m). Integrate into
@@ -255,17 +273,13 @@ repo, pending retirement.
    Brier 0.14–0.16 vs 0.09–0.15), fitted σ ≈ 20 dB. Approximate site positions without sectors
    cannot add to the operator's map, so no per-sensor probabilities are shown. The relief
    margins of step 1 are also unvalidated: only field RSSI can calibrate them.
-Field calibration with sensor RSSI comes later (no 4G sensors installed yet; they will
-report to the company's own server).
-
-Pending: overlapping labels when nodes are close, calibration with field RSSI (4G field tests,
-ChirpStack for LoRa), retire the Streamlit app, Telcel "Diferenciada".
+Field calibration comes next: the sensors report to the company's own server, and `/campo` already records field tests.
 
 ## Web migration (plan approved 2026-10-21; team only, invite-only accounts)
 React + TypeScript + Vite + MapLibre (PMTiles from Cloudflare R2) on Cloudflare Pages; FastAPI on
 Fly.io with a volume for data; Supabase for Auth + Postgres (projects as the JSON of
 `core/project.py`, Row Level Security). Domain verea.app. Phases: 1 API (done) → 2 frontend MVP (done) →
-3 accounts/cloud (done) → 4 deploy (done 2026-10-23) → 5 PDF report + parity, retire Streamlit.
+3 accounts/cloud (done) → 4 deploy (done 2026-10-23) → 5 PDF report + parity (done), retire Streamlit (pending).
 - Deploy note: a cold 4G lookup reads the 1.2 GB GeoPackage (1.36 GB RAM peak, 7–10 s). On the
   server, pre-build the national 0.2° tile cache instead (≈3–5 GB) and skip the GeoPackage.
 - Open-Meteo has an hourly request limit (hit on 2026-10-21): the API must use the local DEM.
