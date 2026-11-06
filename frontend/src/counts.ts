@@ -4,7 +4,7 @@ import { COLORS } from './colors'
 import { gatewayBackhaul } from './project'
 import type { Catalog, CellStatus, LinkResult, Project } from './types'
 
-export interface StateCount { label: string; color: string; n: number }
+export interface StateCount { label: string; color: string; n: number; names: string[] }
 export interface KindCount { total: number; models: [string, number][]; states: StateCount[] }
 export interface NetworkCounts {
   gateways: KindCount & { cellular: number; wired: number }
@@ -27,6 +27,10 @@ export function networkCounts(p: Project, catalog: Catalog, links: Record<string
   const linkOf = (name: string) => links[name]?.link
   const cellOf = (name: string) => cells[name]?.state
   const count = <T,>(items: T[], test: (x: T) => boolean) => items.filter(test).length
+  const state = <T extends { name: string },>(label: string, color: string, items: T[], test: (x: T) => boolean): StateCount => {
+    const names = items.filter(test).map((x) => x.name)
+    return { label, color, n: names.length, names }
+  }
   return {
     gateways: {
       total: p.gateways.length,
@@ -34,29 +38,29 @@ export function networkCounts(p: Project, catalog: Catalog, links: Record<string
       cellular: count(p.gateways, (g) => gatewayBackhaul(catalog, g) === '4g'),
       wired: count(p.gateways, (g) => gatewayBackhaul(catalog, g) !== '4g'),
       states: [
-        { label: 'En línea', color: COLORS.gateway, n: count(p.gateways, (g) => g.online) },
-        { label: 'Fuera de línea', color: COLORS.none, n: count(p.gateways, (g) => !g.online) },
+        state('En línea', COLORS.gateway, p.gateways, (g) => g.online),
+        state('Fuera de línea', COLORS.none, p.gateways, (g) => !g.online),
       ],
     },
     lora: {
       total: lora.length,
       models: byModel(lora.map((n) => n.model), nodeLabel),
       states: [
-        { label: 'Enlace viable', color: COLORS.viable, n: count(lora, (n) => !!linkOf(n.name)?.viable) },
-        { label: 'Marginal', color: COLORS.marginal, n: count(lora, (n) => { const l = linkOf(n.name); return !!l && !l.viable && l.margin_db > -5 }) },
-        { label: 'No viable', color: COLORS.fail, n: count(lora, (n) => { const l = linkOf(n.name); return !!l && !l.viable && l.margin_db <= -5 }) },
-        { label: 'Sin resultado', color: COLORS.none, n: count(lora, (n) => !linkOf(n.name)) },
+        state('Enlace viable', COLORS.viable, lora, (n) => !!linkOf(n.name)?.viable),
+        state('Marginal', COLORS.marginal, lora, (n) => { const l = linkOf(n.name); return !!l && !l.viable && l.margin_db > -5 }),
+        state('No viable', COLORS.fail, lora, (n) => { const l = linkOf(n.name); return !!l && !l.viable && l.margin_db <= -5 }),
+        state('Sin resultado', COLORS.none, lora, (n) => !linkOf(n.name)),
       ],
     },
     cell: {
       total: cell.length,
       models: byModel(cell.map((n) => n.model), nodeLabel),
       states: [
-        { label: '4G garantizado', color: COLORS.cellOk, n: count(cell, (n) => cellOf(n.name) === 'ok') },
-        { label: '4G incierto', color: COLORS.cellEdge, n: count(cell, (n) => ['edge', 'differentiated'].includes(cellOf(n.name) ?? '')) },
-        { label: '4G posible (LTE-M)', color: COLORS.cellPossible, n: count(cell, (n) => cellOf(n.name) === 'possible') },
-        { label: 'Sin 4G', color: COLORS.cellNone, n: count(cell, (n) => cellOf(n.name) === 'none') },
-        { label: 'Sin revisar', color: COLORS.none, n: count(cell, (n) => !cellOf(n.name)) },
+        state('4G garantizado', COLORS.cellOk, cell, (n) => cellOf(n.name) === 'ok'),
+        state('4G incierto', COLORS.cellEdge, cell, (n) => ['edge', 'differentiated'].includes(cellOf(n.name) ?? '')),
+        state('4G posible (LTE-M)', COLORS.cellPossible, cell, (n) => cellOf(n.name) === 'possible'),
+        state('Sin 4G', COLORS.cellNone, cell, (n) => cellOf(n.name) === 'none'),
+        state('Sin revisar', COLORS.none, cell, (n) => !cellOf(n.name)),
       ],
     },
   }

@@ -41,17 +41,35 @@ describe('summaryTables', () => {
     expect(gws.rows.flat()).not.toContain('Total')
   })
 
-  it('gives each way of counting its own columns', () => {
-    expect(gws.head).toEqual(['Modelo', 'Cant.', 'Conexión', 'Cant.', 'Estado', 'Cant.'])
-    expect(lora.head).toEqual(['Modelo', 'Cant.', 'Estado', 'Cant.'])
-    const column = (i: number) => gws.rows.map((r) => r[i]).filter(Boolean)
-    expect(column(4)).toEqual(['En línea', 'Fuera de línea'])
-    expect(column(5).map(Number).reduce((a, b) => a + b)).toBe(2)
+  it('each row is a real group: a model next to its own connection', () => {
+    expect(gws.head).toEqual(['Modelo', 'Conexión', 'Cantidad', 'En línea', 'Fuera de línea'])
+    expect(gws.rows).toEqual(expect.arrayContaining([
+      ['SenseCAP M2', 'WiFi / Ethernet', '1', '1', '0'],
+      ['SG50', '4G propio', '1', '0', '1'],
+    ]))
   })
 
-  it('colours the rows that have a state', () => {
-    expect(gws.colors.every(Boolean)).toBe(true)
-    expect(lora.colors.filter(Boolean)).toHaveLength(lora.rows.filter((r) => r[2]).length)
+  it('agrees with the gateway table row by row', () => {
+    const detail = gatewayTable(data)!.rows.map((r) => [r[1], r[2]])
+    for (const [model, conn] of detail) expect(gws.rows.some((r) => r[0] === model && r[1] === conn)).toBe(true)
+  })
+
+  it('splits a model with two connections', () => {
+    const gateways = [
+      { name: 'A', lat: 20, lon: -103, model: 'sensecap_m2', online: true, backhaul: 'red' },
+      { name: 'B', lat: 20, lon: -103, model: 'sensecap_m2', online: true, backhaul: 'red' },
+      { name: 'C', lat: 20, lon: -103, model: 'sensecap_m2', online: true, backhaul: '4g' },
+    ]
+    const [t] = summaryTables({ ...data, project: { ...data.project, gateways } } as unknown as ReportData)
+    expect(t.rows).toEqual([['SenseCAP M2', 'WiFi / Ethernet', '2', '2'], ['SenseCAP M2', '4G propio', '1', '1']])
+  })
+
+  it('counts each model by state, in columns that add up across the row', () => {
+    expect(lora.head).toEqual(['Modelo', 'Cantidad', 'Enlace viable', 'No viable'])
+    expect(lora.rows).toEqual([['LSE01', '2', '1', '1']])
+    expect(cell.rows).toEqual([['SE0X-CS', '1', '1']])
+    expect(lora.headColors).toHaveLength(lora.head.length)
+    expect(lora.headColors!.filter(Boolean)).toHaveLength(2)
   })
 })
 
@@ -64,7 +82,7 @@ describe('a gateway with no connection saved', () => {
   it('reads the same in both tables and in the app', () => {
     expect(gatewayBackhaul(d.catalog, d.project.gateways[0])).toBe('4g')
     expect(gatewayTable(d)!.rows[0][2]).toBe('4G propio')
-    expect(summaryTables(d)[0].rows[0].slice(2, 4)).toEqual(['4G propio', '1'])
+    expect(summaryTables(d)[0].rows[0].slice(0, 3)).toEqual(['SG50', '4G propio', '1'])
   })
 
   it('what is set on the gateway wins over its model', () => {
@@ -72,7 +90,7 @@ describe('a gateway with no connection saved', () => {
     expect(gatewayBackhaul(d.catalog, wired)).toBe('red')
     const p = { ...d, project: { ...d.project, gateways: [wired] } } as ReportData
     expect(gatewayTable(p)!.rows[0][2]).toBe('WiFi / Ethernet')
-    expect(summaryTables(p)[0].rows[0].slice(2, 4)).toEqual(['WiFi / Ethernet', '1'])
+    expect(summaryTables(p)[0].rows[0].slice(0, 3)).toEqual(['SG50', 'WiFi / Ethernet', '1'])
   })
 })
 

@@ -1,6 +1,6 @@
 // Report text and tables for the PDF (ui/report.py, in Spanish).
 import { COLORS } from '../colors'
-import { networkCounts, type KindCount } from '../counts'
+import { networkCounts, type KindCount, type StateCount } from '../counts'
 import { gatewayBackhaul, nodeShortName } from '../project'
 import { connectedNodes } from '../nodeStatus'
 import { distance, num } from '../geo'
@@ -8,8 +8,8 @@ import { cellColor, cellShort, linkColor } from '../mapStyle'
 import type { NodeDevice } from '../types'
 import type { ReportData } from './collect'
 
-/** A table; `colors[i]` is the status colour of row i (a dot in its last cell). */
-export type Table = { title: string; head: string[]; rows: string[][]; colors: string[] }
+/** A table; `colors[i]` is the status colour of row i (a dot in its last cell), `headColors[j]` of column j. */
+export type Table = { title: string; head: string[]; rows: string[][]; colors: string[]; headColors?: string[] }
 
 const ALL_TERMS: [string, string][] = [
   ['Modelo de propagación', 'Cómo se estima la pérdida sobre el terreno. Se usa la mayor (la más '
@@ -54,33 +54,49 @@ export function envLabel(d: ReportData, key?: string): string {
   return (key && d.catalog.environments[key]?.label) || key || '—'
 }
 
-/** Pairs side by side: each criterion keeps its own columns, so its counts add up on their own. */
-function sideBySide(columns: [string, [string, number][]][]): { head: string[]; rows: string[][] } {
-  const height = Math.max(...columns.map(([, items]) => items.length))
-  return {
-    head: columns.flatMap(([title]) => [title, 'Cant.']),
-    rows: Array.from({ length: height }, (_, i) =>
-      columns.flatMap(([, items]) => (items[i] ? [items[i][0], String(items[i][1])] : ['', '']))),
-  }
+/** Rows of a summary: one real group of devices each, with how many are in each state. */
+function stateRows(groups: [string[], string[]][], states: StateCount[]): string[][] {
+  return groups.map(([cells, names]) => [...cells, String(names.length),
+    ...states.map((st) => String(names.filter((n) => st.names.includes(n)).length))])
 }
 
-/** One summary per kind (gateways, LoRa, 4G; only those the project has): the total goes in the
- *  title and each way of counting (model, connection, state) in its own pair of columns. */
+/** Group names by a key, in order of the largest group. */
+function groupBy<T extends { name: string }>(items: T[], key: (x: T) => string[]): [string[], string[]][] {
+  const out = new Map<string, [string[], string[]]>()
+  for (const x of items) {
+    const k = key(x)
+    const row = out.get(k.join('|')) ?? [k, []]
+    row[1].push(x.name)
+    out.set(k.join('|'), row)
+  }
+  return [...out.values()].sort((a, b) => b[1].length - a[1].length)
+}
+
+/** One summary per kind (gateways, LoRa, 4G; only those the project has). Every row is a real group
+ *  of devices (a model, with its connection for gateways) and its columns describe that group, so a
+ *  row can be read straight across. The total goes in the title. */
 export function summaryTables(d: ReportData): Table[] {
   const c = networkCounts(d.project, d.catalog, d.links, d.cells, d.cellular)
-  const block = (name: string, k: KindCount, split?: [string, [string, number][]]): Table => {
+  const table = (name: string, k: KindCount, head: string[], groups: [string[], string[]][]): Table => {
     const states = k.states.filter((x) => x.n)
-    const { head, rows } = sideBySide([['Modelo', k.models], ...(split ? [split] : []),
-      ['Estado', states.map((x) => [x.label, x.n] as [string, number])]])
-    return { title: `${name}: ${k.total} en total`, head, rows, colors: rows.map((_, i) => states[i]?.color ?? '') }
+    return {
+      title: `${name}: ${k.total} en total`, head: [...head, 'Cantidad', ...states.map((x) => x.label)],
+      rows: stateRows(groups, states), colors: [],
+      headColors: [...head.map(() => ''), '', ...states.map((x) => x.color)],
+    }
   }
+  const nodeModel = (n: NodeDevice) => [d.catalog.node_profiles[n.model]?.label ?? n.model]
+  const lora = d.project.nodes.filter((n) => !d.cellular.has(n.name))
+  const cell = d.project.nodes.filter((n) => d.cellular.has(n.name))
   const out: Table[] = []
   if (c.gateways.total) {
-    out.push(block('Gateways', c.gateways, ['Conexión', ([['4G propio', c.gateways.cellular],
-      ['WiFi / Ethernet', c.gateways.wired]] as [string, number][]).filter(([, n]) => n)]))
+    out.push(table('Gateways', c.gateways, ['Modelo', 'Conexión'], groupBy(d.project.gateways, (g) => [
+      d.catalog.gateway_profiles[g.model]?.label ?? g.model,
+      gatewayBackhaul(d.catalog, g) === '4g' ? '4G propio' : 'WiFi / Ethernet',
+    ])))
   }
-  if (c.lora.total) out.push(block('Sensores LoRa', c.lora))
-  if (c.cell.total) out.push(block('Sensores 4G', c.cell))
+  if (c.lora.total) out.push(table('Sensores LoRa', c.lora, ['Modelo'], groupBy(lora, nodeModel)))
+  if (c.cell.total) out.push(table('Sensores 4G', c.cell, ['Modelo'], groupBy(cell, nodeModel)))
   return out
 }
 

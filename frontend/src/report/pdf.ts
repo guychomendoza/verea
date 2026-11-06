@@ -65,7 +65,7 @@ export async function buildPdf(d: ReportData): Promise<Blob> {
   }
   /** A table; `colors[i]` puts a dot of that colour in column `dotCol` (default: the last) of row i. */
   const table = (head: string[] | null, rows: string[][], widths: number[] = [], colors: string[] = [],
-    o: { dotCol?: number } = {}) => {
+    o: { dotCol?: number; headColors?: string[] } = {}) => {
     const dot = o.dotCol ?? (head ? head.length - 1 : -1)
     autoTable(doc, {
       startY: y, head: head ? [head.map(t)] : undefined, body: rows.map((r) => r.map(t)),
@@ -77,19 +77,26 @@ export async function buildPdf(d: ReportData): Promise<Blob> {
         ...Object.fromEntries(widths.map((w, i) => [i, { cellWidth: w, ...(i === 0 && !head ? { fontStyle: 'bold' } : {}) }])),
         ...(colors.some(Boolean) ? { [dot]: { cellPadding: { top: 1.6, bottom: 1.6, right: 1.6, left: 6 } } } : {}),
       },
+      didParseCell: (h) => {
+        if (h.section === 'head' && o.headColors?.[h.column.index]) {
+          h.cell.styles.cellPadding = { top: 1.6, bottom: 1.6, right: 1.6, left: 6 }
+        }
+      },
       didDrawCell: (h) => {
+        const headColor = h.section === 'head' ? o.headColors?.[h.column.index] : undefined
+        if (headColor) doc.setFillColor(...rgb(headColor)).circle(h.cell.x + 3, h.cell.y + 3.4, 1.3, 'F')
         if (h.section !== 'body' || h.column.index !== dot || !colors[h.row.index]) return
-        doc.setFillColor(...rgb(colors[h.row.index])).circle(h.cell.x + 3, h.cell.y + h.cell.height / 2, 1.3, 'F')
+        // on the first line of text: rows grow when a neighbouring cell wraps
+        doc.setFillColor(...rgb(colors[h.row.index])).circle(h.cell.x + 3, h.cell.y + 3.4, 1.3, 'F')
       },
     })
     y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 5
   }
-  /** The summary tables one under the other: «Cant.» columns narrow, the state's dot on its label. */
+  /** The summary tables one under the other, with the state's colour in its column title. */
   const stacked = (tables: Table[]) => {
     for (const tb of tables) {
       heading(tb.title, 11)
-      const pairs = tb.head.length / 2, count = 12, label = (W - pairs * count) / pairs
-      table(tb.head, tb.rows, tb.head.map((_, i) => (i % 2 ? count : label)), tb.colors, { dotCol: tb.head.length - 2 })
+      table(tb.head, tb.rows, [], [], { headColors: tb.headColors })
     }
   }
 

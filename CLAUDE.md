@@ -104,7 +104,8 @@ repo, pending retirement.
   `report/` (built in the browser; PDF only, with jsPDF = summary: whole-project map — from a
   hidden map in `snapshots.ts` — + gateway table, then LoRa and 4G nodes grouped by state (coloured
   title + count, natural order by name, owner/area columns, same widths per section). Numbered sections since
-  2026-11-06: 1. Resumen (total in each title, one pair of columns per way of counting: no Total row), 2. Gateways,
+  2026-11-06: 1. Resumen (total in each title; every row is a real group, a model with its connection for gateways, with its state
+  counts in columns: lists side by side read as if each row were related, so never do that), 2. Gateways,
   3. Nodos LoRa, 4. Sensores 4G, 5. Nodos por gateway (`gatewayNodeTables`, last). In cloud mode a box "Ver este proyecto a detalle en verea.app" (the link's host) with the shared link and
   a QR code (`qrcode-generator`). The HTML report with one card per node was dropped on
   2026-10-23: the app itself is the detailed viewer. Cancelar / ✕ / Esc abort; no e-mail),
