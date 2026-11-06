@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { supabase } from './cloud'
 import { pendingShare } from './share'
-import { Logo, ThemeButton } from './Logo'
+import { Logo } from './Logo'
 import { Icon } from './icons'
 import LoginArt from './LoginArt'
 import { returnUrl } from './route'
@@ -26,7 +26,6 @@ function Card({ title, heading, children }: { title: string; heading?: string; c
         </div>
       </section>
       <main className="login-side">
-        <ThemeButton className="login-theme" />
         <div className="login-card">
           <div className="flex justify-center"><Logo width={150} /></div>
           {heading ? (
