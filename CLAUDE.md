@@ -3,8 +3,9 @@
 Network planning tool for agricultural IoT: LoRaWAN link budgets over real
 terrain (gateways, Dragino / SenseCAP nodes) and 4G coverage for cellular
 sensors (Dragino SE0X-CS) from the operators' declared coverage maps.
-Streamlit prototype; a web version (Python backend keeping `core/`, JS
-frontend, DB with users) is planned.
+Live at https://verea.app: React frontend (`frontend/`), FastAPI (`backend/`) on the shared
+Python engine (`core/`), Supabase. The old Streamlit prototype (`app.py`, `ui/`) is still in the
+repo, pending retirement.
 
 ## Run and test
 - App: `.venv/bin/streamlit run app.py` (port 8501). Windows: `python -m streamlit run app.py`.
@@ -77,6 +78,13 @@ frontend, DB with users) is planned.
   `testPoints` dots (fill = signal, border = delivered: white / red + ✕ image `field-no` / thin grey), chips
   Todas · Llegó · No llegó · Sin dato, summary sheet (3 × 3 signal × delivered, a cell filters; `testsCsv` download).
   Permissions-Policy allows geolocation=(self).
+  Devices on/off (2026-11-06): eye button under the ruler (`DevicesControl` in MapView, `useShowDevices` in
+  `mapPrefs.ts`, `verea.showDevices`, shared by the editor and `/campo`): hides `DEVICE_LAYERS` (devices, labels,
+  links) and leaves coverage, field tests and plots; placing a device turns them back on. Exported images and the
+  PDF always carry the devices. Gateway panel: `ConnectedList` in DevicePanel (`connectedNodes` in nodeStatus.ts =
+  nodes whose best link is this gateway, viable or not; 4G sensors never appear); a row locates the node without
+  changing the selection (`located` in App, drawn with the `cursor` source). «Abrir en Google Maps» on every device.
+  Gateways are purple (`COLORS.gateway`), to stand apart from sensors and the coverage colours.
   Confirmations use Verea's own dialog (`askConfirm` in `confirm.ts`, `ConfirmHost.tsx`), never the browser's confirm();
   only the browser's own «leave with unsaved changes?» stays native.
   Addresses: team projects at `/p/<id>` (`route.ts`, History API; back/forward switch projects with the
@@ -89,7 +97,9 @@ frontend, DB with users) is planned.
   (`NetworkCounter.tsx`) and the report's three summary tables (gateways, LoRa, 4G),
   `report/` (built in the browser; PDF only, with jsPDF = summary: whole-project map — from a
   hidden map in `snapshots.ts` — + gateway table, then LoRa and 4G nodes grouped by state (coloured
-  title + count, natural order by name, owner/area columns, same widths per section); in cloud mode a box "Ver este proyecto a detalle en verea.app" (the link's host) with the shared link and
+  title + count, natural order by name, owner/area columns, same widths per section). Numbered sections since
+  2026-11-06: 1. Resumen (total in each title, one pair of columns per way of counting: no Total row), 2. Gateways,
+  3. Nodos LoRa, 4. Sensores 4G, 5. Nodos por gateway (`gatewayNodeTables`, last). In cloud mode a box "Ver este proyecto a detalle en verea.app" (the link's host) with the shared link and
   a QR code (`qrcode-generator`). The HTML report with one card per node was dropped on
   2026-10-23: the app itself is the detailed viewer. Cancelar / ✕ / Esc abort; no e-mail),
   nodes may carry optional `owner` (titular) and `area_ha` (in `core/project.py` `_NODE_KEYS`),
@@ -241,8 +251,8 @@ frontend, DB with users) is planned.
 Field calibration with sensor RSSI comes later (no 4G sensors installed yet; they will
 report to the company's own server).
 
-Other pending items (web migration): drag nodes on the map, overlapping labels when nodes
-are close, real PDF report, cloud projects with users, LoRa calibration with ChirpStack RSSI.
+Pending: overlapping labels when nodes are close, calibration with field RSSI (4G field tests,
+ChirpStack for LoRa), retire the Streamlit app, fill in the privacy notice, Telcel "Diferenciada".
 
 ## Web migration (plan approved 2026-10-21; team only, invite-only accounts)
 React + TypeScript + Vite + MapLibre (PMTiles from Cloudflare R2) on Cloudflare Pages; FastAPI on

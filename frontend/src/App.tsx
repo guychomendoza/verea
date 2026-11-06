@@ -36,6 +36,7 @@ import FieldMode from './FieldMode'
 import { queued, withFieldTests, type FieldTest } from './fieldTests'
 import Sidebar from './Sidebar'
 import { DeviceHead, PanelButton, PhoneSheet, ProjectHead } from './Phone'
+import { useShowDevices } from './mapPrefs'
 import { CellResult } from './DevicePanel'
 import type { Catalog, CellStatus, Gateway, LinkDetail, LinkResult, NodeDevice, Project, Radial, Selection } from './types'
 import { Alert, Icon } from './icons'
@@ -304,6 +305,11 @@ function Workspace({ catalog, user, viewer }: {
   const [pin, setPin] = useState<{ lat: number; lon: number } | null>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const [focus, setFocus] = useState<Focus | null>(null)
+  const [located, setLocated] = useState<string | null>(null)   // node marked from a gateway's list
+  const [showDevices, setShowDevices] = useShowDevices()
+  useEffect(() => setLocated(null), [selection])
+  // Placing a device needs the devices in view
+  useEffect(() => { if (mode === 'addGateway' || mode === 'addNode') setShowDevices(true) }, [mode, setShowDevices])
   /** Fit the view to every device of a project (on open and after an import). */
   const showAll = useCallback((p: Project) => {
     const pts = [...p.gateways, ...p.nodes]
@@ -751,6 +757,9 @@ function Workspace({ catalog, user, viewer }: {
 
   const served = selection?.kind === 'gateway'
     ? Object.values(links).filter((r) => r.link?.gateway === selection.name).length : 0
+  // A node marked on the map from the gateway's list: the gateway stays selected
+  const locatedNode = selection?.kind === 'gateway' ? project.nodes.find((n) => n.name === located) : undefined
+  const locatedAt: [number, number] | null = locatedNode ? [locatedNode.lat, locatedNode.lon] : null
 
   const sidebar = (
     <Sidebar catalog={catalog} project={project} selection={selection} links={links} cells={cells}
@@ -798,10 +807,11 @@ function Workspace({ catalog, user, viewer }: {
       <MapView project={project} selection={selection} links={links} cells={cells} cellular={cellular} stations={stations}
         ranges={Object.fromEntries(Object.entries(ranges).map(([k, v]) => [k, v.radials]))}
         mode={mode} showCoverage={showCoverage} showLabels={showLabels} pin={pin} focus={focus}
-        cursor={cursorIdx !== null ? coordAt(cursorIdx) ?? null : null}
+        cursor={cursorIdx !== null ? coordAt(cursorIdx) ?? null : locatedAt}
         profilePins={pins.map((i) => coordAt(i)).filter((c): c is [number, number] => !!c)}
         ruler={ruler}
         onReady={(m) => { mapRef.current = m }} readOnly={!!viewer || locked} fieldTests={fieldTests} fieldAreasOn={fieldOn}
+        showDevices={showDevices} onToggleDevices={() => setShowDevices(!showDevices)}
         onToggleFieldAreas={() => setFieldOn((v) => { store(FIELD_KEY, v ? 'off' : null); return !v })}
         onSelect={(s) => setSelection(s)}
         onMove={(kind, name, lat, lon) => dispatch({ type: 'move', kind, name, lat, lon })}
@@ -866,7 +876,13 @@ function Workspace({ catalog, user, viewer }: {
 
   const devicePanel = dev && selection ? (
     <DevicePanel key={`${selection.kind}:${selection.name}`} catalog={catalog} project={project}
-      kind={selection.kind} device={dev} link={links[dev.name]} cell={cells[dev.name]} served={served} viewer={!!viewer} locked={locked}
+      kind={selection.kind} device={dev} link={links[dev.name]} cell={cells[dev.name]} links={links} viewer={!!viewer} locked={locked}
+      located={locatedNode?.name}
+      onLocate={(n) => {
+        setLocated(n.name)
+        setFocus({ lat: n.lat, lon: n.lon, zoom: Math.max(mapRef.current?.getZoom() ?? 16, 16), key: Date.now() })
+        if (narrow) setPhoneDetail(false)     // phones: back to the map, the gateway's card stays
+      }}
       range={selection.kind === 'gateway' ? {
         shown: !!ranges[dev.name], loading: rangeLoading.has(dev.name),
         onToggle: () => (ranges[dev.name] ? hideRange([dev.name]) : showRange([dev.name])),

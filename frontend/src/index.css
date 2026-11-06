@@ -137,6 +137,8 @@ body {
 .edge-bottom .edge-toggle { bottom: 100%; left: 50%; transform: translateX(-50%); width: 56px; height: 20px; border-radius: 8px 8px 0 0; }
 .verea-ruler-btn { display: grid; place-items: center; color: #333; }
 .verea-ruler-btn.active { background: #ffd166 !important; color: #000; }
+.verea-devices-btn { display: grid; place-items: center; color: #333; }
+.verea-devices-btn.active { background: var(--brand-navy) !important; color: #fff; }
 
 /* ── elevation profile (dark, like the chart) ── */
 .profile-panel { height: 100%; display: flex; flex-direction: column; background: var(--navy-deep); color: #9fb0c3; }
@@ -655,6 +657,19 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-
 .switch.on .switch-track { background: var(--accent); }
 .switch.on .switch-thumb { transform: translateX(18px); }
 .switch.on { color: var(--ink); }
+
+.switch:disabled { opacity: .6; cursor: not-allowed; }
+
+/* ── gateway: its connected nodes (DevicePanel.tsx) ── */
+.connected summary { cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--ink); padding: 4px 0; }
+.connected ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 2px; max-height: 240px; overflow-y: auto; }
+.connected button { width: 100%; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 5px 6px;
+  background: none; border: 0; border-radius: var(--r-md, 6px); color: var(--ink); font-size: 12.5px; text-align: left; cursor: pointer; }
+.connected button:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.connected button.active { background: color-mix(in srgb, var(--accent) 22%, transparent); font-weight: 600; }
+.connected i { width: 10px; height: 10px; border-radius: 50%; }
+.connected-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.connected-state { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
 
 /* ── 4G field tests (FieldMode.tsx) ── */
 .field-dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--muted) 45%, transparent); border: 1.5px solid var(--muted); }

@@ -1,5 +1,6 @@
 // The state of each node in one word, for the list filters and the bulk model change.
-import type { CellStatus, LinkResult, NodeDevice } from './types'
+import { nodeShortName } from './project'
+import type { CellStatus, LinkResult, NodeDevice, Project } from './types'
 
 export type NodeState = 'cell-ok' | 'cell-edge' | 'cell-possible' | 'cell-none' | 'cell-unknown'
   | 'lora-ok' | 'lora-fail' | 'lora-none'
@@ -25,3 +26,13 @@ export const STATE_GROUPS: { key: string; label: string; states: NodeState[] }[]
   { key: 'lora-none', label: 'LoRa sin resultado', states: ['lora-none'] },
   { key: 'lora-ok', label: 'LoRa viable', states: ['lora-ok'] },
 ]
+
+export interface ConnectedNode { node: NodeDevice; link: NonNullable<LinkResult['link']> }
+
+/** The nodes whose best link is this gateway, viable or not, in natural order. */
+export function connectedNodes(project: Project, links: Record<string, LinkResult>, gateway: string): ConnectedNode[] {
+  return project.nodes.flatMap((node) => {
+    const link = links[node.name]?.link
+    return link?.gateway === gateway ? [{ node, link }] : []
+  }).sort((a, b) => nodeShortName(a.node).localeCompare(nodeShortName(b.node), 'es', { numeric: true, sensitivity: 'base' }))
+}

@@ -5,6 +5,7 @@ import { applyTheme, savedTheme, type Theme } from './theme'
 import { isTeam } from './cloud'
 import { setAutosave, useAutosave } from './autosave'
 import { askConfirm } from './confirm'
+import { Switch } from './Switch'
 
 type Tab = 'account' | 'appearance' | 'saving' | 'admin'
 
@@ -169,16 +170,5 @@ function SavingTab() {
       <small className="hint">Sin guardar, tus cambios quedan como borrador en este navegador: si cierras la pestaña,
         Verea te ofrece recuperarlos la próxima vez. Esta preferencia se recuerda en este navegador.</small>
     </div>
-  )
-}
-
-/** An on / off switch (role="switch"), with its state written beside it. */
-function Switch({ on, onChange, labelledBy }: { on: boolean; onChange: (on: boolean) => void; labelledBy: string }) {
-  return (
-    <button type="button" role="switch" aria-checked={on} aria-labelledby={labelledBy} className={`switch ${on ? 'on' : ''}`}
-      onClick={() => onChange(!on)}>
-      <span className="switch-track"><span className="switch-thumb" /></span>
-      <span className="switch-text">{on ? 'Activado' : 'Desactivado'}</span>
-    </button>
   )
 }

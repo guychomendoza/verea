@@ -42,6 +42,8 @@ interface Props {
   readOnly?: boolean                    // viewer: devices are selected, never dragged
   // 4G field tests: fieldTests repaint the coverage (squares, while the coverage is shown and fieldAreasOn
   // is not false); testPoints are drawn as dots (field mode only); onToggleFieldAreas adds the map switch
+  showDevices?: boolean                 // false hides devices, links and labels (coverage without noise)
+  onToggleDevices?: () => void
   fieldTests?: FieldTest[]
   testPoints?: FieldTest[]
   fieldAreasOn?: boolean
@@ -73,6 +75,34 @@ class RulerControl implements maplibregl.IControl {
   setActive(on: boolean) {
     this.btn.classList.toggle('active', on)
     this.btn.setAttribute('aria-pressed', String(on))
+  }
+  onAdd() { return this.el }
+  onRemove() { this.el.remove() }
+}
+
+const EYE = '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>'
+const EYE_OFF = '<path d="M9.9 5.7A9.6 9.6 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.9 3.7M6.3 7.6A16.4 16.4 0 0 0 2.5 12s3.5 6.5 '
+  + '9.5 6.5c1.7 0 3.2-.5 4.5-1.2M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18"/>'
+
+/** Map button that hides devices, links and labels, to read the coverage without noise. */
+class DevicesControl implements maplibregl.IControl {
+  private el = document.createElement('div')
+  private btn = document.createElement('button')
+  constructor(onClick: () => void) {
+    this.el.className = 'maplibregl-ctrl maplibregl-ctrl-group'
+    this.btn.type = 'button'
+    this.btn.className = 'verea-devices-btn'
+    this.btn.onclick = onClick
+    this.el.appendChild(this.btn)
+  }
+  set(shown: boolean, available: boolean) {
+    const text = shown ? 'Ocultar equipos del mapa' : 'Mostrar equipos en el mapa'
+    this.el.hidden = !available
+    this.btn.title = this.btn.ariaLabel = text
+    this.btn.setAttribute('aria-pressed', String(!shown))
+    this.btn.classList.toggle('active', !shown)
+    this.btn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" '
+      + `stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${shown ? EYE : EYE_OFF}</svg>`
   }
   onAdd() { return this.el }
   onRemove() { this.el.remove() }
@@ -162,6 +192,8 @@ function fieldGeoJSON(tests: FieldTest[] = []): GeoJSON.FeatureCollection {
   }
 }
 
+const DEVICE_LAYERS = ['links-casing', 'links', 'device-halo', 'devices', 'device-icons', 'labels']
+
 function applyProps(map: maplibregl.Map, props: Props, dragging: boolean) {
   if (!dragging) {
     ;(map.getSource('devices') as GeoJSONSource).setData(devicesGeoJSON(props))
@@ -175,6 +207,9 @@ function applyProps(map: maplibregl.Map, props: Props, dragging: boolean) {
   ;(map.getSource('field-tests') as GeoJSONSource).setData(fieldGeoJSON(props.testPoints))
   ;(map.getSource('field-areas') as GeoJSONSource).setData(fieldAreasGeoJSON(props.fieldTests))
   map.setLayoutProperty('coverage', 'visibility', props.showCoverage ? 'visible' : 'none')
+  for (const id of DEVICE_LAYERS) {
+    map.setLayoutProperty(id, 'visibility', props.showDevices === false ? 'none' : 'visible')
+  }
   // the tests repaint the coverage (unless switched off to compare)
   const areas = props.showCoverage && props.fieldAreasOn !== false ? 'visible' : 'none'
   map.setLayoutProperty('field-areas', 'visibility', areas)
@@ -196,6 +231,7 @@ export default function MapView(props: Props) {
   const loaded = useRef(false)
   const rulerCtl = useRef<RulerControl | null>(null)
   const coverageCtl = useRef<CoverageControl | null>(null)
+  const devicesCtl = useRef<DevicesControl | null>(null)
 
   // Create the map once
   useEffect(() => {
@@ -217,6 +253,9 @@ export default function MapView(props: Props) {
     const ruler = new RulerControl(() => propsRef.current.onToggleRuler())
     map.addControl(ruler, 'top-right')
     rulerCtl.current = ruler
+    const devices = new DevicesControl(() => propsRef.current.onToggleDevices?.())
+    map.addControl(devices, 'top-right')
+    devicesCtl.current = devices
     // «Mi ubicación»: the blue dot and its accuracy circle, following the phone; also in the editor
     // (the map doubles as a field map for installations)
     const locate = new maplibregl.GeolocateControl({
@@ -339,6 +378,7 @@ export default function MapView(props: Props) {
     const map = mapRef.current
     if (map && loaded.current) applyProps(map, props, !!drag.current)
     rulerCtl.current?.setActive(props.mode === 'ruler')
+    devicesCtl.current?.set(props.showDevices !== false, !!props.onToggleDevices)
     coverageCtl.current?.set(props.showCoverage, props.coverageAvailable, { count: props.fieldTests?.length ?? 0,
       on: props.fieldAreasOn !== false, switchable: !!props.onToggleFieldAreas })
   }, [props])

@@ -2,6 +2,7 @@
 import { COLORS } from '../colors'
 import { networkCounts, type KindCount } from '../counts'
 import { nodeShortName } from '../project'
+import { connectedNodes } from '../nodeStatus'
 import { distance, num } from '../geo'
 import { cellColor, cellShort, linkColor } from '../mapStyle'
 import type { NodeDevice } from '../types'
@@ -53,39 +54,47 @@ export function envLabel(d: ReportData, key?: string): string {
   return (key && d.catalog.environments[key]?.label) || key || '—'
 }
 
-/** Three small tables: gateways, LoRa sensors and 4G sensors (only those the project has):
- *  how many, of which model, and how many of each status colour. */
+/** Pairs side by side: each criterion keeps its own columns, so its counts add up on their own. */
+function sideBySide(columns: [string, [string, number][]][]): { head: string[]; rows: string[][] } {
+  const height = Math.max(...columns.map(([, items]) => items.length))
+  return {
+    head: columns.flatMap(([title]) => [title, 'Cant.']),
+    rows: Array.from({ length: height }, (_, i) =>
+      columns.flatMap(([, items]) => (items[i] ? [items[i][0], String(items[i][1])] : ['', '']))),
+  }
+}
+
+/** One summary per kind (gateways, LoRa, 4G; only those the project has): the total goes in the
+ *  title and each way of counting (model, connection, state) in its own pair of columns. */
 export function summaryTables(d: ReportData): Table[] {
   const c = networkCounts(d.project, d.catalog, d.links, d.cells, d.cellular)
-  const head = ['Concepto', 'Cantidad']
-  const block = (title: string, k: KindCount, extra: [string, number][] = []): Table => {
+  const block = (name: string, k: KindCount, split?: [string, [string, number][]]): Table => {
     const states = k.states.filter((x) => x.n)
-    // Models, then the extra split and the status colours; the total last
-    const body = [...k.models.map(([m, n]) => [m, String(n)]),
-      ...extra.filter(([, n]) => n).map(([l, n]) => [l, String(n)]), ...states.map((x) => [x.label, String(x.n)])]
-    const rows = [...body, ['Total', String(k.total)]]
-    const colors = [...body.slice(0, body.length - states.length).map(() => ''), ...states.map((x) => x.color), '']
-    return { title, head, rows, colors }
+    const { head, rows } = sideBySide([['Modelo', k.models], ...(split ? [split] : []),
+      ['Estado', states.map((x) => [x.label, x.n] as [string, number])]])
+    return { title: `${name}: ${k.total} en total`, head, rows, colors: rows.map((_, i) => states[i]?.color ?? '') }
   }
   const out: Table[] = []
-  if (c.gateways.total) out.push(block('Gateways', c.gateways, [['Con 4G propio', c.gateways.cellular], ['Con WiFi / Ethernet', c.gateways.wired]]))
+  if (c.gateways.total) {
+    out.push(block('Gateways', c.gateways, ['Conexión', ([['4G propio', c.gateways.cellular],
+      ['WiFi / Ethernet', c.gateways.wired]] as [string, number][]).filter(([, n]) => n)]))
+  }
   if (c.lora.total) out.push(block('Sensores LoRa', c.lora))
   if (c.cell.total) out.push(block('Sensores 4G', c.cell))
   return out
 }
 
-/** One row per gateway: model, connection, mast height, nodes it serves. */
 export function gatewayTable(d: ReportData): Table | null {
   const gws = [...d.project.gateways].sort((a, b) => a.name.localeCompare(b.name, 'es', { numeric: true }))
   if (!gws.length) return null
   const served = (name: string) => Object.values(d.links).filter((r) => r.link?.gateway === name).length
   return {
-    title: 'Gateways',
-    head: ['Gateway', 'Modelo', 'Conexión', 'Altura', 'Nodos que atiende', 'Estado'],
+    title: '2. Gateways',
+    head: ['Gateway', 'Modelo', 'Conexión', 'Nodos conectados', 'Estado'],
     rows: gws.map((g) => [
       g.name, d.catalog.gateway_profiles[g.model]?.label ?? g.model,
       (g.backhaul ?? d.catalog.gateway_profiles[g.model]?.backhaul) === '4g' ? '4G propio' : 'WiFi / Ethernet',
-      g.height != null ? `${num(g.height, 1)} m` : '—', String(served(g.name)), g.online ? 'En línea' : 'Fuera de línea',
+      String(served(g.name)), g.online ? 'En línea' : 'Fuera de línea',
     ]),
     colors: gws.map((g) => (g.online ? COLORS.gateway : COLORS.none)),
   }
@@ -157,12 +166,11 @@ export function loraSection(d: ReportData): Section | null {
   if (!nodes.length) return null
   const x = extras(nodes, true)
   return {
-    title: 'Nodos LoRa',
+    title: '3. Nodos LoRa',
     groups: grouped(nodes, LORA_STATES, (n) => loraState(d, n),
-      ['Nodo', ...x.head, 'Gateway', 'Distancia', 'Margen', 'Estado'], (n) => {
+      ['Nodo', ...x.head, 'Gateway', 'Distancia', 'Estado'], (n) => {
         const l = d.links[n.name]?.link
-        return [nodeShortName(n), ...x.cells(n), l?.gateway ?? '—', l ? distance(l.distance_m) : '—',
-          l ? `${num(l.margin_db, 1)} dB` : '—', status(d, n.name)]
+        return [nodeShortName(n), ...x.cells(n), l?.gateway ?? '—', l ? distance(l.distance_m) : '—', status(d, n.name)]
       }),
   }
 }
@@ -182,11 +190,28 @@ export function cellSection(d: ReportData): Section | null {
   if (!nodes.length) return null
   const x = extras(nodes, true)
   return {
-    title: 'Sensores 4G',
+    title: '4. Sensores 4G',
     groups: grouped(nodes, CELL_STATES, (n) => d.cells[n.name]?.state ?? 'unchecked',
       ['Nodo', ...x.head, 'Cubierto alrededor', 'Estado'], (n) => {
         const c = d.cells[n.name]
         return [nodeShortName(n), ...x.cells(n), c?.nearby_share != null ? `${Math.round(c.nearby_share * 100)} %` : '—', status(d, n.name)]
       }),
   }
+}
+
+/** One table per gateway with the nodes connected to it, for the end of the report. */
+export function gatewayNodeTables(d: ReportData): Table[] {
+  const gws = [...d.project.gateways].sort((a, b) => a.name.localeCompare(b.name, 'es', { numeric: true }))
+  return gws.map((g) => {
+    const nodes = connectedNodes(d.project, d.links, g.name)
+    const x = extras(nodes.map((c) => c.node), false)
+    const viable = nodes.filter((c) => c.link.viable).length
+    return {
+      title: nodes.length ? `${g.name}: ${nodes.length} nodo${nodes.length === 1 ? '' : 's'} (${viable} viable${viable === 1 ? '' : 's'})`
+        : `${g.name}: sin nodos conectados`,
+      head: ['Nodo', ...x.head, 'Distancia', 'Estado'],
+      rows: nodes.map(({ node, link }) => [nodeShortName(node), ...x.cells(node), distance(link.distance_m), status(d, node.name)]),
+      colors: nodes.map(({ node }) => statusColor(d, node.name)),
+    }
+  })
 }

@@ -5,7 +5,7 @@ import { BRAND, LOGO_RATIO, logoSvg, markSvg, svgToPng } from '../brand'
 import { deviceIconCanvas } from '../deviceIcons'
 import type { LegendItem } from '../legend'
 import type { ReportData } from './collect'
-import { SOURCES, cellSection, gatewayTable, loraSection, settingsLine, summaryTables, type Table } from './content'
+import { SOURCES, cellSection, gatewayNodeTables, gatewayTable, loraSection, settingsLine, summaryTables, type Table } from './content'
 
 const M = 14                       // page margin (mm)
 const W = 210 - 2 * M
@@ -65,7 +65,7 @@ export async function buildPdf(d: ReportData): Promise<Blob> {
   }
   /** A table; `colors[i]` puts a dot of that colour in column `dotCol` (default: the last) of row i. */
   const table = (head: string[] | null, rows: string[][], widths: number[] = [], colors: string[] = [],
-    o: { dotCol?: number; boldLast?: boolean } = {}) => {
+    o: { dotCol?: number } = {}) => {
     const dot = o.dotCol ?? (head ? head.length - 1 : -1)
     autoTable(doc, {
       startY: y, head: head ? [head.map(t)] : undefined, body: rows.map((r) => r.map(t)),
@@ -77,12 +77,6 @@ export async function buildPdf(d: ReportData): Promise<Blob> {
         ...Object.fromEntries(widths.map((w, i) => [i, { cellWidth: w, ...(i === 0 && !head ? { fontStyle: 'bold' } : {}) }])),
         ...(colors.some(Boolean) ? { [dot]: { cellPadding: { top: 1.6, bottom: 1.6, right: 1.6, left: 6 } } } : {}),
       },
-      didParseCell: (h) => {
-        if (o.boldLast && h.section === 'body' && h.row.index === rows.length - 1) {
-          h.cell.styles.fontStyle = 'bold'
-          h.cell.styles.fillColor = rgb('#dce3eb')
-        }
-      },
       didDrawCell: (h) => {
         if (h.section !== 'body' || h.column.index !== dot || !colors[h.row.index]) return
         doc.setFillColor(...rgb(colors[h.row.index])).circle(h.cell.x + 3, h.cell.y + h.cell.height / 2, 1.3, 'F')
@@ -90,11 +84,12 @@ export async function buildPdf(d: ReportData): Promise<Blob> {
     })
     y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 5
   }
-  /** The summary tables one under the other, each with its title. */
+  /** The summary tables one under the other: «Cant.» columns narrow, the state's dot on its label. */
   const stacked = (tables: Table[]) => {
     for (const tb of tables) {
       heading(tb.title, 11)
-      table(tb.head, tb.rows, [120, W - 120], tb.colors, { dotCol: 0, boldLast: true })
+      const pairs = tb.head.length / 2, count = 12, label = (W - pairs * count) / pairs
+      table(tb.head, tb.rows, tb.head.map((_, i) => (i % 2 ? count : label)), tb.colors, { dotCol: tb.head.length - 2 })
     }
   }
 
@@ -182,6 +177,7 @@ export async function buildPdf(d: ReportData): Promise<Blob> {
     legend(d.legend)
   }
   if (d.shareUrl) onlineBox(d.shareUrl)
+  heading('1. Resumen', 12)
   stacked(summaryTables(d))
   paragraph(settingsLine(d), 8.5)
   const gws = gatewayTable(d)
@@ -201,6 +197,20 @@ export async function buildPdf(d: ReportData): Promise<Blob> {
       // the same column widths in every group of a section, so the tables line up
       const first = W * 0.24, rest = (W - first) / (g.head.length - 1)
       table(g.head, g.rows, g.head.map((_, i) => (i === 0 ? first : rest)), g.colors)
+    }
+  }
+  // Each gateway with its nodes, at the end
+  const perGateway = d.project.gateways.length ? gatewayNodeTables(d) : []
+  if (perGateway.length) {
+    heading('5. Nodos por gateway', 12)
+    for (const tb of perGateway) {
+      ensure(16)
+      doc.setFont('helvetica', 'bold').setFontSize(9.5).setTextColor(...INK).text(t(tb.title), M, y + 4.2)
+      y += 7
+      if (tb.rows.length) {
+        const first = W * 0.3, rest = (W - first) / (tb.head.length - 1)
+        table(tb.head, tb.rows, tb.head.map((_, i) => (i === 0 ? first : rest)), tb.colors)
+      }
     }
   }
   doc.setFont('helvetica', 'bold').setFontSize(8).setTextColor(...MUTED)

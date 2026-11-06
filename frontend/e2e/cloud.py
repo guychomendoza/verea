@@ -444,6 +444,16 @@ def main():
         filt.get_by_role("button", name=re.compile("^Todas")).click()
         dots(2)
         # the summary: signal × arrived, a cell filters the map; the CSV has every test
+        # devices off: the coverage and the tests stay, nothing else on the map
+        layer = lambda i: page.evaluate("(i) => window.__vereaMap.getLayoutProperty(i, 'visibility')", i)
+        page.get_by_role("button", name="Ocultar equipos del mapa").click()
+        page.wait_for_timeout(300)
+        assert layer("devices") == layer("labels") == "none", (layer("devices"), layer("labels"))
+        assert layer("field-tests") != "none" and layer("coverage") == "visible", layer("field-tests")
+        page.get_by_role("button", name="Mostrar equipos en el mapa").click()
+        page.wait_for_timeout(300)
+        assert layer("devices") == "visible"
+        print("field mode: devices on/off, tests stay")
         page.locator("button.field-today").click()
         summ = page.get_by_role("dialog", name="Resumen de pruebas")
         summ.get_by_role("radio", name="Todas").click()

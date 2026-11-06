@@ -14,6 +14,7 @@ import {
   type Delivery, type FieldTest, type Observed,
 } from './fieldTests'
 import { RulerBox } from './ruler'
+import { useShowDevices } from './mapPrefs'
 import { downloadBlob } from './exportImage'
 import type { Catalog, CellStatus, Project } from './types'
 import { askConfirm } from './confirm'
@@ -44,6 +45,7 @@ export default function FieldMode({ catalog, projectId, me: account, onExit }: {
   const [rows, setRows] = useState<cloud.ProjectRow[] | null>(null)
   const [project, setProject] = useState<{ id: string; data: Project } | null>(null)
   const [choosing, setChoosing] = useState(!projectId)
+  const [showDevices, setShowDevices] = useShowDevices()
   const [tests, setTests] = useState<FieldTest[]>([])
   const [pending, setPending] = useState<FieldTest[]>(queued)
   const [online, setOnline] = useState(navigator.onLine)
@@ -205,6 +207,7 @@ export default function FieldMode({ catalog, projectId, me: account, onExit }: {
             else { setRuler([]); setDraft(null); setPicked(null); setMode('ruler') }
           }}
           coverageAvailable={catalog.cell_operators.length > 0} onToggleCoverage={() => setShowCoverage((v) => !v)}
+          showDevices={showDevices} onToggleDevices={() => setShowDevices(!showDevices)}
           readOnly fieldTests={shown} testPoints={visible} autoLocate
           onLocate={(here) => { setMe(here); setGeoError('') }} onLocateError={setGeoError}
           onFieldTest={(id) => { setDraft(null); setPicked(shown.find((t) => t.client_id === id) ?? null) }} />

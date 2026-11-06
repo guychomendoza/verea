@@ -10,7 +10,8 @@ Needs a development API and a dev server in local mode, e.g.:
 
 Covers: opening the sample project (N-1 = 28.8 dB, same as Streamlit), map labels with km/dB,
 selecting a node on the map, the Elevation Profile (zoom, reset, hover linked to the map, pins,
-image), resizable/collapsible panels, ruler, shortcuts, place search, dark map image, PDF report,
+image), resizable/collapsible panels, ruler, shortcuts, place search, dark map image, gateway panel
+(connected nodes, switch, Google Maps), devices on/off, PDF report,
 Spanish texts, reload and phone width.
 """
 import io
@@ -268,6 +269,53 @@ def main():
         assert page.get_by_role("button", name="Zoom in").count() == 0
         print("no English left on the main screen")
 
+        # ── gateway: connected nodes that locate on the map, on/off switch, Google Maps ──
+        side.get_by_role("button", name=re.compile("GW-1")).first.click()
+        device = page.get_by_role("complementary", name="Dispositivo")
+        expect(device.locator(".metric").first).to_contain_text("Nodos conectados")
+        device.get_by_text("Ver nodos conectados").click()
+        rows = device.locator(".connected button")
+        assert rows.count() >= 2, rows.count()
+        assert rows.filter(has_text="4G-1").count() == 0, "4G sensors do not use a gateway"
+        row = rows.filter(has_text="N-1")
+        row.click()
+        expect(row).to_have_class(re.compile("active"))
+        page.wait_for_timeout(2500)
+        center = page.evaluate("() => { const c = window.__vereaMap.getCenter(); return [c.lat, c.lng, window.__vereaMap.getZoom()] }")
+        n1 = next(n for n in __import__("json").loads(SAMPLE.read_text())["nodes"] if n["name"] == "N-1")
+        assert haversine((center[0], center[1]), (n1["lat"], n1["lon"])) < 200 and center[2] >= 15.9, center
+        expect(device).to_contain_text("GW-1")                 # the gateway stays selected
+        marked = page.evaluate("async () => (await window.__vereaMap.getSource('cursor').getData()).features.length")
+        assert marked == 1, marked
+        href = device.get_by_role("link", name="Abrir en Google Maps").get_attribute("href")
+        assert href.startswith("https://www.google.com/maps/search/?api=1&query=21."), href
+        online = device.get_by_role("switch")
+        expect(online).to_have_attribute("aria-checked", "true")
+        online.click()
+        expect(online).to_have_attribute("aria-checked", "false")
+        expect(online).to_contain_text("Apagado")
+        expect(device.locator(".metric").first).to_contain_text("0", timeout=20000)
+        online.click()
+        expect(device.locator(".metric-value").first).not_to_have_text("0", timeout=30000)
+        print("gateway: connected list locates without leaving it, switch, Google Maps link")
+        device.get_by_role("button", name=re.compile("^Cerrar")).click()
+
+        # ── devices on / off: only the coverage stays; placing a device brings them back ──
+        layers = ["devices", "device-icons", "labels", "links"]
+        visibility = lambda: page.evaluate("(ids) => ids.map(i => window.__vereaMap.getLayoutProperty(i, 'visibility'))", layers)
+        page.get_by_role("button", name="Ocultar equipos del mapa").click()
+        page.wait_for_timeout(300)
+        assert set(visibility()) == {"none"}, visibility()
+        page.get_by_role("button", name="Mostrar equipos en el mapa").click()
+        page.wait_for_timeout(300)
+        assert set(visibility()) == {"visible"}, visibility()
+        page.get_by_role("button", name="Ocultar equipos del mapa").click()
+        page.keyboard.press("g")
+        page.wait_for_timeout(300)
+        assert set(visibility()) == {"visible"}, "placing a device shows them again"
+        page.keyboard.press("Escape")
+        print("devices on/off, and back on when placing one")
+
         # ── report: PDF (the detail of each node is the app itself, through a shared link) ──
         side.get_by_role("button", name="Reporte", exact=True).click()
         dialog = page.get_by_role("dialog", name="Reporte")
@@ -293,7 +341,7 @@ def main():
         assert len(pdf_bytes) < 5_000_000, f"PDF too big: {len(pdf_bytes) / 1e6:.1f} MB"
         assert b"/URI" not in pdf_bytes, "local mode: no online link"
         pdf.save_as(OUT / pdf.suggested_filename)
-        assert pages <= 3, pages             # summary: map, gateway / LoRa / 4G tables
+        assert pages <= 4, pages             # map, summary, detail tables, nodes per gateway
         expect(side.get_by_role("status")).to_contain_text("Reporte descargado")
         print("report:", names, f"PDF {len(pdf_bytes) / 1024:.0f} KB, {pages} pages (summary)")
 

@@ -3,7 +3,10 @@ import { db, distance, num } from './geo'
 import { isCellular, isStation, nameError } from './project'
 import { DeviceIcon } from './Logo'
 import { CloseButton, Icon } from './icons'
-import { plainText } from './mapStyle'
+import { COLORS } from './colors'
+import { linkColor, plainText } from './mapStyle'
+import { connectedNodes } from './nodeStatus'
+import { Switch } from './Switch'
 import type { Catalog, CellStatus, Gateway, LinkResult, NodeDevice, Project } from './types'
 import { askConfirm } from './confirm'
 
@@ -14,7 +17,9 @@ interface Props {
   device: Gateway | NodeDevice
   link?: LinkResult
   cell?: CellStatus
-  served: number                       // nodes whose best link is this gateway
+  links: Record<string, LinkResult>
+  located?: string                     // the node marked on the map from this gateway's list
+  onLocate?: (node: NodeDevice) => void
   range?: { shown: boolean; loading: boolean; onToggle: () => void }
   viewer?: boolean                     // read-only, except height and environment
   locked?: boolean                     // the team's Ver mode: read-only, all of it
@@ -119,6 +124,38 @@ function Metric({ label, value }: { label: string; value: string }) {
   )
 }
 
+/** The gateway's nodes: how many, and a folding list that locates each one on the map. */
+function ConnectedList({ project, links, gateway, located, onLocate }: {
+  project: Project; links: Record<string, LinkResult>; gateway: string; located?: string; onLocate?: (node: NodeDevice) => void
+}) {
+  const nodes = connectedNodes(project, links, gateway)
+  const viable = nodes.filter((c) => c.link.viable).length
+  return (
+    <section className="result">
+      <div className="grid grid-cols-2 gap-2">
+        <Metric label="Nodos conectados" value={String(nodes.length)} />
+        <Metric label="Con enlace viable" value={String(viable)} />
+      </div>
+      {nodes.length ? (
+        <details className="connected">
+          <summary>Ver nodos conectados</summary>
+          <ul>
+            {nodes.map(({ node, link }) => (
+              <li key={node.name}>
+                <button className={located === node.name ? 'active' : ''} title="Ubicar en el mapa" onClick={() => onLocate?.(node)}>
+                  <i style={{ background: linkColor(links[node.name]) }} />
+                  <span className="connected-name">{node.name}</span>
+                  <span className="connected-state">{link.viable ? 'Viable' : 'No viable'} · {distance(link.distance_m)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : <small className="hint">Todavía no es el mejor gateway de ningún nodo.</small>}
+    </section>
+  )
+}
+
 export default function DevicePanel(p: Props) {
   const [name, setName] = useState(p.device.name)
   useEffect(() => setName(p.device.name), [p.device.name])
@@ -144,7 +181,7 @@ export default function DevicePanel(p: Props) {
     <aside className="panel side-panel device-panel" aria-label="Dispositivo">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-base font-semibold flex items-center gap-2">
-          <DeviceIcon kind={gw ? 'gateway' : cellular ? 'cellular' : station ? 'station' : 'lora'} color="#3da3bc" size={20} />
+          <DeviceIcon kind={gw ? 'gateway' : cellular ? 'cellular' : station ? 'station' : 'lora'} color={gw ? COLORS.gateway : '#3da3bc'} size={20} />
           {gw ? 'Gateway' : cellular ? 'Sensor 4G' : station ? 'Estación meteorológica' : 'Nodo LoRa'}
         </h2>
         <CloseButton onClick={p.onClose} />
@@ -203,7 +240,9 @@ export default function DevicePanel(p: Props) {
           <Icon name="radar" /> {p.range.loading ? 'Calculando alcance…' : p.range.shown ? 'Ocultar alcance' : 'Ver alcance de la señal'}
         </button>
       )}
-      {gw && <p className="hint">{p.served ? `Mejor gateway para ${p.served} nodo${p.served === 1 ? '' : 's'}.` : 'Todavía no es el mejor gateway de ningún nodo.'}</p>}
+      {gw && <ConnectedList project={p.project} links={p.links} gateway={gw.name} located={p.located} onLocate={p.onLocate} />}
+      <a className="btn" href={`https://www.google.com/maps/search/?api=1&query=${p.device.lat},${p.device.lon}`}
+        target="_blank" rel="noopener noreferrer"><Icon name="map" /> Abrir en Google Maps</a>
 
       {/* ── properties ── */}
       <div className="grid grid-cols-2 gap-2">
@@ -241,10 +280,14 @@ export default function DevicePanel(p: Props) {
         </label>
       )}
       {gw && (
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={gw.online} disabled={ro} onChange={(e) => p.onPatch({ online: e.target.checked })} />
-          En línea (se usa para los enlaces)
-        </label>
+        <div className="setting-row">
+          <div>
+            <b id="gw-online-label">Gateway encendido</b>
+            <small className="hint">Apagado no se usa para los enlaces.</small>
+          </div>
+          <Switch on={gw.online} disabled={ro} onChange={(online) => p.onPatch({ online })} labelledBy="gw-online-label"
+            onText="En línea" offText="Apagado" />
+        </div>
       )}
 
       {p.locked ? (

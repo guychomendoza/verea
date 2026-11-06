@@ -1,5 +1,6 @@
 // Small counter on the map: devices of each kind and how many links / 4G states of each colour.
 import { useState } from 'react'
+import { COLORS } from './colors'
 import type { NetworkCounts } from './counts'
 import { DeviceIcon } from './Logo'
 import { Icon } from './icons'
@@ -27,7 +28,7 @@ export default function NetworkCounter({ counts, folded = false }: { counts: Net
         <div className="counter-rows">
           {g.total > 0 && (
             <div className="counter-row" title={g.models.map(([m, n]) => `${n} × ${m}`).join('\n')}>
-              <DeviceIcon kind="gateway" color="#3da3bc" size={15} /><b>{g.total}</b> {g.total === 1 ? 'gateway' : 'gateways'}
+              <DeviceIcon kind="gateway" color={COLORS.gateway} size={15} /><b>{g.total}</b> {g.total === 1 ? 'gateway' : 'gateways'}
               <span className="hint">{g.cellular ? `${g.cellular} con 4G` : ''}{g.cellular && g.wired ? ' · ' : ''}{g.wired ? `${g.wired} WiFi/Ethernet` : ''}</span>
             </div>
           )}
